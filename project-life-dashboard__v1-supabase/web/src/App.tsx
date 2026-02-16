@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
-import { createSupabaseClient, getEnvConfig } from './supabaseClient'
-import type { SupabaseConfig } from './supabaseClient'
 
 type DashboardEntry = {
   date: string
@@ -25,15 +23,14 @@ type DashboardEntry = {
   familyTimeDone: boolean
 }
 
-type SyncStatus = 'idle' | 'loading' | 'syncing' | 'synced' | 'error' | 'disabled'
+type SyncStatus = 'syncing' | 'synced' | 'error'
 
 type FieldItem =
   | { key: keyof DashboardEntry; label: string; type: 'boolean'; value: boolean }
   | { key: keyof DashboardEntry; label: string; type: 'number'; value: number }
   | { key: keyof DashboardEntry; label: string; type: 'text' | 'date' | 'select'; value: string }
 
-const tableName = 'dashboard_entries'
-const configStorageKey = 'project-life-supabase-config'
+const STORAGE_KEY_PREFIX = 'project-life-entry-'
 
 const getToday = () => new Date().toISOString().slice(0, 10)
 
@@ -60,25 +57,19 @@ const createDefaultEntry = (date: string): DashboardEntry => ({
 })
 
 function App() {
-  const [supabaseConfig, setSupabaseConfig] = useState<SupabaseConfig | null>(() => {
-    const stored = window.localStorage.getItem(configStorageKey)
+  const [entry, setEntry] = useState<DashboardEntry>(() => {
+    const today = getToday()
+    const stored = window.localStorage.getItem(STORAGE_KEY_PREFIX + today)
     if (stored) {
       try {
-        return JSON.parse(stored) as SupabaseConfig
+        return JSON.parse(stored) as DashboardEntry
       } catch {
-        return getEnvConfig()
+        return createDefaultEntry(today)
       }
     }
-    return getEnvConfig()
+    return createDefaultEntry(today)
   })
-  const supabase = useMemo(() => createSupabaseClient(supabaseConfig), [supabaseConfig])
-  const isSupabaseReady = Boolean(supabase)
-
-  const [entry, setEntry] = useState<DashboardEntry>(() => createDefaultEntry(getToday()))
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>(
-    isSupabaseReady ? 'idle' : 'disabled'
-  )
-  const [isHydrated, setIsHydrated] = useState(false)
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('synced')
 
   const moodOptions = ['😊 Motiviert', '🙂 Gut', '😐 Neutral', '😔 Müde', '😤 Gestresst']
   const sleepQualityOptions = ['Sehr schlecht', 'Schlecht', 'Okay', 'Gut', 'Sehr gut']
@@ -161,122 +152,34 @@ function App() {
   )
 
   useEffect(() => {
-    setSyncStatus(isSupabaseReady ? 'idle' : 'disabled')
-  }, [isSupabaseReady])
-
-  useEffect(() => {
-    const activeSupabase = supabase
-
-    if (!activeSupabase || !isSupabaseReady) {
-      setSyncStatus('disabled')
-      setIsHydrated(true)
-      return
-    }
-
-    const loadEntry = async () => {
-      setSyncStatus('loading')
-      const { data, error } = await activeSupabase
-        .from(tableName)
-        .select('*')
-        .eq('entry_date', entry.date)
-        .maybeSingle()
-
-      if (error) {
-        setSyncStatus('error')
-        setIsHydrated(true)
-        return
+    const stored = window.localStorage.getItem(STORAGE_KEY_PREFIX + entry.date)
+    if (stored) {
+      try {
+        setEntry(JSON.parse(stored) as DashboardEntry)
+      } catch {
+        setEntry(createDefaultEntry(entry.date))
       }
-
-      if (data) {
-        setEntry((prev) => ({
-          ...prev,
-          date: data.entry_date ?? prev.date,
-          mood: data.mood ?? '',
-          sleepQuality: data.sleep_quality ?? 0,
-          sleepDuration: data.sleep_duration ?? '',
-          meditationMinutes: data.meditation_minutes ?? 0,
-          coldShower: data.cold_shower ?? false,
-          proteinShake: data.protein_shake ?? false,
-          pushupsDone: data.pushups_done ?? false,
-          squatsDone: data.squats_done ?? false,
-          wallsitDone: data.wallsit_done ?? false,
-          plankDone: data.plank_done ?? false,
-          gratitudeDone: data.gratitude_done ?? false,
-          focusDone: data.focus_done ?? false,
-          winnerModeDone: data.winner_mode_done ?? false,
-          proteinGrams: data.protein_grams ?? 0,
-          calories: data.calories ?? 0,
-          tasksDone: data.tasks_done ?? 0,
-          journalDone: data.journal_done ?? false,
-          familyTimeDone: data.family_time_done ?? false,
-        }))
-      }
-
-      setSyncStatus('synced')
-      setIsHydrated(true)
+    } else {
+      setEntry(createDefaultEntry(entry.date))
     }
-
-    setIsHydrated(false)
-    loadEntry()
   }, [entry.date])
 
   useEffect(() => {
-    const activeSupabase = supabase
-
-    if (!activeSupabase || !isSupabaseReady || !isHydrated) {
-      return
-    }
-
-    const handler = window.setTimeout(async () => {
+    const handler = window.setTimeout(() => {
       setSyncStatus('syncing')
-
-      const payload = {
-        entry_date: entry.date,
-        mood: entry.mood,
-        sleep_quality: entry.sleepQuality,
-        sleep_duration: entry.sleepDuration,
-        meditation_minutes: entry.meditationMinutes,
-        cold_shower: entry.coldShower,
-        protein_shake: entry.proteinShake,
-        pushups_done: entry.pushupsDone,
-        squats_done: entry.squatsDone,
-        wallsit_done: entry.wallsitDone,
-        plank_done: entry.plankDone,
-        gratitude_done: entry.gratitudeDone,
-        focus_done: entry.focusDone,
-        winner_mode_done: entry.winnerModeDone,
-        protein_grams: entry.proteinGrams,
-        calories: entry.calories,
-        tasks_done: entry.tasksDone,
-        journal_done: entry.journalDone,
-        family_time_done: entry.familyTimeDone,
-      }
-
-      const { error } = await activeSupabase
-        .from(tableName)
-        .upsert(payload, { onConflict: 'entry_date' })
-
-      if (error) {
+      try {
+        window.localStorage.setItem(STORAGE_KEY_PREFIX + entry.date, JSON.stringify(entry))
+        setSyncStatus('synced')
+      } catch {
         setSyncStatus('error')
-        return
       }
-
-      setSyncStatus('synced')
-    }, 800)
+    }, 300)
 
     return () => window.clearTimeout(handler)
-  }, [entry, isHydrated])
+  }, [entry])
 
   const updateEntry = (partial: Partial<DashboardEntry>) => {
     setEntry((prev) => ({ ...prev, ...partial }))
-  }
-
-  const updateConfig = (partial: Partial<SupabaseConfig>) => {
-    setSupabaseConfig((prev) => {
-      const nextConfig = { ...(prev ?? { url: '', anonKey: '' }), ...partial }
-      window.localStorage.setItem(configStorageKey, JSON.stringify(nextConfig))
-      return nextConfig
-    })
   }
 
   const renderField = (item: FieldItem) => {
@@ -360,47 +263,14 @@ function App() {
         <div>
           <p className="eyebrow">Project Life Dashboard</p>
           <h1>PROJECT LIFE DASHBOARD</h1>
-          <p className="subtle">✓ Bereit</p>
+          <p className="subtle">✓ Bereit • Lokale Speicherung</p>
         </div>
         <div className={`status-pill status-${syncStatus}`}>
-          {syncStatus === 'disabled' && '⚠️ Supabase nicht konfiguriert'}
-          {syncStatus === 'loading' && '⏳ Lade Daten'}
-          {syncStatus === 'syncing' && '🔄 Sync läuft'}
-          {syncStatus === 'synced' && '✅ Sync OK'}
-          {syncStatus === 'error' && '⚠️ Sync Fehler'}
-          {syncStatus === 'idle' && '✅ Bereit'}
+          {syncStatus === 'syncing' && '💾 Speichere...'}
+          {syncStatus === 'synced' && '✅ Gespeichert'}
+          {syncStatus === 'error' && '⚠️ Speicherfehler'}
         </div>
       </header>
-
-      <section className="panel config-panel">
-        <div className="panel-header">
-          <span className="chip">SUPABASE</span>
-        </div>
-        <div className="metric-grid">
-          <label className="metric-card">
-            <span>Supabase URL</span>
-            <div className="metric-value">
-              <input
-                type="text"
-                value={supabaseConfig?.url ?? ''}
-                onChange={(event) => updateConfig({ url: event.target.value })}
-                placeholder="https://xxxxx.supabase.co"
-              />
-            </div>
-          </label>
-          <label className="metric-card">
-            <span>Supabase Anon Key</span>
-            <div className="metric-value">
-              <input
-                type="text"
-                value={supabaseConfig?.anonKey ?? ''}
-                onChange={(event) => updateConfig({ anonKey: event.target.value })}
-                placeholder="eyJhbGci..."
-              />
-            </div>
-          </label>
-        </div>
-      </section>
 
       <section className="panel">
         <div className="panel-header">
