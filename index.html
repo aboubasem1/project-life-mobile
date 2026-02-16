@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Project Life – Mobile (Supabase)</title>
+  <title>Project Life – Mobile</title>
   <style>
     :root {
       --bg: #0f1115;
@@ -522,35 +522,46 @@
       const key = el("supabaseKey").value.trim();
       
       if (!url || !key) {
+        alert("❌ Bitte beide Felder ausfüllen");
         showStatus("❌ Bitte beide Felder ausfüllen");
         return;
       }
 
-      // Speichere Config ZUERST
-      saveConfig(url, key);
-      console.log("Config gespeichert:", { url, keyLength: key.length });
-      
-      // Dann initialisiere Supabase
-      const success = initSupabase();
-      
-      if (success) {
+      try {
+        // Speichere Config
+        saveConfig(url, key);
+        showStatus("✓ Config gespeichert, teste Verbindung...");
+        
+        // Initialisiere Supabase
+        const success = initSupabase();
+        
+        if (!success) {
+          alert("❌ Konfiguration fehlgeschlagen");
+          showStatus("❌ Konfiguration fehlgeschlagen");
+          return;
+        }
+        
         // Teste Verbindung
-        try {
-          updateSyncStatus("syncing", "Teste Verbindung...");
-          await supabase.from("daily_entries").select("datum").limit(1);
+        updateSyncStatus("syncing", "Teste Verbindung...");
+        const { data, error } = await supabase.from("daily_entries").select("datum").limit(1);
+        
+        if (error) {
+          alert("❌ Datenbankfehler: " + error.message);
+          updateSyncStatus("offline", "Verbindungsfehler");
+          showStatus("❌ Fehler: " + error.message);
+        } else {
+          alert("✅ Verbindung erfolgreich!");
           updateSyncStatus("synced", "✓ Verbunden");
           showStatus("✓ Supabase-Verbindung erfolgreich!");
           
           // Lade Daten für heute
           const today = todayISO();
           await fillForm(today);
-        } catch (err) {
-          console.error("Verbindungsfehler:", err);
-          updateSyncStatus("offline", "Verbindungsfehler");
-          showStatus("❌ Verbindung fehlgeschlagen: " + err.message);
         }
-      } else {
-        showStatus("❌ Konfiguration fehlgeschlagen");
+      } catch (err) {
+        alert("❌ Fehler: " + err.message);
+        updateSyncStatus("offline", "Fehler");
+        showStatus("❌ Fehler: " + err.message);
       }
     });
 
