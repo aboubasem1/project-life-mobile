@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Project Life – Mobile</title>
+  <title>Project Life – Mobile (Supabase)</title>
   <style>
     :root {
       --bg: #0f1115;
@@ -31,6 +31,19 @@
     }
     h1 { margin: 0 0 8px; font-size: 20px; }
     .muted { color: var(--muted); font-size: 12px; }
+    .sync-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      margin-top: 4px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: #0f1218;
+    }
+    .sync-status.synced { color: var(--accent-2); }
+    .sync-status.syncing { color: var(--accent); }
+    .sync-status.offline { color: var(--danger); }
     .container { padding: 12px 16px 80px; }
     .card {
       background: var(--card);
@@ -110,15 +123,44 @@
       padding: 10px 16px;
     }
     .tiny { font-size: 11px; color: var(--muted); margin-top: 6px; }
+    .config-card {
+      background: #1a1d27;
+      border: 2px dashed var(--accent);
+      padding: 12px;
+      border-radius: 12px;
+      margin-bottom: 12px;
+    }
+    .config-card h3 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: var(--accent);
+    }
   </style>
 </head>
 <body>
   <header>
     <h1>Project Life – Mobile</h1>
-    <div class="muted">Offline, lokal gespeichert (localStorage)</div>
+    <div class="muted">Automatische Sync mit Supabase</div>
+    <div class="sync-status" id="syncStatus">
+      <span id="syncIcon">⚙️</span>
+      <span id="syncText">Initialisiere...</span>
+    </div>
   </header>
 
   <div class="container">
+    <!-- Supabase Config -->
+    <div class="config-card" id="configCard">
+      <h3>⚙️ Supabase Konfiguration</h3>
+      <label>Supabase URL</label>
+      <input type="text" id="supabaseUrl" placeholder="https://xxxxx.supabase.co" />
+      <label style="margin-top: 8px;">Supabase Anon Key</label>
+      <input type="text" id="supabaseKey" placeholder="eyJhbGc..." />
+      <button class="btn-success" id="saveConfig" style="margin-top: 10px; width: 100%;">
+        Konfiguration speichern
+      </button>
+      <div class="tiny">Diese Werte findest du in deinem Supabase-Projekt unter Settings → API.</div>
+    </div>
+
     <div class="card">
       <label>Datum</label>
       <input type="date" id="entryDate" />
@@ -242,49 +284,19 @@
       </div>
       <div class="tiny" id="status"></div>
     </div>
-
-    <div class="card">
-      <div class="actions">
-        <button class="btn-success" id="exportCsv">CSV exportieren</button>
-        <label class="btn-ghost" style="text-align:center;">
-          CSV importieren
-          <input type="file" id="importCsv" accept=".csv" style="display:none;" />
-        </label>
-      </div>
-      <button class="btn-danger" id="resetAll" style="margin-top:10px; width:100%;">Alle lokalen Daten löschen</button>
-      <div class="tiny">Export passt direkt zur `app.py`-Struktur.</div>
-    </div>
   </div>
 
   <div class="footer">
-    <div class="muted">Daten bleiben lokal auf dem Gerät.</div>
+    <div class="muted">Daten werden automatisch mit Supabase synchronisiert.</div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
-    const STORAGE_KEY = "projectLifeEntries";
-    const COLUMNS = [
-      "date",
-      "am_training",
-      "tasks_done",
-      "am_focus_goal",
-      "am_winner_mode",
-      "am_body_move",
-      "am_sleep_hours",
-      "am_sleep_quality_1_10",
-      "am_mood_1_10",
-      "am_weight_kg",
-      "pm_training",
-      "pm_sleep_hours",
-      "pm_sleep_quality_1_10",
-      "pm_mood_1_10",
-      "pm_weight_kg",
-      "pm_discipline_1_10",
-      "deep_work_minutes",
-      "revenue_eur",
-      "notes"
-    ];
-
+    const CONFIG_KEY = "projectLifeSupabaseConfig";
     const el = (id) => document.getElementById(id);
+
+    let supabase = null;
+    let syncEnabled = false;
 
     const state = {
       activeTab: "morning"
@@ -292,50 +304,176 @@
 
     const todayISO = () => new Date().toISOString().slice(0, 10);
 
-    const loadAll = () => {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : {};
+    const updateSyncStatus = (status, text) => {
+      const statusEl = el("syncStatus");
+      const iconEl = el("syncIcon");
+      const textEl = el("syncText");
+      
+      statusEl.className = `sync-status ${status}`;
+      textEl.textContent = text;
+      
+      if (status === "synced") iconEl.textContent = "✓";
+      else if (status === "syncing") iconEl.textContent = "⟳";
+      else if (status === "offline") iconEl.textContent = "⚠";
+      else iconEl.textContent = "⚙️";
     };
 
-    const saveAll = (data) => {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    const loadConfig = () => {
+      const raw = localStorage.getItem(CONFIG_KEY);
+      return raw ? JSON.parse(raw) : null;
     };
 
-    const getEntry = (date) => {
-      const all = loadAll();
-      return all[date] || {};
+    const saveConfig = (url, key) => {
+      localStorage.setItem(CONFIG_KEY, JSON.stringify({ url, key }));
     };
 
-    const setEntry = (date, updates) => {
-      const all = loadAll();
-      const existing = all[date] || { date };
-      all[date] = { ...existing, ...updates };
-      saveAll(all);
+    const initSupabase = () => {
+      const config = loadConfig();
+      if (!config || !config.url || !config.key) {
+        updateSyncStatus("offline", "Nicht konfiguriert");
+        el("configCard").style.display = "block";
+        syncEnabled = false;
+        return false;
+      }
+
+      try {
+        supabase = supabase_js.createClient(config.url, config.key);
+        syncEnabled = true;
+        el("configCard").style.display = "none";
+        updateSyncStatus("synced", "Verbunden");
+        return true;
+      } catch (err) {
+        console.error("Supabase init error:", err);
+        updateSyncStatus("offline", "Verbindungsfehler");
+        syncEnabled = false;
+        return false;
+      }
     };
 
-    const fillForm = (date) => {
-      const entry = getEntry(date);
+    const fetchEntry = async (date) => {
+      if (!syncEnabled) return null;
+      
+      try {
+        updateSyncStatus("syncing", "Lädt...");
+        const { data, error } = await supabase
+          .from("daily_entries")
+          .select("*")
+          .eq("datum", date)
+          .single();
+        
+        if (error && error.code !== "PGRST116") {
+          console.error("Fetch error:", error);
+          updateSyncStatus("offline", "Fehler");
+          return null;
+        }
+        
+        updateSyncStatus("synced", "Aktuell");
+        return data;
+      } catch (err) {
+        console.error("Fetch exception:", err);
+        updateSyncStatus("offline", "Offline");
+        return null;
+      }
+    };
+
+    const upsertEntry = async (date, updates) => {
+      if (!syncEnabled) {
+        showStatus("❌ Supabase nicht konfiguriert");
+        return false;
+      }
+
+      try {
+        updateSyncStatus("syncing", "Speichert...");
+        
+        // Konvertiere Werte
+        const payload = {
+          datum: date,
+          aufgestanden: updates.am_sleep_hours ? null : updates.aufgestanden,
+          meditation_min: updates.meditation_min ? parseInt(updates.meditation_min) : null,
+          cold_shower: updates.cold_shower === 1 || updates.cold_shower === true,
+          protein_shake: updates.protein_shake === 1 || updates.protein_shake === true,
+          deep_work_1_min: updates.deep_work_1_min ? parseInt(updates.deep_work_1_min) : null,
+          deep_work_2_min: updates.deep_work_2_min ? parseInt(updates.deep_work_2_min) : null,
+          training: (updates.am_training === 1 || updates.pm_training === 1) ? true : null,
+          schritte: updates.schritte ? parseInt(updates.schritte) : null,
+          protein_gramm: updates.protein_gramm ? parseInt(updates.protein_gramm) : null,
+          schlafen_gegangen: updates.pm_sleep_hours ? null : updates.schlafen_gegangen,
+          bildschirmzeit_min: updates.bildschirmzeit_min ? parseInt(updates.bildschirmzeit_min) : null,
+          wasser_liter: updates.wasser_liter ? parseFloat(updates.wasser_liter) : null,
+          journal: updates.journal === 1 || updates.journal === true,
+          reading_min: updates.reading_min ? parseInt(updates.reading_min) : null
+        };
+
+        // Entferne undefined/null Werte für partial update
+        Object.keys(payload).forEach(key => {
+          if (payload[key] === null || payload[key] === undefined || payload[key] === "") {
+            delete payload[key];
+          }
+        });
+
+        const { data, error } = await supabase
+          .from("daily_entries")
+          .upsert(payload, { onConflict: "datum" })
+          .select()
+          .single();
+
+        if (error) {
+          console.error("Upsert error:", error);
+          updateSyncStatus("offline", "Fehler beim Speichern");
+          return false;
+        }
+
+        updateSyncStatus("synced", "Gespeichert");
+        return true;
+      } catch (err) {
+        console.error("Upsert exception:", err);
+        updateSyncStatus("offline", "Speichern fehlgeschlagen");
+        return false;
+      }
+    };
+
+    const fillForm = async (date) => {
+      const entry = await fetchEntry(date);
+      if (!entry) return;
+
       const setValue = (id, value) => {
         const input = el(id);
         if (!input) return;
         if (input.type === "checkbox") {
-          input.checked = Boolean(Number(value || 0));
+          input.checked = Boolean(value);
         } else {
           input.value = value ?? "";
         }
       };
 
-      COLUMNS.forEach((col) => {
-        if (col !== "date") setValue(col, entry[col]);
-      });
+      // Mapping von DB zu Form
+      setValue("am_training", entry.training);
+      setValue("am_sleep_hours", entry.am_sleep_hours);
+      setValue("am_sleep_quality_1_10", entry.am_sleep_quality_1_10);
+      setValue("am_mood_1_10", entry.am_mood_1_10);
+      setValue("am_weight_kg", entry.am_weight_kg);
+      setValue("am_focus_goal", entry.am_focus_goal);
+      setValue("am_winner_mode", entry.am_winner_mode);
+      setValue("am_body_move", entry.am_body_move);
+      
+      setValue("pm_training", entry.training);
+      setValue("pm_sleep_hours", entry.pm_sleep_hours);
+      setValue("pm_sleep_quality_1_10", entry.pm_sleep_quality_1_10);
+      setValue("pm_mood_1_10", entry.pm_mood_1_10);
+      setValue("pm_weight_kg", entry.pm_weight_kg);
+      setValue("pm_discipline_1_10", entry.pm_discipline_1_10);
+      setValue("tasks_done", entry.tasks_done);
+      setValue("deep_work_minutes", entry.deep_work_1_min);
+      setValue("revenue_eur", entry.revenue_eur);
+      setValue("notes", entry.notes);
     };
 
     const collectMorning = () => ({
       am_training: el("am_training").checked ? 1 : 0,
-      am_sleep_hours: el("am_sleep_hours").value || "",
-      am_sleep_quality_1_10: el("am_sleep_quality_1_10").value || "",
-      am_mood_1_10: el("am_mood_1_10").value || "",
-      am_weight_kg: el("am_weight_kg").value || "",
+      am_sleep_hours: el("am_sleep_hours").value || null,
+      am_sleep_quality_1_10: el("am_sleep_quality_1_10").value || null,
+      am_mood_1_10: el("am_mood_1_10").value || null,
+      am_weight_kg: el("am_weight_kg").value || null,
       am_focus_goal: el("am_focus_goal").value || "",
       am_winner_mode: el("am_winner_mode").checked ? 1 : 0,
       am_body_move: el("am_body_move").checked ? 1 : 0
@@ -343,20 +481,20 @@
 
     const collectEvening = () => ({
       pm_training: el("pm_training").checked ? 1 : 0,
-      pm_sleep_hours: el("pm_sleep_hours").value || "",
-      pm_sleep_quality_1_10: el("pm_sleep_quality_1_10").value || "",
-      pm_mood_1_10: el("pm_mood_1_10").value || "",
-      pm_weight_kg: el("pm_weight_kg").value || "",
-      pm_discipline_1_10: el("pm_discipline_1_10").value || "",
-      tasks_done: el("tasks_done").value || "",
-      deep_work_minutes: el("deep_work_minutes").value || "",
-      revenue_eur: el("revenue_eur").value || "",
+      pm_sleep_hours: el("pm_sleep_hours").value || null,
+      pm_sleep_quality_1_10: el("pm_sleep_quality_1_10").value || null,
+      pm_mood_1_10: el("pm_mood_1_10").value || null,
+      pm_weight_kg: el("pm_weight_kg").value || null,
+      pm_discipline_1_10: el("pm_discipline_1_10").value || null,
+      tasks_done: el("tasks_done").value || null,
+      deep_work_1_min: el("deep_work_minutes").value || null,
+      revenue_eur: el("revenue_eur").value || null,
       notes: el("notes").value || ""
     });
 
     const showStatus = (msg) => {
       el("status").textContent = msg;
-      setTimeout(() => (el("status").textContent = ""), 2000);
+      setTimeout(() => (el("status").textContent = ""), 3000);
     };
 
     const setTab = (tab) => {
@@ -370,120 +508,54 @@
     el("tabMorning").addEventListener("click", () => setTab("morning"));
     el("tabEvening").addEventListener("click", () => setTab("evening"));
 
-    el("saveMorning").addEventListener("click", () => {
-      const date = el("entryDate").value;
-      if (!date) return showStatus("Bitte Datum wählen.");
-      setEntry(date, collectMorning());
-      showStatus("Morgen gespeichert.");
+    el("saveConfig").addEventListener("click", () => {
+      const url = el("supabaseUrl").value.trim();
+      const key = el("supabaseKey").value.trim();
+      
+      if (!url || !key) {
+        showStatus("❌ Bitte beide Felder ausfüllen");
+        return;
+      }
+
+      saveConfig(url, key);
+      initSupabase();
+      showStatus("✓ Konfiguration gespeichert");
     });
 
-    el("saveEvening").addEventListener("click", () => {
+    el("saveMorning").addEventListener("click", async () => {
       const date = el("entryDate").value;
       if (!date) return showStatus("Bitte Datum wählen.");
-      setEntry(date, collectEvening());
-      showStatus("Abend gespeichert.");
+      
+      const success = await upsertEntry(date, collectMorning());
+      if (success) {
+        showStatus("✓ Morgen gespeichert & synchronisiert");
+      }
+    });
+
+    el("saveEvening").addEventListener("click", async () => {
+      const date = el("entryDate").value;
+      if (!date) return showStatus("Bitte Datum wählen.");
+      
+      const success = await upsertEntry(date, collectEvening());
+      if (success) {
+        showStatus("✓ Abend gespeichert & synchronisiert");
+      }
     });
 
     el("entryDate").addEventListener("change", (e) => fillForm(e.target.value));
 
-    const toCsv = (rows) => {
-      const header = COLUMNS.join(",");
-      const escape = (val) => {
-        const text = String(val ?? "");
-        if (text.includes(",") || text.includes("\n") || text.includes('"')) {
-          return '"' + text.replace(/"/g, '""') + '"';
-        }
-        return text;
-      };
-      const lines = rows.map((row) => COLUMNS.map((c) => escape(row[c])).join(","));
-      return [header, ...lines].join("\n");
-    };
-
-    const fromCsv = (text) => {
-      const rows = [];
-      const lines = text.split(/\r?\n/).filter(Boolean);
-      if (!lines.length) return rows;
-      const header = lines.shift().split(",");
-
-      const parseLine = (line) => {
-        const result = [];
-        let current = "";
-        let inQuotes = false;
-        for (let i = 0; i < line.length; i++) {
-          const char = line[i];
-          if (char === '"') {
-            if (inQuotes && line[i + 1] === '"') {
-              current += '"';
-              i++;
-            } else {
-              inQuotes = !inQuotes;
-            }
-          } else if (char === "," && !inQuotes) {
-            result.push(current);
-            current = "";
-          } else {
-            current += char;
-          }
-        }
-        result.push(current);
-        return result;
-      };
-
-      lines.forEach((line) => {
-        const values = parseLine(line);
-        const row = {};
-        header.forEach((col, idx) => {
-          row[col] = values[idx] ?? "";
-        });
-        rows.push(row);
-      });
-      return rows;
-    };
-
-    el("exportCsv").addEventListener("click", () => {
-      const all = loadAll();
-      const rows = Object.keys(all)
-        .sort()
-        .map((date) => ({ date, ...all[date] }));
-      const csv = toCsv(rows);
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `project_life_mobile_${todayISO()}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    });
-
-    el("importCsv").addEventListener("change", (event) => {
-      const file = event.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        const rows = fromCsv(reader.result);
-        const all = loadAll();
-        rows.forEach((row) => {
-          if (!row.date) return;
-          all[row.date] = { ...(all[row.date] || {}), ...row };
-        });
-        saveAll(all);
-        fillForm(el("entryDate").value);
-        showStatus("CSV importiert.");
-      };
-      reader.readAsText(file);
-    });
-
-    el("resetAll").addEventListener("click", () => {
-      if (confirm("Alle lokalen Daten löschen?")) {
-        localStorage.removeItem(STORAGE_KEY);
-        fillForm(el("entryDate").value);
-        showStatus("Lokale Daten gelöscht.");
-      }
-    });
-
     const init = () => {
+      const config = loadConfig();
+      if (config) {
+        el("supabaseUrl").value = config.url;
+        el("supabaseKey").value = config.key;
+      }
+
+      initSupabase();
       el("entryDate").value = todayISO();
-      fillForm(todayISO());
+      if (syncEnabled) {
+        fillForm(todayISO());
+      }
     };
 
     init();
