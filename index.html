@@ -71,24 +71,10 @@
 <body>
   <div class="container">
     <h1>📊 Project Life Dashboard</h1>
-    <div class="status" id="status">Nicht konfiguriert</div>
+    <div class="status ok" id="status">✓ Bereit</div>
 
-    <!-- Config -->
-    <div id="configSection">
-      <div class="card">
-        <h3>⚙️ Supabase Konfiguration</h3>
-        <label>Supabase URL</label>
-        <input type="text" id="url" value="https://jdsojjjrxsknffuogdux.supabase.co" />
-        
-        <label>Supabase Key</label>
-        <input type="text" id="key" value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impkc29qampyeHNrbmZmdW9nZHV4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEyNjEwNjMsImV4cCI6MjA4NjgzNzA2M30.zPPzQev60bopgiBlenNAezIsYfNg8m5IMAigfsDGIhs" />
-        
-        <button onclick="connectSupabase()">Verbinden & Testen</button>
-      </div>
-    </div>
-
-    <!-- App -->
-    <div id="appSection" class="hidden">
+    <!-- App DIREKT SICHTBAR -->
+    <div id="appSection">
       <div class="card">
         <label>Datum</label>
         <input type="date" id="datum" />
@@ -104,95 +90,27 @@
         
         <button class="btn-success" onclick="saveDaten()">Daten speichern</button>
       </div>
-      
-      <button onclick="showConfig()">⚙️ Konfiguration ändern</button>
     </div>
   </div>
-
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
-    let supabase = null;
+    // AUTO-CONNECT - KEIN LOGIN NÖTIG
+    const supabase = window.supabase.createClient(
+      'https://jdsojjjrxsknffuogdux.supabase.co',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impkc29qampyeHNrbmZmdW9nZHV4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEyNjEwNjMsImV4cCI6MjA4NjgzNzA2M30.zPPzQev60bopgiBlenNAezIsYfNg8m5IMAigfsDGIhs'
+    );
     
     function setStatus(text, type) {
       document.getElementById('status').textContent = text;
       document.getElementById('status').className = 'status ' + type;
     }
     
-    window.addEventListener('DOMContentLoaded', async () => {
-      const saved = localStorage.getItem('supabaseConfig');
-      if (saved) {
-        const config = JSON.parse(saved);
-        document.getElementById('url').value = config.url;
-        document.getElementById('key').value = config.key;
-        await autoConnect(config.url, config.key);
-      }
+    window.addEventListener('DOMContentLoaded', () => {
       document.getElementById('datum').value = new Date().toISOString().split('T')[0];
+      setStatus('✓ Bereit', 'ok');
     });
     
-    async function autoConnect(url, key) {
-      try {
-        setStatus('Verbinde...', 'syncing');
-        supabase = window.supabase.createClient(url, key);
-        const { error } = await supabase.from('daily_entries').select('datum').limit(1);
-        
-        if (error) {
-          setStatus('Fehler: ' + error.message, 'error');
-        } else {
-          setStatus('✓ Verbunden', 'ok');
-          document.getElementById('configSection').classList.add('hidden');
-          document.getElementById('appSection').classList.remove('hidden');
-        }
-      } catch (err) {
-        setStatus('Fehler: ' + err.message, 'error');
-      }
-    }
-    
-    async function connectSupabase() {
-      const url = document.getElementById('url').value.trim();
-      const key = document.getElementById('key').value.trim();
-      
-      if (!url || !key) {
-        alert('❌ Bitte beide Felder ausfüllen!');
-        return;
-      }
-      
-      try {
-        setStatus('Verbinde...', 'syncing');
-        
-        if (typeof window.supabase === 'undefined') {
-          alert('❌ Supabase Library nicht geladen!');
-          setStatus('Library fehlt', 'error');
-          return;
-        }
-        
-        supabase = window.supabase.createClient(url, key);
-        const { data, error } = await supabase.from('daily_entries').select('datum').limit(1);
-        
-        if (error) {
-          alert('❌ Datenbankfehler:\n' + error.message);
-          setStatus('Fehler', 'error');
-          return;
-        }
-        
-        alert('✅ Verbindung erfolgreich!\n\nGefundene Einträge: ' + (data ? data.length : 0));
-        localStorage.setItem('supabaseConfig', JSON.stringify({ url, key }));
-        
-        setStatus('✓ Verbunden', 'ok');
-        document.getElementById('configSection').classList.add('hidden');
-        document.getElementById('appSection').classList.remove('hidden');
-        
-      } catch (err) {
-        alert('❌ Fehler:\n' + err.message);
-        setStatus('Fehler', 'error');
-      }
-    }
-    
     async function saveDaten() {
-      if (!supabase) {
-        alert('❌ Keine Verbindung!');
-        return;
-      }
-      
       const datum = document.getElementById('datum').value;
       const training = document.getElementById('training').checked;
       const meditation = parseInt(document.getElementById('meditation').value) || null;
@@ -227,11 +145,6 @@
         alert('❌ Fehler:\n' + err.message);
         setStatus('Fehler', 'error');
       }
-    }
-    
-    function showConfig() {
-      document.getElementById('configSection').classList.remove('hidden');
-      document.getElementById('appSection').classList.add('hidden');
     }
   </script>
 </body>
