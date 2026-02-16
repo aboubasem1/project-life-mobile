@@ -52,6 +52,10 @@
       padding: 12px;
       margin-bottom: 12px;
     }
+    .card.glow {
+      border-color: rgba(79, 140, 255, 0.5);
+      box-shadow: 0 14px 30px rgba(79, 140, 255, 0.18);
+    }
     label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
     input, textarea, select {
       width: 100%;
@@ -123,6 +127,56 @@
       padding: 10px 16px;
     }
     .tiny { font-size: 11px; color: var(--muted); margin-top: 6px; }
+    .scoreboard {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .score-value {
+      font-size: 34px;
+      font-weight: 800;
+      color: #9ad3ff;
+    }
+    .score-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .badge {
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      background: #222a3a;
+      color: #cfe1ff;
+      border: 1px solid #3a4b7a;
+    }
+    .progress {
+      height: 8px;
+      border-radius: 999px;
+      background: #10131a;
+      border: 1px solid var(--border);
+      overflow: hidden;
+      margin-bottom: 10px;
+    }
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #2ecc71, #4f8cff);
+      transition: width 0.3s ease;
+    }
+    .mini-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .metric {
+      background: #11141a;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px;
+      text-align: center;
+    }
+    .metric .value { font-size: 15px; font-weight: 700; }
+    .metric .label { font-size: 10px; color: var(--muted); }
     .config-card {
       background: #1a1d27;
       border: 2px dashed var(--accent);
@@ -165,6 +219,46 @@
       <label>Datum</label>
       <input type="date" id="entryDate" />
       <div class="tiny">Tipp: morgens und abends am gleichen Datum speichern.</div>
+    </div>
+
+    <div class="card glow">
+      <h3>🏆 Daily Score</h3>
+      <div class="scoreboard">
+        <div>
+          <div class="score-value" id="dailyScore">0/10</div>
+          <div class="score-sub" id="dailyLabel">Analyse-Modus</div>
+        </div>
+        <div class="badge" id="dailyBadge">CHECK-IN</div>
+      </div>
+      <div class="progress" aria-label="Tagesfortschritt">
+        <div class="progress-bar" id="dailyProgress"></div>
+      </div>
+      <div class="mini-metrics">
+        <div class="metric">
+          <div class="value" id="zoneAStatus">–</div>
+          <div class="label">Zone A</div>
+        </div>
+        <div class="metric">
+          <div class="value" id="mindsetStatus">–</div>
+          <div class="label">Mindset</div>
+        </div>
+        <div class="metric">
+          <div class="value" id="outputStatus">–</div>
+          <div class="label">Output</div>
+        </div>
+        <div class="metric">
+          <div class="value" id="streakValue">0</div>
+          <div class="label">Streak</div>
+        </div>
+        <div class="metric">
+          <div class="value" id="streakBest">0</div>
+          <div class="label">Best</div>
+        </div>
+        <div class="metric">
+          <div class="value" id="streakState">–</div>
+          <div class="label">Heute</div>
+        </div>
+      </div>
     </div>
 
     <div class="tabs">
@@ -435,6 +529,7 @@
           el.value = value ?? "";
         }
       });
+      updateDailyScore();
     }
 
     function saveToLocal(data) {
@@ -478,6 +573,138 @@
       qs("tabEvening").classList.toggle("active", tab === "evening");
       qs("morningSection").style.display = tab === "morning" ? "block" : "none";
       qs("eveningSection").style.display = tab === "evening" ? "block" : "none";
+    }
+
+    function toNumber(value) {
+      if (value === null || value === undefined || value === "") return null;
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    function setupGamification() {
+      fields.forEach((field) => {
+        const el = qs(field);
+        if (!el) return;
+        el.addEventListener("change", updateDailyScore);
+        el.addEventListener("input", updateDailyScore);
+      });
+      qs("entryDate").addEventListener("change", updateDailyScore);
+    }
+
+    function updateDailyScore() {
+      const training = qs("am_training")?.checked || qs("pm_training")?.checked;
+      const sleepQuality = toNumber(qs("am_sleep_quality_1_10")?.value) ?? 0;
+      const mood = toNumber(qs("am_mood_1_10")?.value) ?? 0;
+      const sleepHours = toNumber(qs("am_sleep_hours")?.value) ?? 0;
+      const focusGoal = (qs("am_focus_goal")?.value || "").trim().length > 0;
+      const winnerMode = qs("am_winner_mode")?.checked;
+      const bodyMove = qs("am_body_move")?.checked;
+      const discipline = toNumber(qs("pm_discipline_1_10")?.value) ?? 0;
+      const tasksDone = toNumber(qs("tasks_done")?.value) ?? 0;
+      const deepWork = toNumber(qs("deep_work_minutes")?.value) ?? 0;
+      const revenue = toNumber(qs("revenue_eur")?.value) ?? 0;
+
+      const checks = [
+        training,
+        sleepQuality >= 7,
+        mood >= 7,
+        sleepHours >= 7,
+        focusGoal,
+        winnerMode,
+        bodyMove,
+        discipline >= 7,
+        tasksDone >= 3,
+        deepWork >= 60 || revenue > 0
+      ];
+
+      const score = checks.filter(Boolean).length;
+      const total = checks.length;
+      const label = score === 10 ? "Elite Tag" : score >= 8 ? "Stark" : score >= 6 ? "Stabil" : "Analyse-Modus";
+      const badge = score === 10 ? "ELITE" : score >= 8 ? "STARK" : score >= 6 ? "STABIL" : "CHECK-IN";
+
+      const dailyScore = qs("dailyScore");
+      const dailyLabel = qs("dailyLabel");
+      const dailyBadge = qs("dailyBadge");
+      const dailyProgress = qs("dailyProgress");
+
+      if (dailyScore) dailyScore.textContent = `${score}/${total}`;
+      if (dailyLabel) dailyLabel.textContent = label;
+      if (dailyBadge) dailyBadge.textContent = badge;
+      if (dailyProgress) dailyProgress.style.width = `${Math.round((score / total) * 100)}%`;
+
+      const zoneAStatus = qs("zoneAStatus");
+      const mindsetStatus = qs("mindsetStatus");
+      const outputStatus = qs("outputStatus");
+
+      if (zoneAStatus) zoneAStatus.textContent = training && sleepQuality >= 7 ? "Gesichert" : "Offen";
+      if (mindsetStatus) mindsetStatus.textContent = focusGoal && winnerMode && mood >= 7 ? "On" : "Mix";
+      if (outputStatus) outputStatus.textContent = deepWork >= 60 || tasksDone >= 3 || revenue > 0 ? "High" : "Low";
+
+      updateStreak(score, total);
+    }
+
+    function updateStreak(score, total) {
+      const date = getCurrentDate();
+      if (!date) return;
+
+      const key = "dailyStreakHistory";
+      const raw = localStorage.getItem(key);
+      const history = raw ? JSON.parse(raw) : {};
+
+      const completed = score >= Math.ceil(total * 0.8);
+      history[date] = completed;
+
+      const dates = Object.keys(history).sort();
+      const normalized = dates.reduce((acc, item) => {
+        acc[item] = history[item];
+        return acc;
+      }, {});
+
+      localStorage.setItem(key, JSON.stringify(normalized));
+
+      const { currentStreak, bestStreak } = calculateStreaks(normalized);
+      const streakValue = qs("streakValue");
+      const streakBest = qs("streakBest");
+      const streakState = qs("streakState");
+
+      if (streakValue) streakValue.textContent = String(currentStreak);
+      if (streakBest) streakBest.textContent = String(bestStreak);
+      if (streakState) streakState.textContent = completed ? "✓" : "✕";
+    }
+
+    function calculateStreaks(history) {
+      const dates = Object.keys(history).sort();
+      if (dates.length === 0) return { currentStreak: 0, bestStreak: 0 };
+
+      let best = 0;
+      let current = 0;
+      let temp = 0;
+
+      for (let i = 0; i < dates.length; i += 1) {
+        if (history[dates[i]]) {
+          temp += 1;
+          best = Math.max(best, temp);
+        } else {
+          temp = 0;
+        }
+      }
+
+      const today = dates[dates.length - 1];
+      if (history[today]) {
+        current = 1;
+        for (let i = dates.length - 2; i >= 0; i -= 1) {
+          const currentDate = new Date(dates[i]);
+          const nextDate = new Date(dates[i + 1]);
+          const diffDays = Math.round((nextDate - currentDate) / (1000 * 60 * 60 * 24));
+          if (diffDays === 1 && history[dates[i]]) {
+            current += 1;
+          } else {
+            break;
+          }
+        }
+      }
+
+      return { currentStreak: current, bestStreak: best };
     }
 
     qs("tabMorning").addEventListener("click", () => setTab("morning"));
@@ -532,7 +759,8 @@
     qs("entryDate").value = today;
     const stored = getStoredData()[today];
     if (stored) fillFormData(stored);
-
+    setupGamification();
+    updateDailyScore();
     initSupabase();
   </script>
 </body>
