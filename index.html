@@ -139,6 +139,7 @@
         <input type="number" id="kalorien" min="0" step="100" placeholder="2500" />
         <label>✅ Aufgaben erledigt</label>
         <input type="checkbox" id="aufgaben" /> erledigt
+          <input type="number" id="aufgaben" min="0" step="1" placeholder="0" />
         <label>📖 Journal</label>
         <input type="checkbox" id="journal" /> done
         <label>👨‍👩‍👧‍👦 Family Time</label>
@@ -199,6 +200,7 @@
           document.getElementById('protein').value = data.protein_gramm || '';
           document.getElementById('kalorien').value = data.kalorien || '';
           document.getElementById('aufgaben').checked = data.aufgaben || false;
+            document.getElementById('aufgaben').value = data.aufgaben || '';
           document.getElementById('journal').checked = data.journal || false;
           document.getElementById('family_time').checked = data.family_time || false;
           setStatus('✓ Daten geladen', 'ok');
@@ -271,7 +273,7 @@
           datum: datum,
           protein_gramm: parseInt(document.getElementById('protein').value) || null,
           kalorien: parseInt(document.getElementById('kalorien').value) || null,
-          aufgaben: document.getElementById('aufgaben').checked,
+          aufgaben: parseInt(document.getElementById('aufgaben').value) || null,
           journal: document.getElementById('journal').checked,
           family_time: document.getElementById('family_time').checked
         };
