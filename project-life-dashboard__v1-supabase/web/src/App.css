@@ -101,6 +101,165 @@
   font-weight: 700;
 }
 
+.overview-btn {
+  background: rgba(157, 167, 255, 0.15);
+  border: 1px solid rgba(157, 167, 255, 0.3);
+  color: #9da7ff;
+  padding: 0.6rem 1.2rem;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.overview-btn:hover {
+  background: rgba(157, 167, 255, 0.25);
+  border-color: #9da7ff;
+}
+
+.overview-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.overview-header {
+  text-align: center;
+  padding: 1rem 0;
+}
+
+.overview-header h2 {
+  margin: 0;
+  font-size: 2rem;
+  color: #9da7ff;
+}
+
+.overview-subtitle {
+  margin: 0.5rem 0 0;
+  color: #9fa4b5;
+  font-size: 0.95rem;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1.25rem;
+}
+
+.overview-card {
+  background: rgba(16, 19, 33, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  padding: 1.5rem;
+  cursor: pointer;
+  transition: all 0.3s;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.overview-card:hover {
+  background: rgba(20, 23, 40, 0.95);
+  border-color: rgba(157, 167, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+.overview-card.today {
+  border-color: rgba(108, 255, 213, 0.4);
+  background: rgba(20, 30, 28, 0.9);
+}
+
+.overview-card.has-data {
+  border-color: rgba(157, 167, 255, 0.2);
+}
+
+.overview-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.overview-date {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.overview-day-name {
+  font-size: 0.85rem;
+  color: #9da7ff;
+  text-transform: capitalize;
+  font-weight: 600;
+}
+
+.overview-day-num {
+  font-size: 1.1rem;
+  color: #fff;
+  font-weight: 500;
+}
+
+.today-badge {
+  background: rgba(108, 255, 213, 0.2);
+  color: #5affc6;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.progress-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.progress-bar-bg {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 999px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  background: linear-gradient(90deg, #9da7ff 0%, #5affc6 100%);
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.5s ease;
+}
+
+.progress-text {
+  font-size: 0.85rem;
+  color: #9fa4b5;
+  text-align: center;
+}
+
+.overview-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.detail-item {
+  font-size: 0.85rem;
+  color: #c4c9ff;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.no-data-text {
+  text-align: center;
+  color: rgba(159, 164, 181, 0.5);
+  font-size: 0.9rem;
+  font-style: italic;
+  padding: 1rem 0;
+}
+
 .status-loading,
 .status-syncing {
   background: rgba(255, 214, 102, 0.15);

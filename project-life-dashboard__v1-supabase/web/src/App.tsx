@@ -71,6 +71,8 @@ function App() {
   const [entry, setEntry] = useState<DashboardEntry>(() => createDefaultEntry(getToday()))
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('loading')
   const [availableDates] = useState<string[]>(getPastDays(7))
+  const [allEntries, setAllEntries] = useState<DashboardEntry[]>([])
+  const [showOverview, setShowOverview] = useState(false)
 
   const moodOptions = ['😊 Motiviert', '🙂 Gut', '😐 Neutral', '😔 Müde', '😤 Gestresst']
   const sleepQualityOptions = ['Sehr schlecht', 'Schlecht', 'Okay', 'Gut', 'Sehr gut']
@@ -176,6 +178,22 @@ function App() {
   }, [selectedDate])
 
   useEffect(() => {
+    const loadAllEntries = async () => {
+      try {
+        const response = await fetch(API_URL)
+        const result = await response.json()
+        if (result.data) {
+          setAllEntries(result.data)
+        }
+      } catch (error) {
+        console.error('Load all entries error:', error)
+      }
+    }
+    
+    loadAllEntries()
+  }, [syncStatus])
+
+  useEffect(() => {
     if (syncStatus === 'loading') return
     
     const handler = window.setTimeout(async () => {
@@ -277,6 +295,19 @@ function App() {
     )
   }
 
+  const calculateTaskProgress = (entry: DashboardEntry) => {
+    const tasks = [
+      entry.coldShower, entry.proteinShake,
+      entry.pushupsDone, entry.squatsDone, entry.wallsitDone, entry.plankDone,
+      entry.gratitudeDone, entry.focusDone, entry.winnerModeDone,
+      entry.journalDone, entry.familyTimeDone
+    ]
+    const completed = tasks.filter(Boolean).length
+    const total = tasks.length
+    const percentage = Math.round((completed / total) * 100)
+    return { completed, total, percentage }
+  }
+
   return (
     <div className="app">
       <header className="topbar">
@@ -285,16 +316,97 @@ function App() {
           <h1>PROJECT LIFE DASHBOARD</h1>
           <p className="subtle">✓ Online Speicherung</p>
         </div>
-        <div className={`status-pill status-${syncStatus}`}>
-          {syncStatus === 'loading' && '⏳ Lade...'}
-          {syncStatus === 'syncing' && '💾 Speichere...'}
-          {syncStatus === 'synced' && '✅ Gespeichert'}
-          {syncStatus === 'error' && '⚠️ Fehler'}
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          <button 
+            className="overview-btn"
+            onClick={() => setShowOverview(!showOverview)}
+          >
+            {showOverview ? '📝 Dashboard' : '📊 Übersicht'}
+          </button>
+          <div className={`status-pill status-${syncStatus}`}>
+            {syncStatus === 'loading' && '⏳ Lade...'}
+            {syncStatus === 'syncing' && '💾 Speichere...'}
+            {syncStatus === 'synced' && '✅ Gespeichert'}
+            {syncStatus === 'error' && '⚠️ Fehler'}
+          </div>
         </div>
       </header>
 
-      <nav className="date-tabs">
-        {availableDates.map((date) => {
+      {showOverview ? (
+        <section className="overview-section">
+          <div className="overview-header">
+            <h2>Tagesübersicht</h2>
+            <p className="overview-subtitle">{allEntries.length} Tage erfasst</p>
+          </div>
+          
+          <div className="overview-grid">
+            {availableDates.map((date) => {
+              const dayEntry = allEntries.find(e => e.date === date) || createDefaultEntry(date)
+              const progress = calculateTaskProgress(dayEntry)
+              const dateObj = new Date(date + 'T12:00:00')
+              const dayName = dateObj.toLocaleDateString('de-DE', { weekday: 'long' })
+              const dayNum = dateObj.getDate()
+              const monthName = dateObj.toLocaleDateString('de-DE', { month: 'long' })
+              const isToday = date === getToday()
+              const hasData = progress.completed > 0
+
+              return (
+                <div 
+                  key={date}
+                  className={`overview-card ${isToday ? 'today' : ''} ${hasData ? 'has-data' : ''}`}
+                  onClick={() => {
+                    setSelectedDate(date)
+                    setShowOverview(false)
+                  }}
+                >
+                  <div className="overview-card-header">
+                    <div className="overview-date">
+                      <span className="overview-day-name">{dayName}</span>
+                      <span className="overview-day-num">{dayNum}. {monthName}</span>
+                    </div>
+                    {isToday && <span className="today-badge">Heute</span>}
+                  </div>
+
+                  <div className="progress-section">
+                    <div className="progress-bar-bg">
+                      <div 
+                        className="progress-bar-fill"
+                        style={{ width: `${progress.percentage}%` }}
+                      />
+                    </div>
+                    <div className="progress-text">
+                      {progress.completed} / {progress.total} Tasks ({progress.percentage}%)
+                    </div>
+                  </div>
+
+                  {hasData && (
+                    <div className="overview-details">
+                      {dayEntry.mood && <div className="detail-item">🎭 {dayEntry.mood}</div>}
+                      {dayEntry.sleepQuality > 0 && (
+                        <div className="detail-item">
+                          😴 {sleepQualityOptions[dayEntry.sleepQuality - 1]}
+                        </div>
+                      )}
+                      {dayEntry.proteinGrams > 0 && (
+                        <div className="detail-item">🍖 {dayEntry.proteinGrams}g Protein</div>
+                      )}
+                      {dayEntry.calories > 0 && (
+                        <div className="detail-item">🔥 {dayEntry.calories} kcal</div>
+                      )}
+                    </div>
+                  )}
+
+                  {!hasData && (
+                    <div className="no-data-text">Noch keine Daten</div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      ) : (
+        <>
+          <nav className="date-tabs">{availableDates.map((date) => {
           const dateObj = new Date(date + 'T12:00:00')
           const dayName = dateObj.toLocaleDateString('de-DE', { weekday: 'short' })
           const dayNum = dateObj.getDate()
@@ -340,6 +452,8 @@ function App() {
         </div>
         <div className="metric-grid">{eveningRoutine.map(renderField)}</div>
       </section>
+      </>
+      )}
     </div>
   )
 }
