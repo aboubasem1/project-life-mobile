@@ -80,13 +80,16 @@ function App() {
   const saveTimeoutRef = useRef<number | null>(null)
   const lastSavedEntryRef = useRef<string>('')
   
-  // Stelle sicher, dass selectedDate auf heute springt, wenn sich das Datum ändert
+  // Timer: Prüfe jede Minute, ob sich das Datum geändert hat, und setze selectedDate auf heute
   useEffect(() => {
-    const currentDate = getToday()
-    if (selectedDate !== currentDate && !availableDates.includes(selectedDate)) {
-      setSelectedDate(currentDate)
-    }
-  }, [])
+    const interval = setInterval(() => {
+      const currentDate = getToday()
+      if (selectedDate !== currentDate) {
+        setSelectedDate(currentDate)
+      }
+    }, 60 * 1000) // jede Minute
+    return () => clearInterval(interval)
+  }, [selectedDate])
 
   const moodOptions = ['😊 Motiviert', '🙂 Gut', '😐 Neutral', '😔 Müde', '😤 Gestresst']
   const sleepQualityOptions = ['Sehr schlecht', 'Schlecht', 'Okay', 'Gut', 'Sehr gut']
