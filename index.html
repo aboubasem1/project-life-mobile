@@ -526,20 +526,28 @@
         return;
       }
 
+      // Speichere Config ZUERST
       saveConfig(url, key);
+      console.log("Config gespeichert:", { url, keyLength: key.length });
+      
+      // Dann initialisiere Supabase
       const success = initSupabase();
       
       if (success) {
-        showStatus("✓ Konfiguration gespeichert & verbunden!");
         // Teste Verbindung
         try {
+          updateSyncStatus("syncing", "Teste Verbindung...");
           await supabase.from("daily_entries").select("datum").limit(1);
           updateSyncStatus("synced", "✓ Verbunden");
           showStatus("✓ Supabase-Verbindung erfolgreich!");
+          
+          // Lade Daten für heute
+          const today = todayISO();
+          await fillForm(today);
         } catch (err) {
+          console.error("Verbindungsfehler:", err);
           updateSyncStatus("offline", "Verbindungsfehler");
-          showStatus("❌ Verbindung fehlgeschlagen - prüfe deine Keys");
-          return;
+          showStatus("❌ Verbindung fehlgeschlagen: " + err.message);
         }
       } else {
         showStatus("❌ Konfiguration fehlgeschlagen");
