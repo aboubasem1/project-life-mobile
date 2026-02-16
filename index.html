@@ -80,6 +80,26 @@
         <label>📅 Datum</label>
         <input type="date" id="datum" />
         
+        <label>😊 Stimmung beim Aufwachen</label>
+        <select id="stimmung" style="width: 100%; padding: 12px; background: #0f1218; border: 1px solid #2a2f3a; border-radius: 8px; color: #e8e8ea; font-size: 14px; margin-bottom: 12px;">
+          <option value="">-- Auswählen --</option>
+          <option value="sehr_gut">😄 Sehr gut</option>
+          <option value="gut">🙂 Gut</option>
+          <option value="neutral">😐 Neutral</option>
+          <option value="schlecht">😕 Schlecht</option>
+          <option value="sehr_schlecht">😞 Sehr schlecht</option>
+        </select>
+        
+        <label>😴 Schlafqualität</label>
+        <select id="schlaf" style="width: 100%; padding: 12px; background: #0f1218; border: 1px solid #2a2f3a; border-radius: 8px; color: #e8e8ea; font-size: 14px; margin-bottom: 12px;">
+          <option value="">-- Auswählen --</option>
+          <option value="sehr_gut">⭐⭐⭐⭐⭐ Sehr gut</option>
+          <option value="gut">⭐⭐⭐⭐ Gut</option>
+          <option value="ok">⭐⭐⭐ OK</option>
+          <option value="schlecht">⭐⭐ Schlecht</option>
+          <option value="sehr_schlecht">⭐ Sehr schlecht</option>
+        </select>
+        
         <label>🧘 Meditation (Min)</label>
         <input type="number" id="meditation" min="0" step="5" placeholder="15" />
         
@@ -89,38 +109,17 @@
         <label>🥤 Protein Shake</label>
         <input type="checkbox" id="protein_shake" /> Getrunken
         
-        <label>🎯 Deep Work Session 1 (Min)</label>
-        <input type="number" id="deep_work_1" min="0" step="15" placeholder="60" />
-        
-        <label>🎯 Deep Work Session 2 (Min)</label>
-        <input type="number" id="deep_work_2" min="0" step="15" placeholder="60" />
-        
         <button class="btn-success" onclick="saveMorgen()">💾 Morgen speichern</button>
       </div>
 
       <div class="card">
         <h3>🌙 Abend Routine</h3>
         
-        <label>💪 Training</label>
-        <input type="checkbox" id="training" /> Erledigt
-        
-        <label>🚶 Schritte</label>
-        <input type="number" id="schritte" min="0" step="100" placeholder="10000" />
-        
         <label>🍖 Protein (g)</label>
         <input type="number" id="protein" min="0" step="10" placeholder="150" />
         
-        <label>📱 Bildschirmzeit (Min)</label>
-        <input type="number" id="bildschirm" min="0" step="15" placeholder="120" />
-        
-        <label>💧 Wasser (L)</label>
-        <input type="number" id="wasser" min="0" step="0.5" placeholder="3.0" />
-        
-        <label>📖 Journal</label>
-        <input type="checkbox" id="journal" /> Geschrieben
-        
-        <label>📚 Gelesen (Min)</label>
-        <input type="number" id="reading" min="0" step="10" placeholder="30" />
+        <label>🔥 Kalorien</label>
+        <input type="number" id="kalorien" min="0" step="100" placeholder="2500" />
         
         <button class="btn-success" onclick="saveAbend()">💾 Abend speichern</button>
       </div>
@@ -164,20 +163,15 @@
         
         if (data) {
           // Morgen Daten
+          document.getElementById('stimmung').value = data.stimmung || '';
+          document.getElementById('schlaf').value = data.schlafqualitaet || '';
           document.getElementById('meditation').value = data.meditation_min || '';
           document.getElementById('cold_shower').checked = data.cold_shower || false;
           document.getElementById('protein_shake').checked = data.protein_shake || false;
-          document.getElementById('deep_work_1').value = data.deep_work_1_min || '';
-          document.getElementById('deep_work_2').value = data.deep_work_2_min || '';
           
           // Abend Daten
-          document.getElementById('training').checked = data.training || false;
-          document.getElementById('schritte').value = data.schritte || '';
           document.getElementById('protein').value = data.protein_gramm || '';
-          document.getElementById('bildschirm').value = data.bildschirmzeit_min || '';
-          document.getElementById('wasser').value = data.wasser_liter || '';
-          document.getElementById('journal').checked = data.journal || false;
-          document.getElementById('reading').value = data.reading_min || '';
+          document.getElementById('kalorien').value = data.kalorien || '';
           
           setStatus('✓ Daten geladen', 'ok');
         } else {
@@ -206,11 +200,11 @@
         
         const updates = {
           datum: datum,
+          stimmung: document.getElementById('stimmung').value || null,
+          schlafqualitaet: document.getElementById('schlaf').value || null,
           meditation_min: parseInt(document.getElementById('meditation').value) || null,
           cold_shower: document.getElementById('cold_shower').checked,
-          protein_shake: document.getElementById('protein_shake').checked,
-          deep_work_1_min: parseInt(document.getElementById('deep_work_1').value) || null,
-          deep_work_2_min: parseInt(document.getElementById('deep_work_2').value) || null
+          protein_shake: document.getElementById('protein_shake').checked
         };
         
         const { error } = await supabase
@@ -242,13 +236,8 @@
         
         const updates = {
           datum: datum,
-          training: document.getElementById('training').checked,
-          schritte: parseInt(document.getElementById('schritte').value) || null,
           protein_gramm: parseInt(document.getElementById('protein').value) || null,
-          bildschirmzeit_min: parseInt(document.getElementById('bildschirm').value) || null,
-          wasser_liter: parseFloat(document.getElementById('wasser').value) || null,
-          journal: document.getElementById('journal').checked,
-          reading_min: parseInt(document.getElementById('reading').value) || null
+          kalorien: parseInt(document.getElementById('kalorien').value) || null
         };
         
         const { error } = await supabase
