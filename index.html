@@ -145,6 +145,9 @@
       <span id="syncIcon">⚙️</span>
       <span id="syncText">Initialisiere...</span>
     </div>
+    <button class="btn-ghost" id="showConfig" style="margin-top: 8px; padding: 6px 10px; font-size: 11px; display: none;">
+      ⚙️ Konfiguration bearbeiten
+    </button>
   </header>
 
   <div class="container">
@@ -316,6 +319,12 @@
       else if (status === "syncing") iconEl.textContent = "⟳";
       else if (status === "offline") iconEl.textContent = "⚠";
       else iconEl.textContent = "⚙️";
+      
+      // Verstecke Config-Karte wenn verbunden, zeige Edit-Button
+      if (status === "synced" && syncEnabled) {
+        el("configCard").style.display = "none";
+        el("showConfig").style.display = "block";
+      }
     };
 
     const loadConfig = () => {
@@ -508,7 +517,7 @@
     el("tabMorning").addEventListener("click", () => setTab("morning"));
     el("tabEvening").addEventListener("click", () => setTab("evening"));
 
-    el("saveConfig").addEventListener("click", () => {
+    el("saveConfig").addEventListener("click", async () => {
       const url = el("supabaseUrl").value.trim();
       const key = el("supabaseKey").value.trim();
       
@@ -518,8 +527,23 @@
       }
 
       saveConfig(url, key);
-      initSupabase();
-      showStatus("✓ Konfiguration gespeichert");
+      const success = initSupabase();
+      
+      if (success) {
+        showStatus("✓ Konfiguration gespeichert & verbunden!");
+        // Teste Verbindung
+        try {
+          await supabase.from("daily_entries").select("datum").limit(1);
+          updateSyncStatus("synced", "✓ Verbunden");
+          showStatus("✓ Supabase-Verbindung erfolgreich!");
+        } catch (err) {
+          updateSyncStatus("offline", "Verbindungsfehler");
+          showStatus("❌ Verbindung fehlgeschlagen - prüfe deine Keys");
+          return;
+        }
+      } else {
+        showStatus("❌ Konfiguration fehlgeschlagen");
+      }
     });
 
     el("saveMorning").addEventListener("click", async () => {
@@ -543,6 +567,11 @@
     });
 
     el("entryDate").addEventListener("change", (e) => fillForm(e.target.value));
+
+    el("showConfig").addEventListener("click", () => {
+      el("configCard").style.display = "block";
+      el("showConfig").style.display = "none";
+    });
 
     const init = () => {
       const config = loadConfig();
