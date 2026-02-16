@@ -67,16 +67,26 @@ const createDefaultEntry = (date: string): DashboardEntry => ({
 })
 
 function App() {
-  const [selectedDate, setSelectedDate] = useState<string>(getToday())
-  const [entry, setEntry] = useState<DashboardEntry>(() => createDefaultEntry(getToday()))
+  // Aktuelles Datum wird bei jedem Render neu berechnet
+  const today = getToday()
+  const [selectedDate, setSelectedDate] = useState<string>(today)
+  const [entry, setEntry] = useState<DashboardEntry>(() => createDefaultEntry(today))
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('loading')
   const [allEntries, setAllEntries] = useState<DashboardEntry[]>([])
   const [showOverview, setShowOverview] = useState(false)
 
-  // Dynamisch aktualisierte Datumsliste - aktualisiert sich täglich
-  const availableDates = useMemo(() => getPastDays(7), [])
+  // Dynamisch aktualisierte Datumsliste - immer aktuelle Tage
+  const availableDates = getPastDays(7)
   const saveTimeoutRef = useRef<number | null>(null)
   const lastSavedEntryRef = useRef<string>('')
+  
+  // Stelle sicher, dass selectedDate auf heute springt, wenn sich das Datum ändert
+  useEffect(() => {
+    const currentDate = getToday()
+    if (selectedDate !== currentDate && !availableDates.includes(selectedDate)) {
+      setSelectedDate(currentDate)
+    }
+  }, [])
 
   const moodOptions = ['😊 Motiviert', '🙂 Gut', '😐 Neutral', '😔 Müde', '😤 Gestresst']
   const sleepQualityOptions = ['Sehr schlecht', 'Schlecht', 'Okay', 'Gut', 'Sehr gut']
