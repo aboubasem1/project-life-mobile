@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Project Life – Mobile (Supabase)</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --card: #171a21;
+      --text: #e8e8ea;
+      --muted: #a9b0bb;
+      --accent: #4f8cff;
+      --accent-2: #2ecc71;
+      --danger: #ff6b6b;
+      --border: #2a2f3a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      padding: 16px 16px 8px;
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      z-index: 2;
+    }
+    h1 { margin: 0 0 8px; font-size: 20px; }
+    .muted { color: var(--muted); font-size: 12px; }
+    .sync-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      margin-top: 4px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: #0f1218;
+    }
+    .sync-status.synced { color: var(--accent-2); }
+    .sync-status.syncing { color: var(--accent); }
+    .sync-status.offline { color: var(--danger); }
+    .container { padding: 12px 16px 80px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    input, textarea, select {
+      width: 100%;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #0f1218;
+      color: var(--text);
+      font-size: 14px;
+    }
+    textarea { min-height: 70px; resize: vertical; }
+    .row { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .row-3 { display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #0f1218;
+      border: 1px solid var(--border);
+      padding: 10px;
+      border-radius: 10px;
+      font-size: 14px;
+    }
+    .toggle input { width: auto; }
+    .tabs {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .tab {
+      padding: 10px;
+      text-align: center;
+      border-radius: 10px;
+      background: #0f1218;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      cursor: pointer;
+      user-select: none;
+    }
+    .tab.active {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+    .actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    button {
+      border: 0;
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-success { background: var(--accent-2); color: #0b1a10; }
+    .btn-danger { background: var(--danger); color: #2b0f0f; }
+    .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .footer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+      padding: 10px 16px;
+    }
+    .tiny { font-size: 11px; color: var(--muted); margin-top: 6px; }
+    .config-card {
+      background: #1a1d27;
+      border: 2px dashed var(--accent);
+      padding: 12px;
+      border-radius: 12px;
+      margin-bottom: 12px;
+    }
+    .config-card h3 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Project Life – Mobile</h1>
+    <div class="muted">Automatische Sync mit Supabase</div>
+    <div class="sync-status" id="syncStatus">
+      <span id="syncIcon">⚙️</span>
+      <span id="syncText">Initialisiere...</span>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Supabase Config -->
+    <div class="config-card" id="configCard">
+      <h3>⚙️ Supabase Konfiguration</h3>
+      <label>Supabase URL</label>
+      <input type="text" id="supabaseUrl" placeholder="https://xxxxx.supabase.co" />
+      <label style="margin-top: 8px;">Supabase Anon Key</label>
+      <input type="text" id="supabaseKey" placeholder="eyJhbGc..." />
+      <button class="btn-success" id="saveConfig" style="margin-top: 10px; width: 100%;">
+        Konfiguration speichern
+      </button>
+      <div class="tiny">Diese Werte findest du in deinem Supabase-Projekt unter Settings → API.</div>
+    </div>
+
+    <div class="card">
+      <label>Datum</label>
+      <input type="date" id="entryDate" />
+      <div class="tiny">Tipp: morgens und abends am gleichen Datum speichern.</div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" id="tabMorning">Morgens</div>
+      <div class="tab" id="tabEvening">Abends</div>
+    </div>
+
+    <div id="morningSection">
+      <div class="card">
+        <div class="toggle">
+          <span>Training gemacht</span>
+          <input type="checkbox" id="am_training" />
+        </div>
+      </div>
+
+      <div class="card row">
+        <div>
+          <label>Schlafstunden</label>
+          <input type="number" id="am_sleep_hours" step="0.25" min="0" max="24" />
+        </div>
+        <div>
+          <label>Schlafqualität (1–10)</label>
+          <input type="number" id="am_sleep_quality_1_10" min="1" max="10" />
+        </div>
+      </div>
+
+      <div class="card row">
+        <div>
+          <label>Stimmung (1–10)</label>
+          <input type="number" id="am_mood_1_10" min="1" max="10" />
+        </div>
+        <div>
+          <label>Gewicht (kg)</label>
+          <input type="number" id="am_weight_kg" step="0.1" min="0" />
+        </div>
+      </div>
+
+      <div class="card">
+        <label>Fokus-Ziel (1 Satz)</label>
+        <input type="text" id="am_focus_goal" placeholder="Heute zählt: ..." />
+      </div>
+
+      <div class="card row">
+        <div class="toggle">
+          <span>Winner Mode gemacht</span>
+          <input type="checkbox" id="am_winner_mode" />
+        </div>
+        <div class="toggle">
+          <span>Körper-Move gemacht</span>
+          <input type="checkbox" id="am_body_move" />
+        </div>
+      </div>
+    </div>
+
+    <div id="eveningSection" style="display:none;">
+      <div class="card">
+        <div class="toggle">
+          <span>Training gemacht</span>
+          <input type="checkbox" id="pm_training" />
+        </div>
+      </div>
+
+      <div class="card row">
+        <div>
+          <label>Schlafstunden</label>
+          <input type="number" id="pm_sleep_hours" step="0.25" min="0" max="24" />
+        </div>
+        <div>
+          <label>Schlafqualität (1–10)</label>
+          <input type="number" id="pm_sleep_quality_1_10" min="1" max="10" />
+        </div>
+      </div>
+
+      <div class="card row">
+        <div>
+          <label>Stimmung (1–10)</label>
+          <input type="number" id="pm_mood_1_10" min="1" max="10" />
+        </div>
+        <div>
+          <label>Gewicht (kg)</label>
+          <input type="number" id="pm_weight_kg" step="0.1" min="0" />
+        </div>
+      </div>
+
+      <div class="card row">
+        <div>
+          <label>Disziplin (1–10)</label>
+          <input type="number" id="pm_discipline_1_10" min="1" max="10" />
+        </div>
+        <div>
+          <label>Aufgaben erledigt</label>
+          <input type="number" id="tasks_done" min="0" max="200" />
+        </div>
+      </div>
+
+      <div class="card row">
+        <div>
+          <label>Deep Work (Min)</label>
+          <input type="number" id="deep_work_minutes" min="0" max="1440" step="15" />
+        </div>
+        <div>
+          <label>Umsatz (EUR)</label>
+          <input type="number" id="revenue_eur" min="0" step="10" />
+        </div>
+      </div>
+
+      <div class="card">
+        <label>Notiz (optional)</label>
+        <textarea id="notes"></textarea>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="actions">
+        <button class="btn-primary" id="saveMorning">Morgen speichern</button>
+        <button class="btn-primary" id="saveEvening">Abend speichern</button>
+      </div>
+      <div class="tiny" id="status"></div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="muted">Daten werden automatisch mit Supabase synchronisiert.</div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const CONFIG_KEY = "projectLifeSupabaseConfig";
+    const el = (id) => document.getElementById(id);
+
+    let supabase = null;
+    let syncEnabled = false;
+
+    const state = {
+      activeTab: "morning"
+    };
+
+    const todayISO = () => new Date().toISOString().slice(0, 10);
+
+    const updateSyncStatus = (status, text) => {
+      const statusEl = el("syncStatus");
+      const iconEl = el("syncIcon");
+      const textEl = el("syncText");
+      
+      statusEl.className = `sync-status ${status}`;
+      textEl.textContent = text;
+      
+      if (status === "synced") iconEl.textContent = "✓";
+      else if (status === "syncing") iconEl.textContent = "⟳";
+      else if (status === "offline") iconEl.textContent = "⚠";
+      else iconEl.textContent = "⚙️";
+    };
+
+    const loadConfig = () => {
+      const raw = localStorage.getItem(CONFIG_KEY);
+      return raw ? JSON.parse(raw) : null;
+    };
+
+    const saveConfig = (url, key) => {
+      localStorage.setItem(CONFIG_KEY, JSON.stringify({ url, key }));
+    };
+
+    const initSupabase = () => {
+      const config = loadConfig();
+      if (!config || !config.url || !config.key) {
+        updateSyncStatus("offline", "Nicht konfiguriert");
+        el("configCard").style.display = "block";
+        syncEnabled = false;
+        return false;
+      }
+
+      try {
+        supabase = supabase_js.createClient(config.url, config.key);
+        syncEnabled = true;
+        el("configCard").style.display = "none";
+        updateSyncStatus("synced", "Verbunden");
+        return true;
+      } catch (err) {
+        console.error("Supabase init error:", err);
+        updateSyncStatus("offline", "Verbindungsfehler");
+        syncEnabled = false;
+        return false;
+      }
+    };
+
+    const fetchEntry = async (date) => {
+      if (!syncEnabled) return null;
+      
+      try {
+        updateSyncStatus("syncing", "Lädt...");
+        const { data, error } = await supabase
+          .from("daily_entries")
+          .select("*")
+          .eq("datum", date)
+          .single();
+        
+        if (error && error.code !== "PGRST116") {
+          console.error("Fetch error:", error);
+          updateSyncStatus("offline", "Fehler");
+          return null;
+        }
+        
+        updateSyncStatus("synced", "Aktuell");
+        return data;
+      } catch (err) {
+        console.error("Fetch exception:", err);
+        updateSyncStatus("offline", "Offline");
+        return null;
+      }
+    };
+
+    const upsertEntry = async (date, updates) => {
+      if (!syncEnabled) {
+        showStatus("❌ Supabase nicht konfiguriert");
+        return false;
+      }
+
+      try {
+        updateSyncStatus("syncing", "Speichert...");
+        
+        // Konvertiere Werte
+        const payload = {
+          datum: date,
+          aufgestanden: updates.am_sleep_hours ? null : updates.aufgestanden,
+          meditation_min: updates.meditation_min ? parseInt(updates.meditation_min) : null,
+          cold_shower: updates.cold_shower === 1 || updates.cold_shower === true,
+          protein_shake: updates.protein_shake === 1 || updates.protein_shake === true,
+          deep_work_1_min: updates.deep_work_1_min ? parseInt(updates.deep_work_1_min) : null,
+          deep_work_2_min: updates.deep_work_2_min ? parseInt(updates.deep_work_2_min) : null,
+          training: (updates.am_training === 1 || updates.pm_training === 1) ? true : null,
+          schritte: updates.schritte ? parseInt(updates.schritte) : null,
+          protein_gramm: updates.protein_gramm ? parseInt(updates.protein_gramm) : null,
+          schlafen_gegangen: updates.pm_sleep_hours ? null : updates.schlafen_gegangen,
+          bildschirmzeit_min: updates.bildschirmzeit_min ? parseInt(updates.bildschirmzeit_min) : null,
+          wasser_liter: updates.wasser_liter ? parseFloat(updates.wasser_liter) : null,
+          journal: updates.journal === 1 || updates.journal === true,
+          reading_min: updates.reading_min ? parseInt(updates.reading_min) : null
+        };
+
+        // Entferne undefined/null Werte für partial update
+        Object.keys(payload).forEach(key => {
+          if (payload[key] === null || payload[key] === undefined || payload[key] === "") {
+            delete payload[key];
+          }
+        });
+
+        const { data, error } = await supabase
+          .from("daily_entries")
+          .upsert(payload, { onConflict: "datum" })
+          .select()
+          .single();
+
+        if (error) {
+          console.error("Upsert error:", error);
+          updateSyncStatus("offline", "Fehler beim Speichern");
+          return false;
+        }
+
+        updateSyncStatus("synced", "Gespeichert");
+        return true;
+      } catch (err) {
+        console.error("Upsert exception:", err);
+        updateSyncStatus("offline", "Speichern fehlgeschlagen");
+        return false;
+      }
+    };
+
+    const fillForm = async (date) => {
+      const entry = await fetchEntry(date);
+      if (!entry) return;
+
+      const setValue = (id, value) => {
+        const input = el(id);
+        if (!input) return;
+        if (input.type === "checkbox") {
+          input.checked = Boolean(value);
+        } else {
+          input.value = value ?? "";
+        }
+      };
+
+      // Mapping von DB zu Form
+      setValue("am_training", entry.training);
+      setValue("am_sleep_hours", entry.am_sleep_hours);
+      setValue("am_sleep_quality_1_10", entry.am_sleep_quality_1_10);
+      setValue("am_mood_1_10", entry.am_mood_1_10);
+      setValue("am_weight_kg", entry.am_weight_kg);
+      setValue("am_focus_goal", entry.am_focus_goal);
+      setValue("am_winner_mode", entry.am_winner_mode);
+      setValue("am_body_move", entry.am_body_move);
+      
+      setValue("pm_training", entry.training);
+      setValue("pm_sleep_hours", entry.pm_sleep_hours);
+      setValue("pm_sleep_quality_1_10", entry.pm_sleep_quality_1_10);
+      setValue("pm_mood_1_10", entry.pm_mood_1_10);
+      setValue("pm_weight_kg", entry.pm_weight_kg);
+      setValue("pm_discipline_1_10", entry.pm_discipline_1_10);
+      setValue("tasks_done", entry.tasks_done);
+      setValue("deep_work_minutes", entry.deep_work_1_min);
+      setValue("revenue_eur", entry.revenue_eur);
+      setValue("notes", entry.notes);
+    };
+
+    const collectMorning = () => ({
+      am_training: el("am_training").checked ? 1 : 0,
+      am_sleep_hours: el("am_sleep_hours").value || null,
+      am_sleep_quality_1_10: el("am_sleep_quality_1_10").value || null,
+      am_mood_1_10: el("am_mood_1_10").value || null,
+      am_weight_kg: el("am_weight_kg").value || null,
+      am_focus_goal: el("am_focus_goal").value || "",
+      am_winner_mode: el("am_winner_mode").checked ? 1 : 0,
+      am_body_move: el("am_body_move").checked ? 1 : 0
+    });
+
+    const collectEvening = () => ({
+      pm_training: el("pm_training").checked ? 1 : 0,
+      pm_sleep_hours: el("pm_sleep_hours").value || null,
+      pm_sleep_quality_1_10: el("pm_sleep_quality_1_10").value || null,
+      pm_mood_1_10: el("pm_mood_1_10").value || null,
+      pm_weight_kg: el("pm_weight_kg").value || null,
+      pm_discipline_1_10: el("pm_discipline_1_10").value || null,
+      tasks_done: el("tasks_done").value || null,
+      deep_work_1_min: el("deep_work_minutes").value || null,
+      revenue_eur: el("revenue_eur").value || null,
+      notes: el("notes").value || ""
+    });
+
+    const showStatus = (msg) => {
+      el("status").textContent = msg;
+      setTimeout(() => (el("status").textContent = ""), 3000);
+    };
+
+    const setTab = (tab) => {
+      state.activeTab = tab;
+      el("tabMorning").classList.toggle("active", tab === "morning");
+      el("tabEvening").classList.toggle("active", tab === "evening");
+      el("morningSection").style.display = tab === "morning" ? "block" : "none";
+      el("eveningSection").style.display = tab === "evening" ? "block" : "none";
+    };
+
+    el("tabMorning").addEventListener("click", () => setTab("morning"));
+    el("tabEvening").addEventListener("click", () => setTab("evening"));
+
+    el("saveConfig").addEventListener("click", () => {
+      const url = el("supabaseUrl").value.trim();
+      const key = el("supabaseKey").value.trim();
+      
+      if (!url || !key) {
+        showStatus("❌ Bitte beide Felder ausfüllen");
+        return;
+      }
+
+      saveConfig(url, key);
+      initSupabase();
+      showStatus("✓ Konfiguration gespeichert");
+    });
+
+    el("saveMorning").addEventListener("click", async () => {
+      const date = el("entryDate").value;
+      if (!date) return showStatus("Bitte Datum wählen.");
+      
+      const success = await upsertEntry(date, collectMorning());
+      if (success) {
+        showStatus("✓ Morgen gespeichert & synchronisiert");
+      }
+    });
+
+    el("saveEvening").addEventListener("click", async () => {
+      const date = el("entryDate").value;
+      if (!date) return showStatus("Bitte Datum wählen.");
+      
+      const success = await upsertEntry(date, collectEvening());
+      if (success) {
+        showStatus("✓ Abend gespeichert & synchronisiert");
+      }
+    });
+
+    el("entryDate").addEventListener("change", (e) => fillForm(e.target.value));
+
+    const init = () => {
+      const config = loadConfig();
+      if (config) {
+        el("supabaseUrl").value = config.url;
+        el("supabaseKey").value = config.key;
+      }
+
+      initSupabase();
+      el("entryDate").value = todayISO();
+      if (syncEnabled) {
+        fillForm(todayISO());
+      }
+    };
+
+    init();
+  </script>
+</body>
+</html>
