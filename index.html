@@ -108,11 +108,14 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
+    console.log('🚀 Script lädt...');
     let supabase = null;
     const statusEl = document.getElementById('status');
     
     // Beim Laden: Prüfe ob Config vorhanden
     window.addEventListener('DOMContentLoaded', () => {
+      console.log('✅ DOMContentLoaded');
+      alert('✅ Seite geladen! Supabase: ' + (typeof window.supabase !== 'undefined' ? 'JA' : 'NEIN'));
       const saved = localStorage.getItem('supabaseConfig');
       if (saved) {
         const config = JSON.parse(saved);
@@ -148,8 +151,14 @@
     }
     
     async function connectSupabase() {
+      console.log('🔵 connectSupabase() aufgerufen');
+      alert('🔵 connectSupabase() startet...');
+      
       const url = document.getElementById('url').value.trim();
       const key = document.getElementById('key').value.trim();
+      
+      console.log('URL:', url);
+      console.log('Key (first 20):', key.substring(0, 20));
       
       if (!url || !key) {
         alert('❌ Bitte beide Felder ausfüllen!');
@@ -158,15 +167,25 @@
       
       try {
         setStatus('Verbinde...', false);
+        alert('⏳ Erstelle Supabase Client...');
         
         // Erstelle Client
-        supabase = window.supabase_js.createClient(url, key);
+        console.log('Checking window.supabase:', typeof window.supabase);
+        supabase = window.supabase.createClient(url, key);
+        console.log('✅ Client erstellt:', supabase);
+        alert('✅ Client erstellt!');
+        console.log('✅ Client erstellt:', supabase);
+        alert('✅ Client erstellt!');
         
         // Teste Verbindung
+        alert('⏳ Teste Datenbankverbindung...');
         const { data, error } = await supabase
           .from('daily_entries')
           .select('datum')
           .limit(1);
+        
+        console.log('DB Response - Data:', data);
+        console.log('DB Response - Error:', error);
         
         if (error) {
           alert('❌ Datenbankfehler:\n' + error.message);
