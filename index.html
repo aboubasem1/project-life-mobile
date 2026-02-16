@@ -76,19 +76,53 @@
     <!-- App DIREKT SICHTBAR -->
     <div id="appSection">
       <div class="card">
-        <label>Datum</label>
+        <h3>🌅 Morgen Routine</h3>
+        <label>📅 Datum</label>
         <input type="date" id="datum" />
         
-        <label>Training?</label>
-        <input type="checkbox" id="training" /> Ja
+        <label>🧘 Meditation (Min)</label>
+        <input type="number" id="meditation" min="0" step="5" placeholder="15" />
         
-        <label>Meditation (Min)</label>
-        <input type="number" id="meditation" min="0" />
+        <label>🥶 Cold Shower</label>
+        <input type="checkbox" id="cold_shower" /> Erledigt
         
-        <label>Notizen</label>
-        <textarea id="notizen" rows="3"></textarea>
+        <label>🥤 Protein Shake</label>
+        <input type="checkbox" id="protein_shake" /> Getrunken
         
-        <button class="btn-success" onclick="saveDaten()">Daten speichern</button>
+        <label>🎯 Deep Work Session 1 (Min)</label>
+        <input type="number" id="deep_work_1" min="0" step="15" placeholder="60" />
+        
+        <label>🎯 Deep Work Session 2 (Min)</label>
+        <input type="number" id="deep_work_2" min="0" step="15" placeholder="60" />
+        
+        <button class="btn-success" onclick="saveMorgen()">💾 Morgen speichern</button>
+      </div>
+
+      <div class="card">
+        <h3>🌙 Abend Routine</h3>
+        
+        <label>💪 Training</label>
+        <input type="checkbox" id="training" /> Erledigt
+        
+        <label>🚶 Schritte</label>
+        <input type="number" id="schritte" min="0" step="100" placeholder="10000" />
+        
+        <label>🍖 Protein (g)</label>
+        <input type="number" id="protein" min="0" step="10" placeholder="150" />
+        
+        <label>📱 Bildschirmzeit (Min)</label>
+        <input type="number" id="bildschirm" min="0" step="15" placeholder="120" />
+        
+        <label>💧 Wasser (L)</label>
+        <input type="number" id="wasser" min="0" step="0.5" placeholder="3.0" />
+        
+        <label>📖 Journal</label>
+        <input type="checkbox" id="journal" /> Geschrieben
+        
+        <label>📚 Gelesen (Min)</label>
+        <input type="number" id="reading" min="0" step="10" placeholder="30" />
+        
+        <button class="btn-success" onclick="saveAbend()">💾 Abend speichern</button>
       </div>
     </div>
   </div>
@@ -105,17 +139,63 @@
       document.getElementById('status').className = 'status ' + type;
     }
     
-    window.addEventListener('DOMContentLoaded', () => {
+    window.addEventListener('DOMContentLoaded', async () => {
       document.getElementById('datum').value = new Date().toISOString().split('T')[0];
-      setStatus('✓ Bereit', 'ok');
+      await loadData();
     });
     
-    async function saveDaten() {
+    async function loadData() {
       const datum = document.getElementById('datum').value;
-      const training = document.getElementById('training').checked;
-      const meditation = parseInt(document.getElementById('meditation').value) || null;
-      const notizen = document.getElementById('notizen').value;
+      if (!datum) return;
       
+      try {
+        setStatus('Lade Daten...', 'syncing');
+        const { data, error } = await supabase
+          .from('daily_entries')
+          .select('*')
+          .eq('datum', datum)
+          .single();
+        
+        if (error && error.code !== 'PGRST116') {
+          console.error('Fehler beim Laden:', error);
+          setStatus('✓ Bereit', 'ok');
+          return;
+        }
+        
+        if (data) {
+          // Morgen Daten
+          document.getElementById('meditation').value = data.meditation_min || '';
+          document.getElementById('cold_shower').checked = data.cold_shower || false;
+          document.getElementById('protein_shake').checked = data.protein_shake || false;
+          document.getElementById('deep_work_1').value = data.deep_work_1_min || '';
+          document.getElementById('deep_work_2').value = data.deep_work_2_min || '';
+          
+          // Abend Daten
+          document.getElementById('training').checked = data.training || false;
+          document.getElementById('schritte').value = data.schritte || '';
+          document.getElementById('protein').value = data.protein_gramm || '';
+          document.getElementById('bildschirm').value = data.bildschirmzeit_min || '';
+          document.getElementById('wasser').value = data.wasser_liter || '';
+          document.getElementById('journal').checked = data.journal || false;
+          document.getElementById('reading').value = data.reading_min || '';
+          
+          setStatus('✓ Daten geladen', 'ok');
+        } else {
+          setStatus('✓ Bereit', 'ok');
+        }
+      } catch (err) {
+        console.error('Fehler:', err);
+        setStatus('✓ Bereit', 'ok');
+      }
+    }
+    
+    // Datum Change Event
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('datum').addEventListener('change', loadData);
+    });
+    
+    async function saveMorgen() {
+      const datum = document.getElementById('datum').value;
       if (!datum) {
         alert('❌ Bitte Datum wählen!');
         return;
@@ -124,21 +204,62 @@
       try {
         setStatus('Speichere...', 'syncing');
         
-        const { data, error } = await supabase
+        const updates = {
+          datum: datum,
+          meditation_min: parseInt(document.getElementById('meditation').value) || null,
+          cold_shower: document.getElementById('cold_shower').checked,
+          protein_shake: document.getElementById('protein_shake').checked,
+          deep_work_1_min: parseInt(document.getElementById('deep_work_1').value) || null,
+          deep_work_2_min: parseInt(document.getElementById('deep_work_2').value) || null
+        };
+        
+        const { error } = await supabase
           .from('daily_entries')
-          .upsert({
-            datum: datum,
-            training: training,
-            meditation_min: meditation,
-            notes: notizen
-          }, { onConflict: 'datum' })
-          .select();
+          .upsert(updates, { onConflict: 'datum' });
         
         if (error) {
           alert('❌ Speicherfehler:\n' + error.message);
           setStatus('Fehler', 'error');
         } else {
-          alert('✅ Daten gespeichert!');
+          alert('✅ Morgen-Daten gespeichert!');
+          setStatus('✓ Gespeichert', 'ok');
+        }
+      } catch (err) {
+        alert('❌ Fehler:\n' + err.message);
+        setStatus('Fehler', 'error');
+      }
+    }
+    
+    async function saveAbend() {
+      const datum = document.getElementById('datum').value;
+      if (!datum) {
+        alert('❌ Bitte Datum wählen!');
+        return;
+      }
+      
+      try {
+        setStatus('Speichere...', 'syncing');
+        
+        const updates = {
+          datum: datum,
+          training: document.getElementById('training').checked,
+          schritte: parseInt(document.getElementById('schritte').value) || null,
+          protein_gramm: parseInt(document.getElementById('protein').value) || null,
+          bildschirmzeit_min: parseInt(document.getElementById('bildschirm').value) || null,
+          wasser_liter: parseFloat(document.getElementById('wasser').value) || null,
+          journal: document.getElementById('journal').checked,
+          reading_min: parseInt(document.getElementById('reading').value) || null
+        };
+        
+        const { error } = await supabase
+          .from('daily_entries')
+          .upsert(updates, { onConflict: 'datum' });
+        
+        if (error) {
+          alert('❌ Speicherfehler:\n' + error.message);
+          setStatus('Fehler', 'error');
+        } else {
+          alert('✅ Abend-Daten gespeichert!');
           setStatus('✓ Gespeichert', 'ok');
         }
       } catch (err) {
