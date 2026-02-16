@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import './App.css'
 
 type DashboardEntry = {
@@ -70,9 +70,13 @@ function App() {
   const [selectedDate, setSelectedDate] = useState<string>(getToday())
   const [entry, setEntry] = useState<DashboardEntry>(() => createDefaultEntry(getToday()))
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('loading')
-  const [availableDates] = useState<string[]>(getPastDays(7))
   const [allEntries, setAllEntries] = useState<DashboardEntry[]>([])
   const [showOverview, setShowOverview] = useState(false)
+
+  // Dynamisch aktualisierte Datumsliste - aktualisiert sich täglich
+  const availableDates = useMemo(() => getPastDays(7), [])
+  const saveTimeoutRef = useRef<number | null>(null)
+  const lastSavedEntryRef = useRef<string>('')
 
   const moodOptions = ['😊 Motiviert', '🙂 Gut', '😐 Neutral', '😔 Müde', '😤 Gestresst']
   const sleepQualityOptions = ['Sehr schlecht', 'Schlecht', 'Okay', 'Gut', 'Sehr gut']
@@ -80,7 +84,7 @@ function App() {
   const morningRoutine = useMemo<FieldItem[]>(
     () =>
       [
-      { key: 'date', label: 'Datum', type: 'date' as const, value: entry.date },
+      // Datum-Feld entfernt - wird über Tabs gesteuert
       {
         key: 'mood',
         label: 'Stimmung beim Aufwachen',
@@ -157,19 +161,24 @@ function App() {
   useEffect(() => {
     const loadEntry = async () => {
       setSyncStatus('loading')
+      lastSavedEntryRef.current = '' // Reset bei Datumswechsel
       try {
         const response = await fetch(`${API_URL}?date=${selectedDate}`)
         const result = await response.json()
         
         if (result.data) {
           setEntry(result.data)
+          lastSavedEntryRef.current = JSON.stringify(result.data)
         } else {
-          setEntry(createDefaultEntry(selectedDate))
+          const defaultEntry = createDefaultEntry(selectedDate)
+          setEntry(defaultEntry)
+          lastSavedEntryRef.current = JSON.stringify(defaultEntry)
         }
         setSyncStatus('synced')
       } catch (error) {
         console.error('Load error:', error)
-        setEntry(createDefaultEntry(selectedDate))
+        const defaultEntry = createDefaultEntry(selectedDate)
+        setEntry(defaultEntry)
         setSyncStatus('error')
       }
     }
@@ -196,24 +205,46 @@ function App() {
   useEffect(() => {
     if (syncStatus === 'loading') return
     
-    const handler = window.setTimeout(async () => {
+    const entryString = JSON.stringify(entry)
+    
+    // Verhindere Save wenn Daten unverändert sind
+    if (entryString === lastSavedEntryRef.current) {
+      return
+    }
+
+    // Clear vorheriges Timeout
+    if (saveTimeoutRef.current) {
+      window.clearTimeout(saveTimeoutRef.current)
+    }
+    
+    saveTimeoutRef.current = window.setTimeout(async () => {
       setSyncStatus('syncing')
       try {
         const response = await fetch(API_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(entry)
+          body: entryString
         })
         
         if (!response.ok) throw new Error('Save failed')
+        lastSavedEntryRef.current = entryString
         setSyncStatus('synced')
+        
+        // Auto-hide "Gespeichert" nach 2 Sekunden
+        setTimeout(() => {
+          if (syncStatus === 'synced') setSyncStatus('synced')
+        }, 2000)
       } catch (error) {
         console.error('Save error:', error)
         setSyncStatus('error')
       }
-    }, 500)
+    }, 800)
 
-    return () => window.clearTimeout(handler)
+    return () => {
+      if (saveTimeoutRef.current) {
+        window.clearTimeout(saveTimeoutRef.current)
+      }
+    }
   }, [entry, syncStatus])
 
   const updateEntry = (partial: Partial<DashboardEntry>) => {
