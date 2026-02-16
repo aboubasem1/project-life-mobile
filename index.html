@@ -143,7 +143,6 @@
         <label>🔥 Kalorien</label>
         <input type="number" id="kalorien" min="0" step="100" placeholder="2500" />
         <label>✅ Aufgaben erledigt</label>
-        <input type="checkbox" id="aufgaben" /> erledigt
           <input type="number" id="aufgaben" min="0" step="1" placeholder="0" />
         <label>📖 Journal</label>
         <input type="checkbox" id="journal" /> Done
@@ -204,7 +203,6 @@
           // Abend Daten
           document.getElementById('protein').value = data.protein_gramm || '';
           document.getElementById('kalorien').value = data.kalorien || '';
-          document.getElementById('aufgaben').checked = data.aufgaben || false;
             document.getElementById('aufgaben').value = data.aufgaben || '';
           document.getElementById('journal').checked = data.journal || false;
           document.getElementById('family_time').checked = data.family_time || false;
@@ -242,6 +240,10 @@
           cold_shower: document.getElementById('cold_shower').checked,
           protein_shake: document.getElementById('protein_shake').checked,
           workout50: document.getElementById('workout50').checked,
+            pushups: document.getElementById('pushups').checked,
+            squats: document.getElementById('squats').checked,
+            wallsit: document.getElementById('wallsit').checked,
+            plank: document.getElementById('plank').checked,
           dankbarkeit: document.getElementById('dankbarkeit').checked,
           fokus: document.getElementById('fokus').checked,
           winner_mode: document.getElementById('winner_mode').checked
