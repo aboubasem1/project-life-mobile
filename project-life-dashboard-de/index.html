@@ -189,6 +189,17 @@
       font-size: 14px;
       color: var(--accent);
     }
+    .debug {
+      margin-top: 8px;
+      padding: 10px;
+      border-radius: 8px;
+      background: #1a1d27;
+      border: 1px solid var(--border);
+      color: #ffb3b3;
+      font-size: 12px;
+      white-space: pre-wrap;
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -398,6 +409,8 @@
       <button class="btn-ghost" id="loadToday">Heute laden</button>
       <button class="btn-danger" id="clearDay">Tag löschen</button>
     </div>
+    <div class="tiny" id="status"></div>
+    <div class="debug" id="debugOutput"></div>
   </div>
 
   <script>
@@ -411,6 +424,7 @@
     const statusText = qs("syncText");
     const statusIcon = qs("syncIcon");
     const configCard = qs("configCard");
+    const debugEl = qs("debugOutput");
 
     let supabaseClient = null;
     let currentTab = "morning";
@@ -459,6 +473,17 @@
       localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
     }
 
+    function showDebug(message) {
+      if (!debugEl) return;
+      if (!message) {
+        debugEl.style.display = "none";
+        debugEl.textContent = "";
+        return;
+      }
+      debugEl.textContent = message;
+      debugEl.style.display = "block";
+    }
+
     async function loadSupabaseScript() {
       if (window.supabase) return;
       await new Promise((resolve, reject) => {
@@ -474,12 +499,14 @@
       const config = getConfig();
       if (!config || !config.url || !config.key) {
         setStatus("offline", "Nicht konfiguriert", "⚠️");
+        showDebug("Supabase nicht konfiguriert. Bitte URL + Anon Key speichern.");
         configCard.style.display = "block";
         return;
       }
 
       configCard.style.display = "none";
       setStatus("syncing", "Verbinde...", "⟳");
+      showDebug("");
       await loadSupabaseScript();
       supabaseClient = window.supabase.createClient(config.url, config.key);
       setStatus("synced", "Bereit", "✓");
@@ -549,8 +576,10 @@
         .upsert(data, { onConflict: DATE_FIELD });
       if (error) {
         setStatus("offline", "Fehler", "⚠️");
+        showDebug(`Save error: ${error.message}`);
       } else {
         setStatus("synced", "Synced", "✓");
+        showDebug("");
       }
     }
 
@@ -564,9 +593,11 @@
         .maybeSingle();
       if (error) {
         setStatus("offline", "Fehler", "⚠️");
+        showDebug(`Load error: ${error.message}`);
         return null;
       }
       setStatus("synced", "Bereit", "✓");
+      showDebug("");
       return data;
     }
 
@@ -753,8 +784,14 @@
       setStoredData(store);
       fillFormData({});
       if (supabaseClient) {
-        await supabaseClient.from(TABLE_NAME).delete().eq(DATE_FIELD, date);
-        setStatus("synced", "Gelöscht", "✓");
+        const { error } = await supabaseClient.from(TABLE_NAME).delete().eq(DATE_FIELD, date);
+        if (error) {
+          setStatus("offline", "Fehler", "⚠️");
+          showDebug(`Delete error: ${error.message}`);
+        } else {
+          setStatus("synced", "Gelöscht", "✓");
+          showDebug("");
+        }
       }
     });
 
