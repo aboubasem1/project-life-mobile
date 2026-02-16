@@ -23,16 +23,26 @@ type DashboardEntry = {
   familyTimeDone: boolean
 }
 
-type SyncStatus = 'syncing' | 'synced' | 'error'
+type SyncStatus = 'syncing' | 'synced' | 'error' | 'loading'
 
 type FieldItem =
   | { key: keyof DashboardEntry; label: string; type: 'boolean'; value: boolean }
   | { key: keyof DashboardEntry; label: string; type: 'number'; value: number }
   | { key: keyof DashboardEntry; label: string; type: 'text' | 'date' | 'select'; value: string }
 
-const STORAGE_KEY_PREFIX = 'project-life-entry-'
+const API_URL = '/api/entries'
 
 const getToday = () => new Date().toISOString().slice(0, 10)
+
+const getPastDays = (count: number): string[] => {
+  const days: string[] = []
+  for (let i = 0; i < count; i++) {
+    const date = new Date()
+    date.setDate(date.getDate() - i)
+    days.push(date.toISOString().slice(0, 10))
+  }
+  return days
+}
 
 const createDefaultEntry = (date: string): DashboardEntry => ({
   date,
@@ -57,19 +67,10 @@ const createDefaultEntry = (date: string): DashboardEntry => ({
 })
 
 function App() {
-  const [entry, setEntry] = useState<DashboardEntry>(() => {
-    const today = getToday()
-    const stored = window.localStorage.getItem(STORAGE_KEY_PREFIX + today)
-    if (stored) {
-      try {
-        return JSON.parse(stored) as DashboardEntry
-      } catch {
-        return createDefaultEntry(today)
-      }
-    }
-    return createDefaultEntry(today)
-  })
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>('synced')
+  const [selectedDate, setSelectedDate] = useState<string>(getToday())
+  const [entry, setEntry] = useState<DashboardEntry>(() => createDefaultEntry(getToday()))
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('loading')
+  const [availableDates] = useState<string[]>(getPastDays(7))
 
   const moodOptions = ['😊 Motiviert', '🙂 Gut', '😐 Neutral', '😔 Müde', '😤 Gestresst']
   const sleepQualityOptions = ['Sehr schlecht', 'Schlecht', 'Okay', 'Gut', 'Sehr gut']
@@ -152,31 +153,50 @@ function App() {
   )
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(STORAGE_KEY_PREFIX + entry.date)
-    if (stored) {
+    const loadEntry = async () => {
+      setSyncStatus('loading')
       try {
-        setEntry(JSON.parse(stored) as DashboardEntry)
-      } catch {
-        setEntry(createDefaultEntry(entry.date))
-      }
-    } else {
-      setEntry(createDefaultEntry(entry.date))
-    }
-  }, [entry.date])
-
-  useEffect(() => {
-    const handler = window.setTimeout(() => {
-      setSyncStatus('syncing')
-      try {
-        window.localStorage.setItem(STORAGE_KEY_PREFIX + entry.date, JSON.stringify(entry))
+        const response = await fetch(`${API_URL}?date=${selectedDate}`)
+        const result = await response.json()
+        
+        if (result.data) {
+          setEntry(result.data)
+        } else {
+          setEntry(createDefaultEntry(selectedDate))
+        }
         setSyncStatus('synced')
-      } catch {
+      } catch (error) {
+        console.error('Load error:', error)
+        setEntry(createDefaultEntry(selectedDate))
         setSyncStatus('error')
       }
-    }, 300)
+    }
+    
+    loadEntry()
+  }, [selectedDate])
+
+  useEffect(() => {
+    if (syncStatus === 'loading') return
+    
+    const handler = window.setTimeout(async () => {
+      setSyncStatus('syncing')
+      try {
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(entry)
+        })
+        
+        if (!response.ok) throw new Error('Save failed')
+        setSyncStatus('synced')
+      } catch (error) {
+        console.error('Save error:', error)
+        setSyncStatus('error')
+      }
+    }, 500)
 
     return () => window.clearTimeout(handler)
-  }, [entry])
+  }, [entry, syncStatus])
 
   const updateEntry = (partial: Partial<DashboardEntry>) => {
     setEntry((prev) => ({ ...prev, ...partial }))
@@ -263,14 +283,35 @@ function App() {
         <div>
           <p className="eyebrow">Project Life Dashboard</p>
           <h1>PROJECT LIFE DASHBOARD</h1>
-          <p className="subtle">✓ Bereit • Lokale Speicherung</p>
+          <p className="subtle">✓ Online Speicherung</p>
         </div>
         <div className={`status-pill status-${syncStatus}`}>
+          {syncStatus === 'loading' && '⏳ Lade...'}
           {syncStatus === 'syncing' && '💾 Speichere...'}
           {syncStatus === 'synced' && '✅ Gespeichert'}
-          {syncStatus === 'error' && '⚠️ Speicherfehler'}
+          {syncStatus === 'error' && '⚠️ Fehler'}
         </div>
       </header>
+
+      <nav className="date-tabs">
+        {availableDates.map((date) => {
+          const dateObj = new Date(date + 'T12:00:00')
+          const dayName = dateObj.toLocaleDateString('de-DE', { weekday: 'short' })
+          const dayNum = dateObj.getDate()
+          const isToday = date === getToday()
+          
+          return (
+            <button
+              key={date}
+              className={`date-tab ${selectedDate === date ? 'active' : ''} ${isToday ? 'today' : ''}`}
+              onClick={() => setSelectedDate(date)}
+            >
+              <span className="day-name">{dayName}</span>
+              <span className="day-num">{dayNum}</span>
+            </button>
+          )
+        })}
+      </nav>
 
       <section className="panel">
         <div className="panel-header">

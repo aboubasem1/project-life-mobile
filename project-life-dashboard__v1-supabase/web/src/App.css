@@ -44,6 +44,63 @@
   border: 1px solid rgba(108, 255, 213, 0.25);
 }
 
+.date-tabs {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding: 0.5rem 0;
+  border-bottom: 2px solid rgba(157, 167, 255, 0.1);
+  margin-bottom: 1rem;
+}
+
+.date-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.75rem 1.25rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(157, 167, 255, 0.1);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 70px;
+  color: #9fa4b5;
+}
+
+.date-tab:hover {
+  background: rgba(157, 167, 255, 0.08);
+  border-color: rgba(157, 167, 255, 0.3);
+}
+
+.date-tab.active {
+  background: rgba(157, 167, 255, 0.15);
+  border-color: #9da7ff;
+  color: #9da7ff;
+}
+
+.date-tab.today {
+  border-color: rgba(108, 255, 213, 0.4);
+}
+
+.date-tab.today.active {
+  background: rgba(108, 255, 213, 0.15);
+  border-color: #5affc6;
+  color: #5affc6;
+}
+
+.day-name {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.8;
+}
+
+.day-num {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
 .status-loading,
 .status-syncing {
   background: rgba(255, 214, 102, 0.15);
