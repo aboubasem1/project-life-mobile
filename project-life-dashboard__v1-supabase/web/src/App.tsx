@@ -32,14 +32,26 @@ type FieldItem =
 
 const API_URL = '/api/entries'
 
-const getToday = () => new Date().toISOString().slice(0, 10)
+// Gibt das heutige Datum im lokalen Format (YYYY-MM-DD) zurück
+const getToday = () => {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
+// Gibt die letzten count Tage im lokalen Format (YYYY-MM-DD) zurück
 const getPastDays = (count: number): string[] => {
   const days: string[] = []
+  const now = new Date()
   for (let i = 0; i < count; i++) {
-    const date = new Date()
-    date.setDate(date.getDate() - i)
-    days.push(date.toISOString().slice(0, 10))
+    const date = new Date(now)
+    date.setDate(now.getDate() - i)
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    days.push(`${year}-${month}-${day}`)
   }
   return days
 }
