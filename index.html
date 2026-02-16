@@ -99,6 +99,23 @@
           <option value="schlecht">⭐⭐ Schlecht</option>
           <option value="sehr_schlecht">⭐ Sehr schlecht</option>
         </select>
+        <label>⏰ Schlafdauer</label>
+        <select id="schlafdauer" style="width: 100%; padding: 12px; background: #0f1218; border: 1px solid #2a2f3a; border-radius: 8px; color: #e8e8ea; font-size: 14px; margin-bottom: 12px;">
+          <option value="">-- Auswählen --</option>
+          <option value="<5">Weniger als 5h</option>
+          <option value="5-6">5-6h</option>
+          <option value="6-7">6-7h</option>
+          <option value="7-8">7-8h</option>
+          <option value=">8">Mehr als 8h</option>
+        </select>
+        <label>🏋️ Workout Daily 50</label>
+        <input type="checkbox" id="workout50" /> Abgehakt
+        <label>🙏 Dankbarkeit</label>
+        <input type="checkbox" id="dankbarkeit" /> Abgehakt
+        <label>🎯 Fokus</label>
+        <input type="checkbox" id="fokus" /> Abgehakt
+        <label>🏆 Winner Mode</label>
+        <input type="checkbox" id="winner_mode" /> Abgehakt
         
         <label>🧘 Meditation (Min)</label>
         <input type="number" id="meditation" min="0" step="5" placeholder="15" />
@@ -120,7 +137,12 @@
         
         <label>🔥 Kalorien</label>
         <input type="number" id="kalorien" min="0" step="100" placeholder="2500" />
-        
+        <label>✅ Aufgaben erledigt</label>
+        <input type="checkbox" id="aufgaben" /> Abgehakt
+        <label>📖 Journal</label>
+        <input type="checkbox" id="journal" /> Abgehakt
+        <label>👨‍👩‍👧‍👦 Family Time</label>
+        <input type="checkbox" id="family_time" /> Abgehakt
         <button class="btn-success" onclick="saveAbend()">💾 Abend speichern</button>
       </div>
     </div>
@@ -168,11 +190,17 @@
           document.getElementById('meditation').value = data.meditation_min || '';
           document.getElementById('cold_shower').checked = data.cold_shower || false;
           document.getElementById('protein_shake').checked = data.protein_shake || false;
-          
+          document.getElementById('schlafdauer').value = data.schlafdauer || '';
+          document.getElementById('workout50').checked = data.workout50 || false;
+          document.getElementById('dankbarkeit').checked = data.dankbarkeit || false;
+          document.getElementById('fokus').checked = data.fokus || false;
+          document.getElementById('winner_mode').checked = data.winner_mode || false;
           // Abend Daten
           document.getElementById('protein').value = data.protein_gramm || '';
           document.getElementById('kalorien').value = data.kalorien || '';
-          
+          document.getElementById('aufgaben').checked = data.aufgaben || false;
+          document.getElementById('journal').checked = data.journal || false;
+          document.getElementById('family_time').checked = data.family_time || false;
           setStatus('✓ Daten geladen', 'ok');
         } else {
           setStatus('✓ Bereit', 'ok');
@@ -202,9 +230,14 @@
           datum: datum,
           stimmung: document.getElementById('stimmung').value || null,
           schlafqualitaet: document.getElementById('schlaf').value || null,
+          schlafdauer: document.getElementById('schlafdauer').value || null,
           meditation_min: parseInt(document.getElementById('meditation').value) || null,
           cold_shower: document.getElementById('cold_shower').checked,
-          protein_shake: document.getElementById('protein_shake').checked
+          protein_shake: document.getElementById('protein_shake').checked,
+          workout50: document.getElementById('workout50').checked,
+          dankbarkeit: document.getElementById('dankbarkeit').checked,
+          fokus: document.getElementById('fokus').checked,
+          winner_mode: document.getElementById('winner_mode').checked
         };
         
         const { error } = await supabase
@@ -237,7 +270,10 @@
         const updates = {
           datum: datum,
           protein_gramm: parseInt(document.getElementById('protein').value) || null,
-          kalorien: parseInt(document.getElementById('kalorien').value) || null
+          kalorien: parseInt(document.getElementById('kalorien').value) || null,
+          aufgaben: document.getElementById('aufgaben').checked,
+          journal: document.getElementById('journal').checked,
+          family_time: document.getElementById('family_time').checked
         };
         
         const { error } = await supabase
