@@ -401,7 +401,8 @@
   </div>
 
   <script>
-    const TABLE_NAME = "project_life";
+    const TABLE_NAME = "daily_entries";
+    const DATE_FIELD = "datum";
     const STORAGE_KEY = "projectLifeMobileData";
     const CONFIG_KEY = "projectLifeSupabaseConfig";
 
@@ -501,7 +502,7 @@
     }
 
     function collectFormData() {
-      const data = { date: getCurrentDate() };
+      const data = { [DATE_FIELD]: getCurrentDate() };
       fields.forEach((field) => {
         const el = qs(field);
         if (!el) return;
@@ -534,7 +535,9 @@
 
     function saveToLocal(data) {
       const store = getStoredData();
-      store[data.date] = data;
+      const dateKey = data[DATE_FIELD];
+      if (!dateKey) return;
+      store[dateKey] = data;
       setStoredData(store);
     }
 
@@ -543,7 +546,7 @@
       setStatus("syncing", "Sync...", "⟳");
       const { error } = await supabaseClient
         .from(TABLE_NAME)
-        .upsert(data, { onConflict: "date" });
+        .upsert(data, { onConflict: DATE_FIELD });
       if (error) {
         setStatus("offline", "Fehler", "⚠️");
       } else {
@@ -557,7 +560,7 @@
       const { data, error } = await supabaseClient
         .from(TABLE_NAME)
         .select("*")
-        .eq("date", date)
+        .eq(DATE_FIELD, date)
         .maybeSingle();
       if (error) {
         setStatus("offline", "Fehler", "⚠️");
@@ -750,7 +753,7 @@
       setStoredData(store);
       fillFormData({});
       if (supabaseClient) {
-        await supabaseClient.from(TABLE_NAME).delete().eq("date", date);
+        await supabaseClient.from(TABLE_NAME).delete().eq(DATE_FIELD, date);
         setStatus("synced", "Gelöscht", "✓");
       }
     });

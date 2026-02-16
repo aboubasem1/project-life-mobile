@@ -18,31 +18,42 @@
 2. Kopiere diesen SQL-Code und führe ihn aus:
 
 ```sql
--- Tabelle für tägliche Einträge erstellen
+-- Tabelle für tägliche Einträge (Mobile App) erstellen
 CREATE TABLE daily_entries (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  datum DATE NOT NULL UNIQUE,
-  
-  -- Morgen-Daten
-  aufgestanden TIME,
-  meditation_min INTEGER,
-  cold_shower BOOLEAN,
-  protein_shake BOOLEAN,
-  deep_work_1_min INTEGER,
-  deep_work_2_min INTEGER,
-  
-  -- Abend-Daten
-  training BOOLEAN,
-  schritte INTEGER,
-  protein_gramm INTEGER,
-  schlafen_gegangen TIME,
-  bildschirmzeit_min INTEGER,
-  wasser_liter DECIMAL(3,1),
-  journal BOOLEAN,
-  reading_min INTEGER,
-  
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+   datum DATE NOT NULL UNIQUE,
+
+   -- Morgen-Daten
+   am_training BOOLEAN,
+   am_sleep_hours NUMERIC,
+   am_sleep_quality_1_10 INTEGER,
+   am_mood_1_10 INTEGER,
+   am_weight_kg NUMERIC,
+   am_focus_goal TEXT,
+   am_winner_mode BOOLEAN,
+   am_body_move BOOLEAN,
+
+   -- Abend-Daten
+   pm_training BOOLEAN,
+   pm_sleep_hours NUMERIC,
+   pm_sleep_quality_1_10 INTEGER,
+   pm_mood_1_10 INTEGER,
+   pm_weight_kg NUMERIC,
+   pm_discipline_1_10 INTEGER,
+   tasks_done INTEGER,
+   deep_work_minutes INTEGER,
+   revenue_eur NUMERIC,
+   notes TEXT,
+
+   -- Score & Streak (optional)
+   score_zone_a INTEGER,
+   score_mindset INTEGER,
+   score_recovery INTEGER,
+   streak_current INTEGER,
+   streak_best INTEGER,
+
+   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+   updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
 -- Index für schnellere Datumsabfragen
