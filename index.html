@@ -158,8 +158,9 @@
       <input type="text" id="supabaseUrl" placeholder="https://xxxxx.supabase.co" />
       <label style="margin-top: 8px;">Supabase Anon Key</label>
       <input type="text" id="supabaseKey" placeholder="eyJhbGc..." />
-      <button class="btn-success" id="saveConfig" style="margin-top: 10px; width: 100%;">
-        Konfiguration speichern
+      <button class="btn-success" id="saveConfig" style="margin-top: 10px; width: 100%;" 
+              onclick="alert('Button geklickt!'); testSaveConfig();">
+        Konfiguration speichern & testen
       </button>
       <div class="tiny">Diese Werte findest du in deinem Supabase-Projekt unter Settings → API.</div>
     </div>
@@ -302,6 +303,50 @@
     let syncEnabled = false;
 
     const state = {
+      activeTab: "morning"
+    };
+
+    const todayISO = () => new Date().toISOString().slice(0, 10);
+
+    // GLOBALE TEST-FUNKTION (wird vom onclick aufgerufen)
+    async function testSaveConfig() {
+      const url = el("supabaseUrl").value.trim();
+      const key = el("supabaseKey").value.trim();
+      
+      if (!url || !key) {
+        alert("❌ Bitte beide Felder ausfüllen!");
+        return;
+      }
+
+      try {
+        alert("Starte Test mit URL: " + url.substring(0, 30) + "...");
+        
+        // Erstelle Supabase Client
+        supabase = supabase_js.createClient(url, key);
+        alert("✅ Supabase Client erstellt!");
+        
+        // Teste Verbindung
+        const { data, error } = await supabase.from("daily_entries").select("datum").limit(1);
+        
+        if (error) {
+          alert("❌ Datenbankfehler: " + error.message);
+        } else {
+          alert("✅ VERBINDUNG ERFOLGREICH!\n\nEinträge gefunden: " + (data ? data.length : 0));
+          
+          // Speichere Config
+          localStorage.setItem(CONFIG_KEY, JSON.stringify({ url, key }));
+          alert("✅ Konfiguration gespeichert!");
+          
+          syncEnabled = true;
+          updateSyncStatus("synced", "✓ Verbunden");
+          el("configCard").style.display = "none";
+          el("showConfig").style.display = "block";
+        }
+      } catch (err) {
+        alert("❌ FEHLER: " + err.message + "\n\nDetails in Console (F12)");
+        console.error("Fehler:", err);
+      }
+    }
       activeTab: "morning"
     };
 
