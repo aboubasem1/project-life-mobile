@@ -109,22 +109,27 @@
           <option value=">8">Mehr als 8h</option>
         </select>
         <label>🏋️ Workout Daily 50</label>
-        <input type="checkbox" id="workout50" /> done
+        <div style="margin-bottom:12px;">
+          <input type="checkbox" id="pushups" /> 50 Pushups <span style="font-weight:600;color:#2ecc71;">Done</span><br>
+          <input type="checkbox" id="squats" /> 50 Squats <span style="font-weight:600;color:#2ecc71;">Done</span><br>
+          <input type="checkbox" id="wallsit" /> 50 Sek Wallsit <span style="font-weight:600;color:#2ecc71;">Done</span><br>
+          <input type="checkbox" id="plank" /> 50 Sek Plank <span style="font-weight:600;color:#2ecc71;">Done</span>
+        </div>
         <label>🙏 Dankbarkeit</label>
-        <input type="checkbox" id="dankbarkeit" /> done
+        <input type="checkbox" id="dankbarkeit" /> Done
         <label>🎯 Fokus</label>
-        <input type="checkbox" id="fokus" /> done
+        <input type="checkbox" id="fokus" /> Done
         <label>🏆 Winner Mode</label>
-        <input type="checkbox" id="winner_mode" /> done
+        <input type="checkbox" id="winner_mode" /> Done
         
         <label>🧘 Meditation (Min)</label>
         <input type="number" id="meditation" min="0" step="5" placeholder="15" />
         
         <label>🥶 Cold Shower</label>
-        <input type="checkbox" id="cold_shower" /> Erledigt
+        <input type="checkbox" id="cold_shower" /> Done
         
         <label>🥤 Protein Shake</label>
-        <input type="checkbox" id="protein_shake" /> Getrunken
+        <input type="checkbox" id="protein_shake" /> Done
         
         <button class="btn-success" onclick="saveMorgen()">💾 Morgen speichern</button>
       </div>
@@ -141,9 +146,9 @@
         <input type="checkbox" id="aufgaben" /> erledigt
           <input type="number" id="aufgaben" min="0" step="1" placeholder="0" />
         <label>📖 Journal</label>
-        <input type="checkbox" id="journal" /> done
+        <input type="checkbox" id="journal" /> Done
         <label>👨‍👩‍👧‍👦 Family Time</label>
-        <input type="checkbox" id="family_time" /> done
+        <input type="checkbox" id="family_time" /> Done
         <button class="btn-success" onclick="saveAbend()">💾 Abend speichern</button>
       </div>
     </div>
