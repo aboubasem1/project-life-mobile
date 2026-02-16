@@ -1,0 +1,276 @@
+.app {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1.5rem;
+  align-items: center;
+}
+
+.topbar h1 {
+  font-size: clamp(2rem, 3vw, 2.8rem);
+  margin: 0.25rem 0 0.4rem;
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-size: 0.7rem;
+  color: #9da7ff;
+  margin: 0;
+}
+
+.subtle {
+  margin: 0;
+  color: #9fa4b5;
+}
+
+.topbar-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.btn-primary,
+.btn-ghost {
+  border: none;
+  border-radius: 999px;
+  padding: 0.75rem 1.3rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #7c7bff, #5f6bff);
+  color: #ffffff;
+  box-shadow: 0 10px 20px rgba(91, 104, 255, 0.35);
+}
+
+.btn-ghost {
+  background: rgba(255, 255, 255, 0.06);
+  color: #d8dcff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.btn-primary:hover,
+.btn-ghost:hover {
+  transform: translateY(-1px);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 1.2rem;
+}
+
+.stat-card {
+  background: rgba(20, 24, 38, 0.8);
+  border-radius: 20px;
+  padding: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 16px 40px rgba(10, 12, 20, 0.4);
+}
+
+.stat-label {
+  margin: 0 0 0.5rem;
+  color: #8b95c6;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.stat-card h2 {
+  margin: 0 0 0.4rem;
+  font-size: 1.5rem;
+}
+
+.stat-meta {
+  margin: 0;
+  color: #9ba3c7;
+}
+
+.main-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+}
+
+.panel {
+  background: rgba(16, 19, 33, 0.9);
+  border-radius: 22px;
+  padding: 1.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.panel-wide {
+  margin-top: 0.5rem;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.panel-header h3 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.chip {
+  background: rgba(90, 101, 255, 0.2);
+  color: #c4c9ff;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.chip-outline {
+  background: transparent;
+  border: 1px solid rgba(150, 160, 255, 0.4);
+}
+
+.task-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.task-title {
+  font-weight: 600;
+  display: block;
+}
+
+.task-meta {
+  color: #9fa5c6;
+  font-size: 0.85rem;
+}
+
+.focus-grid {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.focus-card {
+  padding: 1rem;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.focus-card h4 {
+  margin: 0 0 0.3rem;
+}
+
+.focus-card p,
+.focus-card span {
+  margin: 0;
+  color: #9fa5c6;
+  font-size: 0.9rem;
+}
+
+.quick-grid {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.quick-card {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 0.9rem 1rem;
+  color: #e8ebff;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  cursor: pointer;
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.quick-card small {
+  color: #a5accd;
+  font-size: 0.8rem;
+}
+
+.quick-card:hover {
+  transform: translateY(-2px);
+  background: rgba(124, 123, 255, 0.15);
+}
+
+.life-area-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.life-card {
+  background: rgba(18, 22, 38, 0.9);
+  border-radius: 18px;
+  padding: 1.2rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.life-card h4 {
+  margin: 0 0 0.4rem;
+}
+
+.life-card p {
+  margin: 0 0 0.35rem;
+  color: #cbd1f2;
+}
+
+.life-card span {
+  color: #9aa2c4;
+  font-size: 0.85rem;
+}
+
+.note-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.note-card {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 16px;
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.note-card p {
+  margin: 0 0 0.6rem;
+}
+
+.note-card span {
+  color: #9aa2c4;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 720px) {
+  .topbar-actions {
+    width: 100%;
+  }
+
+  .topbar-actions button {
+    flex: 1;
+  }
+}

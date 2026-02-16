@@ -1,0 +1,76 @@
+01_HEALTH
+BLUTWERTE DATENBLATT
+Datum: 2025-11-21
+
+==================================================
+HÄMATOLOGIE
+==================================================
+
+Leukozyten (WBC): 6.0 x10^9/L
+Erythrozyten (RBC): 5.47 x10^12/L
+Hämoglobin: 16.3 g/dL
+Hämatokrit: 48.3 %
+MCH: 29.8 pg
+MCV: 88.3 fL
+MCHC: 33.7 g/dL
+Thrombozyten: 203 x10^9/L
+RDW: 13.2 %
+
+==================================================
+ELEKTROLYTE
+==================================================
+
+Calcium: 2.25 mmol/L
+Kalium: 4.3 mmol/L
+Natrium: 141 mmol/L
+
+==================================================
+STOFFWECHSEL
+==================================================
+
+Glukose (Serum): 104 mg/dL
+Harnsäure: 4.1 mg/dL
+Kreatinin: 0.81 mg/dL
+eGFR (CKD-EPI): 120 mL/min/1.73m²
+
+==================================================
+LEBERWERTE
+==================================================
+
+Bilirubin: 1.03 mg/dL
+Alkalische Phosphatase (ALP): 99 U/L
+Gamma-GT: 17 U/L
+AST (GOT): 33 U/L
+ALT (GPT): 18 U/L
+
+==================================================
+BAUCHSPEICHELDRÜSE
+==================================================
+
+Amylase: 41 U/L
+Lipase: 23 U/L
+
+==================================================
+LIPIDPROFIL
+==================================================
+
+Gesamtcholesterin: 160 mg/dL
+Triglyzeride: 63 mg/dL
+LDL: 96 mg/dL
+HDL: 49 mg/dL
+Non-HDL: 111 mg/dL
+Chol/HDL-Verhältnis: 3.27
+LDL/HDL-Verhältnis: 1.96
+
+==================================================
+MIKRONÄHRSTOFFE
+==================================================
+
+Ferritin: 37.2 ng/mL
+Vitamin B12: 620 pg/mL
+
+==================================================
+HORMONE
+==================================================
+
+Gesamt-Testosteron: 7.3 ng/mL
