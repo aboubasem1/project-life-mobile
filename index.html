@@ -13,56 +13,59 @@
       padding: 20px;
     }
     .container { max-width: 600px; margin: 0 auto; }
-    h1 { margin-bottom: 10px; }
-    .status { 
+    h1 { margin-bottom: 20px; }
+    .status {
       display: inline-block;
-      padding: 4px 10px; 
-      border-radius: 6px; 
-      background: #1a1d27;
-      font-size: 12px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 13px;
       margin-bottom: 20px;
+      font-weight: 500;
     }
-    .status.ok { color: #2ecc71; }
-    .status.error { color: #ff6b6b; }
-    .card { 
-      background: #171a21; 
-      border: 1px solid #2a2f3a; 
-      border-radius: 12px; 
-      padding: 20px; 
+    .status.ok { color: #2ecc71; background: #0d2818; }
+    .status.error { color: #ff6b6b; background: #2a1515; }
+    .status.syncing { color: #4f8cff; background: #0f1a2e; }
+    .card {
+      background: #171a21;
+      border: 1px solid #2a2f3a;
+      border-radius: 12px;
+      padding: 20px;
       margin-bottom: 15px;
     }
-    label { 
-      display: block; 
-      color: #a9b0bb; 
-      font-size: 13px; 
-      margin-bottom: 6px; 
+    h3 { margin-bottom: 15px; }
+    label {
+      display: block;
+      color: #a9b0bb;
+      font-size: 13px;
+      margin-bottom: 6px;
+      font-weight: 500;
     }
-    input, textarea { 
-      width: 100%; 
-      padding: 12px; 
-      background: #0f1218; 
-      border: 1px solid #2a2f3a; 
-      border-radius: 8px; 
-      color: #e8e8ea; 
+    input, textarea {
+      width: 100%;
+      padding: 12px;
+      background: #0f1218;
+      border: 1px solid #2a2f3a;
+      border-radius: 8px;
+      color: #e8e8ea;
       font-size: 14px;
       margin-bottom: 12px;
     }
-    button { 
-      width: 100%; 
-      padding: 14px; 
-      background: #4f8cff; 
-      border: none; 
-      border-radius: 8px; 
-      color: white; 
-      font-size: 15px; 
-      font-weight: 600; 
+    input[type="checkbox"] { width: auto; }
+    button {
+      width: 100%;
+      padding: 14px;
+      background: #4f8cff;
+      border: none;
+      border-radius: 8px;
+      color: white;
+      font-size: 15px;
+      font-weight: 600;
       cursor: pointer;
     }
     button:hover { background: #3d7ae8; }
     .btn-success { background: #2ecc71; }
     .btn-success:hover { background: #27ae60; }
-    #configSection.hidden { display: none; }
-    #appSection.hidden { display: none; }
+    .hidden { display: none; }
   </style>
 </head>
 <body>
@@ -70,7 +73,7 @@
     <h1>📊 Project Life Dashboard</h1>
     <div class="status" id="status">Nicht konfiguriert</div>
 
-    <!-- Konfigurations-Sektion -->
+    <!-- Config -->
     <div id="configSection">
       <div class="card">
         <h3>⚙️ Supabase Konfiguration</h3>
@@ -84,14 +87,14 @@
       </div>
     </div>
 
-    <!-- App-Sektion -->
+    <!-- App -->
     <div id="appSection" class="hidden">
       <div class="card">
         <label>Datum</label>
         <input type="date" id="datum" />
         
         <label>Training?</label>
-        <input type="checkbox" id="training" style="width: auto;" /> Ja
+        <input type="checkbox" id="training" /> Ja
         
         <label>Meditation (Min)</label>
         <input type="number" id="meditation" min="0" />
@@ -108,57 +111,45 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
-    console.log('🚀 Script lädt...');
     let supabase = null;
-    const statusEl = document.getElementById('status');
     
-    // Beim Laden: Prüfe ob Config vorhanden
-    window.addEventListener('DOMContentLoaded', () => {
-      console.log('✅ DOMContentLoaded');
-      alert('✅ Seite geladen! Supabase: ' + (typeof window.supabase !== 'undefined' ? 'JA' : 'NEIN'));
+    function setStatus(text, type) {
+      document.getElementById('status').textContent = text;
+      document.getElementById('status').className = 'status ' + type;
+    }
+    
+    window.addEventListener('DOMContentLoaded', async () => {
       const saved = localStorage.getItem('supabaseConfig');
       if (saved) {
         const config = JSON.parse(saved);
         document.getElementById('url').value = config.url;
         document.getElementById('key').value = config.key;
-        autoConnect(config.url, config.key);
+        await autoConnect(config.url, config.key);
       }
-      
-      // Setze heutiges Datum
       document.getElementById('datum').value = new Date().toISOString().split('T')[0];
     });
     
-    function setStatus(text, isOk) {
-      statusEl.textContent = text;
-      statusEl.className = 'status ' + (isOk ? 'ok' : 'error');
-    }
-    
     async function autoConnect(url, key) {
       try {
-        supabase = window.supabase_js.createClient(url, key);
+        setStatus('Verbinde...', 'syncing');
+        supabase = window.supabase.createClient(url, key);
         const { error } = await supabase.from('daily_entries').select('datum').limit(1);
         
         if (error) {
-          setStatus('Verbindung fehlgeschlagen', false);
+          setStatus('Fehler: ' + error.message, 'error');
         } else {
-          setStatus('✓ Verbunden', true);
+          setStatus('✓ Verbunden', 'ok');
           document.getElementById('configSection').classList.add('hidden');
           document.getElementById('appSection').classList.remove('hidden');
         }
       } catch (err) {
-        setStatus('Fehler: ' + err.message, false);
+        setStatus('Fehler: ' + err.message, 'error');
       }
     }
     
     async function connectSupabase() {
-      console.log('🔵 connectSupabase() aufgerufen');
-      alert('🔵 connectSupabase() startet...');
-      
       const url = document.getElementById('url').value.trim();
       const key = document.getElementById('key').value.trim();
-      
-      console.log('URL:', url);
-      console.log('Key (first 20):', key.substring(0, 20));
       
       if (!url || !key) {
         alert('❌ Bitte beide Felder ausfüllen!');
@@ -166,47 +157,33 @@
       }
       
       try {
-        setStatus('Verbinde...', false);
-        alert('⏳ Erstelle Supabase Client...');
+        setStatus('Verbinde...', 'syncing');
         
-        // Erstelle Client
-        console.log('Checking window.supabase:', typeof window.supabase);
-        supabase = window.supabase.createClient(url, key);
-        console.log('✅ Client erstellt:', supabase);
-        alert('✅ Client erstellt!');
-        console.log('✅ Client erstellt:', supabase);
-        alert('✅ Client erstellt!');
-        
-        // Teste Verbindung
-        alert('⏳ Teste Datenbankverbindung...');
-        const { data, error } = await supabase
-          .from('daily_entries')
-          .select('datum')
-          .limit(1);
-        
-        console.log('DB Response - Data:', data);
-        console.log('DB Response - Error:', error);
-        
-        if (error) {
-          alert('❌ Datenbankfehler:\n' + error.message);
-          setStatus('Fehler', false);
+        if (typeof window.supabase === 'undefined') {
+          alert('❌ Supabase Library nicht geladen!');
+          setStatus('Library fehlt', 'error');
           return;
         }
         
-        // Erfolg!
-        alert('✅ Verbindung erfolgreich!\n\nGefundene Einträge: ' + (data ? data.length : 0));
+        supabase = window.supabase.createClient(url, key);
+        const { data, error } = await supabase.from('daily_entries').select('datum').limit(1);
         
-        // Speichere Config
+        if (error) {
+          alert('❌ Datenbankfehler:\n' + error.message);
+          setStatus('Fehler', 'error');
+          return;
+        }
+        
+        alert('✅ Verbindung erfolgreich!\n\nGefundene Einträge: ' + (data ? data.length : 0));
         localStorage.setItem('supabaseConfig', JSON.stringify({ url, key }));
         
-        setStatus('✓ Verbunden', true);
+        setStatus('✓ Verbunden', 'ok');
         document.getElementById('configSection').classList.add('hidden');
         document.getElementById('appSection').classList.remove('hidden');
         
       } catch (err) {
         alert('❌ Fehler:\n' + err.message);
-        setStatus('Fehler', false);
-        console.error(err);
+        setStatus('Fehler', 'error');
       }
     }
     
@@ -227,7 +204,7 @@
       }
       
       try {
-        setStatus('Speichere...', false);
+        setStatus('Speichere...', 'syncing');
         
         const { data, error } = await supabase
           .from('daily_entries')
@@ -241,15 +218,14 @@
         
         if (error) {
           alert('❌ Speicherfehler:\n' + error.message);
-          setStatus('Fehler', false);
+          setStatus('Fehler', 'error');
         } else {
           alert('✅ Daten gespeichert!');
-          setStatus('✓ Gespeichert', true);
+          setStatus('✓ Gespeichert', 'ok');
         }
       } catch (err) {
         alert('❌ Fehler:\n' + err.message);
-        setStatus('Fehler', false);
-        console.error(err);
+        setStatus('Fehler', 'error');
       }
     }
     
