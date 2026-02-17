@@ -30,7 +30,26 @@ type FieldItem =
   | { key: keyof DashboardEntry; label: string; type: 'number'; value: number }
   | { key: keyof DashboardEntry; label: string; type: 'text' | 'date' | 'select'; value: string }
 
-const API_URL = '/api/entries'
+const STORAGE_KEY = 'project-life-entries'
+
+// localStorage Helper Functions
+const saveToLocalStorage = (entries: DashboardEntry[]) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries))
+  } catch (error) {
+    console.error('Failed to save to localStorage:', error)
+  }
+}
+
+const loadFromLocalStorage = (): DashboardEntry[] => {
+  try {
+    const data = localStorage.getItem(STORAGE_KEY)
+    return data ? JSON.parse(data) : []
+  } catch (error) {
+    console.error('Failed to load from localStorage:', error)
+    return []
+  }
+}
 
 // Gibt das heutige Datum im lokalen Format (YYYY-MM-DD) zurück
 const getToday = () => {
@@ -184,16 +203,16 @@ function App() {
   )
 
   useEffect(() => {
-    const loadEntry = async () => {
+    const loadEntry = () => {
       setSyncStatus('loading')
       lastSavedEntryRef.current = '' // Reset bei Datumswechsel
       try {
-        const response = await fetch(`${API_URL}?date=${selectedDate}`)
-        const result = await response.json()
+        const allData = loadFromLocalStorage()
+        const existingEntry = allData.find(e => e.date === selectedDate)
         
-        if (result.data) {
-          setEntry(result.data)
-          lastSavedEntryRef.current = JSON.stringify(result.data)
+        if (existingEntry) {
+          setEntry(existingEntry)
+          lastSavedEntryRef.current = JSON.stringify(existingEntry)
         } else {
           const defaultEntry = createDefaultEntry(selectedDate)
           setEntry(defaultEntry)
@@ -212,13 +231,10 @@ function App() {
   }, [selectedDate])
 
   useEffect(() => {
-    const loadAllEntries = async () => {
+    const loadAllEntries = () => {
       try {
-        const response = await fetch(API_URL)
-        const result = await response.json()
-        if (result.data) {
-          setAllEntries(result.data)
-        }
+        const allData = loadFromLocalStorage()
+        setAllEntries(allData)
       } catch (error) {
         console.error('Load all entries error:', error)
       }
@@ -242,18 +258,27 @@ function App() {
       window.clearTimeout(saveTimeoutRef.current)
     }
     
-    saveTimeoutRef.current = window.setTimeout(async () => {
+    saveTimeoutRef.current = window.setTimeout(() => {
       setSyncStatus('syncing')
       try {
-        const response = await fetch(API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: entryString
-        })
+        // Lade alle Entries
+        const allData = loadFromLocalStorage()
         
-        if (!response.ok) throw new Error('Save failed')
+        // Finde und update oder füge neuen Entry hinzu
+        const index = allData.findIndex(e => e.date === entry.date)
+        if (index >= 0) {
+          allData[index] = entry
+        } else {
+          allData.push(entry)
+        }
+        
+        // Speichere in localStorage
+        saveToLocalStorage(allData)
         lastSavedEntryRef.current = entryString
         setSyncStatus('synced')
+        
+        // Update allEntries für Overview
+        setAllEntries([...allData])
         
         // Auto-hide "Gespeichert" nach 2 Sekunden
         setTimeout(() => {
@@ -364,15 +389,66 @@ function App() {
     return { completed, total, percentage }
   }
 
+  const exportData = () => {
+    const data = loadFromLocalStorage()
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `project-life-backup-${getToday()}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const importData = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target?.result as string)
+        saveToLocalStorage(data)
+        setAllEntries(data)
+        setSyncStatus('synced')
+        alert('Daten erfolgreich importiert!')
+      } catch (error) {
+        console.error('Import error:', error)
+        alert('Fehler beim Importieren der Daten')
+      }
+    }
+    reader.readAsText(file)
+  }
+
   return (
     <div className="app">
       <header className="topbar">
         <div>
           <p className="eyebrow">Project Life Dashboard</p>
           <h1>PROJECT LIFE DASHBOARD</h1>
-          <p className="subtle">✓ Online Speicherung</p>
+          <p className="subtle">💾 Lokale Speicherung</p>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          <button 
+            className="overview-btn"
+            onClick={exportData}
+            title="Daten als JSON exportieren"
+          >
+            ⬇️ Export
+          </button>
+          <label 
+            className="overview-btn"
+            title="Daten aus JSON importieren"
+            style={{ cursor: 'pointer', margin: 0 }}
+          >
+            ⬆️ Import
+            <input 
+              type="file" 
+              accept=".json" 
+              onChange={importData}
+              style={{ display: 'none' }}
+            />
+          </label>
           <button 
             className="overview-btn"
             onClick={() => setShowOverview(!showOverview)}

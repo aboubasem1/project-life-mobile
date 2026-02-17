@@ -1,4 +1,5 @@
-// Vercel Serverless Function für Dashboard Entries (JSON Storage)
+// Vercel Serverless Function für Dashboard Entries (In-Memory + localStorage Backup)
+// Da Vercel Serverless read-only ist, nutzen wir localStorage im Browser als primären Speicher
 const entries = new Map();
 
 export default async function handler(req, res) {
