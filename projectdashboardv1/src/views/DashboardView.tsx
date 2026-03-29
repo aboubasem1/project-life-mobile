@@ -1,0 +1,304 @@
+import { useEffect, useState, useRef } from 'react'
+import type { DashboardEntry } from '../types/DashboardEntry'
+import { createDefaultEntry, HABITS } from '../types/DashboardEntry'
+import { ScoreGauge } from '../components/charts/ScoreGauge'
+import { SyncStatusBadge } from '../components/ui/SyncStatusBadge'
+import type { SyncStatus } from '../hooks/useEntries'
+import { calculateScore, getScoreBreakdown } from '../lib/score'
+
+const getToday = (): string => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+interface Props {
+  entries: DashboardEntry[]
+  syncStatus: SyncStatus
+  onSave: (entry: DashboardEntry) => Promise<void>
+}
+
+type Tab = 'morning' | 'evening'
+
+export function DashboardView({ entries, syncStatus, onSave }: Props) {
+  const today          = getToday()
+  const [date, setDate]  = useState(today)
+  const [entry, setEntry] = useState<DashboardEntry>(() => createDefaultEntry(today))
+  const [tab, setTab]    = useState<Tab>('morning')
+  const [saving, setSaving] = useState(false)
+  const saveTimer   = useRef<number | null>(null)
+  const lastSaved   = useRef(JSON.stringify(createDefaultEntry(today)))
+
+  // Load entry when date changes or entries refresh from remote
+  useEffect(() => {
+    const found = entries.find(e => e.date === date)
+    const loaded = found ?? createDefaultEntry(date)
+    setEntry(loaded)
+    lastSaved.current = JSON.stringify(loaded)
+  }, [date, entries])
+
+  // Auto-save with debounce
+  useEffect(() => {
+    const cur = JSON.stringify(entry)
+    if (cur === lastSaved.current) return
+    saveTimer.current && clearTimeout(saveTimer.current)
+    setSaving(true)
+    saveTimer.current = window.setTimeout(async () => {
+      await onSave(entry)
+      lastSaved.current = cur
+      setSaving(false)
+    }, 600)
+    return () => { saveTimer.current && clearTimeout(saveTimer.current) }
+  }, [entry, onSave])
+
+  const update = (partial: Partial<DashboardEntry>) =>
+    setEntry(prev => ({ ...prev, ...partial }))
+
+  const navDate = (dir: -1 | 1) => {
+    const d = new Date(date + 'T00:00:00')
+    d.setDate(d.getDate() + dir)
+    setDate(d.toISOString().split('T')[0])
+  }
+
+  const score     = calculateScore(entry)
+  const breakdown = getScoreBreakdown(entry)
+  const isToday   = date === today
+
+  const MOOD_OPTIONS  = ['😊 MOTIVIERT', '🙂 GUT', '😐 NEUTRAL', '😔 MÜDE', '😤 GESTRESST']
+  const SLEEP_OPTIONS = ['SEHR SCHLECHT', 'SCHLECHT', 'OKAY', 'GUT', 'SEHR GUT']
+
+  return (
+    <div className="dashboard-view">
+
+      {/* ── Top: date nav + score ───────────────────────────────────────── */}
+      <div className="score-header">
+        <div className="date-nav">
+          <button className="nav-btn" onClick={() => navDate(-1)}>‹</button>
+          <input
+            type="date"
+            value={date}
+            max={today}
+            onChange={e => setDate(e.target.value)}
+            className="date-input"
+          />
+          <button
+            className="nav-btn"
+            onClick={() => navDate(1)}
+            disabled={isToday}
+            aria-disabled={isToday}
+          >›</button>
+        </div>
+
+        <div className="score-gauge-wrap">
+          <ScoreGauge score={score} />
+        </div>
+
+        <SyncStatusBadge status={saving ? 'syncing' : syncStatus} />
+      </div>
+
+      {/* ── Tabs ────────────────────────────────────────────────────────── */}
+      <nav className="tab-switch">
+        <button
+          className={`tab-btn ${tab === 'morning' ? 'active' : ''}`}
+          onClick={() => setTab('morning')}
+        >🌅 MORGENS</button>
+        <button
+          className={`tab-btn ${tab === 'evening' ? 'active' : ''}`}
+          onClick={() => setTab('evening')}
+        >🌙 ABENDS</button>
+      </nav>
+
+      {/* ── Morning tab ─────────────────────────────────────────────────── */}
+      {tab === 'morning' && (
+        <div className="tab-content">
+
+          <section className="panel">
+            <div className="panel-header"><span className="chip">🌅 AUFWACHEN</span></div>
+            <div className="metric-grid">
+              <label className="metric-card">
+                <span>STIMMUNG</span>
+                <select value={entry.mood} onChange={e => update({ mood: e.target.value })}>
+                  <option value="">WÄHLEN</option>
+                  {MOOD_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </label>
+              <label className="metric-card">
+                <span>SCHLAFQUALITÄT</span>
+                <select value={entry.sleepQuality} onChange={e => update({ sleepQuality: e.target.value })}>
+                  <option value="">WÄHLEN</option>
+                  {SLEEP_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </label>
+              <div className="row-2">
+                <label className="metric-card">
+                  <span>SCHLAFDAUER</span>
+                  <input
+                    type="text"
+                    value={entry.sleepDuration}
+                    placeholder="z.B. 7h30m"
+                    onChange={e => update({ sleepDuration: e.target.value })}
+                  />
+                </label>
+                <label className="metric-card">
+                  <span>MEDITATION MIN</span>
+                  <input
+                    type="number"
+                    value={entry.meditationMinutes || ''}
+                    min={0}
+                    onChange={e => update({ meditationMinutes: parseInt(e.target.value) || 0 })}
+                  />
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-header"><span className="chip">⚡ DAILY HABITS</span></div>
+            <div className="habit-list">
+              {HABITS.filter(h => h.group === 'habits').map(h => (
+                <button
+                  key={h.key}
+                  className={`habit-toggle ${entry[h.key] ? 'done' : ''}`}
+                  style={{ '--habit-color': h.color } as React.CSSProperties}
+                  onClick={() => update({ [h.key]: !entry[h.key] } as Partial<DashboardEntry>)}
+                  type="button"
+                >
+                  <span className="habit-emoji">{h.emoji}</span>
+                  <span className="habit-label">{h.label}</span>
+                  <span className="habit-check">{entry[h.key] ? '✓' : ''}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-header"><span className="chip">🧠 MINDSET</span></div>
+            <div className="habit-list">
+              {HABITS.filter(h => h.group === 'mindset').map(h => (
+                <button
+                  key={h.key}
+                  className={`habit-toggle ${entry[h.key] ? 'done' : ''}`}
+                  style={{ '--habit-color': h.color } as React.CSSProperties}
+                  onClick={() => update({ [h.key]: !entry[h.key] } as Partial<DashboardEntry>)}
+                  type="button"
+                >
+                  <span className="habit-emoji">{h.emoji}</span>
+                  <span className="habit-label">{h.label}</span>
+                  <span className="habit-check">{entry[h.key] ? '✓' : ''}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+        </div>
+      )}
+
+      {/* ── Evening tab ─────────────────────────────────────────────────── */}
+      {tab === 'evening' && (
+        <div className="tab-content">
+
+          <section className="panel">
+            <div className="panel-header"><span className="chip">🥗 ERNÄHRUNG & KÖRPER</span></div>
+            <div className="metric-grid">
+              <div className="row-2">
+                <label className="metric-card">
+                  <span>PROTEIN (G)</span>
+                  <input type="number" value={entry.proteinGrams || ''} min={0}
+                    onChange={e => update({ proteinGrams: parseInt(e.target.value) || 0 })} />
+                </label>
+                <label className="metric-card">
+                  <span>KALORIEN</span>
+                  <input type="number" value={entry.calories || ''} min={0}
+                    onChange={e => update({ calories: parseInt(e.target.value) || 0 })} />
+                </label>
+              </div>
+              <div className="row-2">
+                <label className="metric-card">
+                  <span>WASSER (L)</span>
+                  <input type="number" value={entry.waterLiters || ''} min={0} step={0.1}
+                    onChange={e => update({ waterLiters: parseFloat(e.target.value) || 0 })} />
+                </label>
+                <label className="metric-card">
+                  <span>GEWICHT (KG)</span>
+                  <input type="number" value={entry.weightKg || ''} min={0} step={0.1}
+                    onChange={e => update({ weightKg: parseFloat(e.target.value) || 0 })} />
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-header"><span className="chip">💼 WORK & FOKUS</span></div>
+            <div className="metric-grid">
+              <div className="row-2">
+                <label className="metric-card">
+                  <span>DEEP WORK (H)</span>
+                  <input type="number" value={entry.deepWorkHours || ''} min={0} step={0.5}
+                    onChange={e => update({ deepWorkHours: parseFloat(e.target.value) || 0 })} />
+                </label>
+                <label className="metric-card">
+                  <span>TASKS ERLEDIGT</span>
+                  <input type="number" value={entry.tasksDone || ''} min={0}
+                    onChange={e => update({ tasksDone: parseInt(e.target.value) || 0 })} />
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-header"><span className="chip">🌙 ABEND RITUAL</span></div>
+            <div className="habit-list">
+              {HABITS.filter(h => h.group === 'evening').map(h => (
+                <button
+                  key={h.key}
+                  className={`habit-toggle ${entry[h.key] ? 'done' : ''}`}
+                  style={{ '--habit-color': h.color } as React.CSSProperties}
+                  onClick={() => update({ [h.key]: !entry[h.key] } as Partial<DashboardEntry>)}
+                  type="button"
+                >
+                  <span className="habit-emoji">{h.emoji}</span>
+                  <span className="habit-label">{h.label}</span>
+                  <span className="habit-check">{entry[h.key] ? '✓' : ''}</span>
+                </button>
+              ))}
+            </div>
+            <div className="metric-grid" style={{ marginTop: '16px' }}>
+              <label className="metric-card">
+                <span>JOURNAL NOTIZEN</span>
+                <textarea
+                  className="journal-textarea"
+                  value={entry.journalText}
+                  placeholder="Was war heute gut? Was war herausfordernd?"
+                  rows={4}
+                  onChange={e => update({ journalText: e.target.value })}
+                />
+              </label>
+            </div>
+          </section>
+
+        </div>
+      )}
+
+      {/* ── Score breakdown ─────────────────────────────────────────────── */}
+      <section className="panel">
+        <div className="panel-header"><span className="chip">📊 SCORE BREAKDOWN</span></div>
+        <div className="breakdown-grid">
+          {breakdown.map(cat => (
+            <div key={cat.category} className="breakdown-cat">
+              <div className="breakdown-header">
+                <span className="breakdown-name">{cat.category}</span>
+                <span className="breakdown-pts">{cat.achieved}/{cat.max}</span>
+              </div>
+              <div className="progress-track">
+                <div
+                  className="progress-fill"
+                  style={{ width: `${cat.max > 0 ? (cat.achieved / cat.max) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+    </div>
+  )
+}

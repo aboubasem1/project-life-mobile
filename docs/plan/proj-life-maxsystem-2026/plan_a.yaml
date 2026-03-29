@@ -1,0 +1,835 @@
+plan_id: proj-life-maxsystem-2026
+objective: >
+  Rebuild 'Project Life' als maximales System. Komplett neue saubere Single-App
+  basierend auf projectdashboardv1 (React/Vite/TypeScript). Features: Supabase
+  Cloud-Sync via ENV-Vars, Chart.js Charts (7-Tage-Trends, Monatsübersicht),
+  Daily Score System 0-100, erweiterte Tracking-Felder (Gewicht, Wasser, Deep Work,
+  Journal-Text), bessere UX (mobile-first, dark theme), PWA-Setup.
+  Alle alten Versionen (project-life-dashboard__de, __v1, __v1-supabase, api/)
+  werden nach erfolgreichem Build gelöscht. vercel.json zeigt auf projectdashboardv1.
+created_at: "2026-03-29"
+created_by: gem-planner
+status: pending_approval
+research_confidence: high
+
+plan_metrics:
+  wave_1_task_count: 2
+  total_dependencies: 18
+  risk_score: medium
+
+tldr: |
+  6-Wellen-DAG mit 12 Tasks. Wellen 1-2 legen Foundation (Typen, Supabase-Schema).
+  Wellen 3-4 bauen parallel alle Features (Charts, Formular, Sync, PWA).
+  Welle 5 integriert und deployed. Welle 6 reviewt Security und testet E2E.
+  Kernrisiko: Supabase RLS-Konfiguration + Chart.js Render-Performance.
+  Alle alten Verzeichnisse werden erst nach grünem E2E-Test gelöscht.
+
+open_questions:
+  - "Soll der Daily Score rein clientseitig berechnet oder in Supabase als computed column gespeichert werden? (Annahme: clientseitig)"
+  - "PWA: Offline-Fallback auf localStorage wenn Supabase nicht erreichbar? (Annahme: ja)"
+  - "Soll ein User-Auth-Flow (Supabase Auth) existieren oder reicht anon_key mit Row-Level Security per user_id aus ENV?"
+
+pre_mortem:
+  overall_risk_level: medium
+  critical_failure_modes:
+    - scenario: "Supabase CORS oder RLS blockiert Zugriff aus Vercel-Domain"
+      likelihood: medium
+      impact: high
+      mitigation: "RLS-Policy und allowed_origins in Supabase frühzeitig konfigurieren (T4). Integrations-Test vor Cleanup alter Dirs."
+    - scenario: "Chart.js Bundle-Größe sprengt 250KB Budget → schlechte Performance"
+      likelihood: low
+      impact: medium
+      mitigation: "Tree-shaking, nur benötigte Chart-Typen registrieren (T5). Vite build analyze step einbauen."
+    - scenario: "ENV-Vars nicht in Vercel konfiguriert → App bricht in Produktion"
+      likelihood: medium
+      impact: high
+      mitigation: "Graceful degradation auf localStorage wenn VITE_SUPABASE_URL fehlt (T7). Vercel ENV-Vars in Deployment-Task dokumentieren (T11)."
+    - scenario: "Daten-Migration: bestehende localStorage-Einträge passen nicht zum neuen Schema"
+      likelihood: medium
+      impact: medium
+      mitigation: "Migration-Funktion in loadEntries() die alte Felder mappt und neue mit Defaults füllt (T3)."
+  assumptions:
+    - "projectdashboardv1 ist die einzige Quelle der Wahrheit — kein Code aus alten Versionen wird übernommen"
+    - "Supabase-Projekt existiert bereits oder wird in T4 neu erstellt"
+    - "vite-plugin-pwa v0.20+ kompatibel mit Vite 7"
+    - "Daily Score Gewichtung: jedes erfüllte boolean Habit = 1 Punkt, numerische Felder haben Schwellwerte"
+    - "Keine Supabase Auth nötig — user_id wird aus ENV oder generierter UUID aus localStorage gezogen"
+
+implementation_specification:
+  code_structure: |
+    projectdashboardv1/src/
+      types/          → DashboardEntry.ts, ScoreConfig.ts
+      lib/            → supabase.ts (client), score.ts (algorithm), storage.ts (localStorage fallback)
+      hooks/          → useEntries.ts (unified Supabase+localStorage), useDailyScore.ts
+      components/
+        forms/        → MorningForm.tsx, EveningForm.tsx, ExtendedFields.tsx
+        charts/       → WeeklyChart.tsx, MonthlyChart.tsx, ScoreGauge.tsx
+        ui/           → HabitToggle.tsx, MetricInput.tsx, ScoreBadge.tsx, SyncStatus.tsx
+      views/          → DashboardView.tsx, HistoryView.tsx, StatsView.tsx
+      App.tsx         → Router-Shell + Provider
+      main.tsx        → PWA registration + App mount
+  affected_areas:
+    - "projectdashboardv1/src/ — vollständige Neustrukturierung"
+    - "projectdashboardv1/public/ — manifest.json, icons"
+    - "projectdashboardv1/vite.config.ts — PWA plugin + env"
+    - "projectdashboardv1/package.json — neue deps: @supabase/supabase-js, vite-plugin-pwa"
+    - "vercel.json — Root-Ebene zeigt auf projectdashboardv1"
+    - "Zu löschende Dirs: project-life-dashboard__de, __v1, __v1-supabase, api/"
+  component_details:
+    - component: "DashboardEntry (Type)"
+      responsibility: "Erweiterte Datenstruktur mit allen Tracking-Feldern"
+      interfaces:
+        - "weightKg: number, waterLiters: number, deepWorkHours: number, journalText: string"
+        - "dailyScore: number (0-100, computed), scoreBreakdown: ScoreBreakdown"
+    - component: "useEntries Hook"
+      responsibility: "Unified CRUD für Supabase primary + localStorage fallback, Offline-Detection"
+      interfaces:
+        - "entries: DashboardEntry[], loading: boolean, saveEntry(e), loadEntry(date)"
+        - "syncStatus: 'online'|'offline'|'syncing'|'error'"
+    - component: "DailyScore Engine"
+      responsibility: "Berechnet Score 0-100 aus Entry-Werten mit konfigurierbaren Gewichtungen"
+      interfaces:
+        - "calculateScore(entry: DashboardEntry): number"
+        - "getScoreBreakdown(entry): {category: string, points: number, max: number}[]"
+    - component: "WeeklyChart / MonthlyChart"
+      responsibility: "Chart.js Line/Bar Charts für Score-Trends, per-Habit-Completion-Rates"
+      interfaces:
+        - "WeeklyChart({entries: DashboardEntry[]})"
+        - "MonthlyChart({entries: DashboardEntry[], month: string})"
+    - component: "SupabaseClient lib"
+      responsibility: "Singleton Supabase client aus VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY"
+      interfaces:
+        - "getClient(): SupabaseClient | null (null wenn ENV fehlt → localStorage-only mode)"
+  dependencies:
+    - component: "WeeklyChart"
+      relationship: "konsumiert DashboardEntry[] aus useEntries Hook"
+    - component: "useEntries"
+      relationship: "ruft SupabaseClient auf; fällt back auf localStorage storage.ts"
+    - component: "DashboardView"
+      relationship: "komponiert MorningForm + EveningForm + ScoreGauge + WeeklyChart"
+  integration_points:
+    - "Supabase table 'daily_entries' mit RLS (user_id = current_user_id aus localStorage UUID)"
+    - "Vite env: VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY → .env.local + Vercel ENV"
+    - "vite-plugin-pwa generiert Service Worker + manifest automatisch aus vite.config.ts"
+    - "vercel.json: buildCommand='cd projectdashboardv1 && npm run build', outputDirectory='projectdashboardv1/dist'"
+
+contracts:
+  - from_task: T2
+    to_task: T4
+    interface: "Supabase table schema SQL + RLS policies"
+    format: "SQL-Datei + Dokumentation in T4 context_files"
+  - from_task: T3
+    to_task: T5
+    interface: "DashboardEntry TypeScript-Interface mit allen neuen Feldern"
+    format: "src/types/DashboardEntry.ts"
+  - from_task: T3
+    to_task: T6
+    interface: "DashboardEntry TypeScript-Interface + DailyScore-Algorithmus"
+    format: "src/types/DashboardEntry.ts + src/lib/score.ts"
+  - from_task: T4
+    to_task: T7
+    interface: "SupabaseClient Singleton + ENV-Konfiguration"
+    format: "src/lib/supabase.ts"
+  - from_task: T5
+    to_task: T10
+    interface: "WeeklyChart + MonthlyChart + ScoreGauge Komponenten"
+    format: "src/components/charts/"
+  - from_task: T7
+    to_task: T10
+    interface: "useEntries Hook API"
+    format: "src/hooks/useEntries.ts"
+  - from_task: T6
+    to_task: T10
+    interface: "MorningForm + EveningForm + ExtendedFields Komponenten"
+    format: "src/components/forms/"
+  - from_task: T8
+    to_task: T10
+    interface: "PWA-konfiguriertes vite.config.ts + manifest"
+    format: "vite.config.ts, public/manifest.json"
+  - from_task: T10
+    to_task: T11
+    interface: "Gebundener Build in projectdashboardv1/dist/"
+    format: "dist/ directory + vercel.json"
+  - from_task: T11
+    to_task: T12
+    interface: "Deployed Vercel Preview URL"
+    format: "URL für Security Audit"
+  - from_task: T12
+    to_task: T13
+    interface: "Security-Clearance + fixes"
+    format: "review report"
+
+tasks:
+  # ─── WAVE 1 ─────────────────────────────────────────────────────────────────
+  - id: T1
+    title: "Codebase Audit & Typ-Architektur definieren"
+    description: |
+      Vollständiges Audit vom bestehenden projectdashboardv1/src/App.tsx.
+      Identifiziere alle bestehenden DashboardEntry-Felder, Hilfsfunktionen und
+      UI-Patterns die wiederverwendet werden können.
+      Definiere finale DashboardEntry-Typen mit neuen Feldern:
+      weightKg, waterLiters, deepWorkHours, journalText, dailyScore.
+      Erstelle src/types/DashboardEntry.ts als Single-Source-of-Truth.
+      Definiere ScoreConfig-Interface für Daily Score Gewichtungen.
+    wave: 1
+    agent: gem-researcher
+    priority: high
+    status: pending
+    dependencies: []
+    conflicts_with: []
+    context_files:
+      - path: "projectdashboardv1/src/App.tsx"
+        description: "Bestehendes Monolith - alle Typen und Logik hier extrahieren"
+      - path: "projectdashboardv1/package.json"
+        description: "Bestehende Dependencies checken"
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 120
+    focus_area: "Type System Design"
+    verification:
+      - "src/types/DashboardEntry.ts exportiert vollständiges Interface"
+      - "src/types/ScoreConfig.ts definiert Gewichtungs-Schema"
+      - "Alle alten Felder aus App.tsx sind im neuen Typ enthalten"
+    acceptance_criteria:
+      - "DashboardEntry enthält: weightKg, waterLiters, deepWorkHours, journalText"
+      - "dailyScore field vorhanden als number 0-100"
+      - "TypeScript strict-mode kompatibel ohne any-casts"
+    tech_stack:
+      - "TypeScript 5.9"
+    test_coverage: null
+    requires_review: false
+    review_depth: null
+    review_security_sensitive: false
+    failure_modes:
+      - scenario: "Typ-Inkompatibilitäten beim Import in Komponenten"
+        likelihood: low
+        impact: medium
+        mitigation: "Alle Felder mit sinnvollen Defaults definieren, optional-chaining wo nötig"
+
+  - id: T2
+    title: "Supabase Schema Design + RLS Strategy"
+    description: |
+      Entwirf das Supabase PostgreSQL Schema für die daily_entries Tabelle.
+      Alle DashboardEntry-Felder als Spalten (boolean, numeric, text).
+      user_id TEXT column (UUID aus localStorage, kein Auth-Login nötig).
+      RLS Policy: user_id = current_setting('app.user_id') oder via Supabase
+      service_role bypass. Erstelle migration SQL Datei.
+      Dokumentiere ENV-Vars: VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY.
+      Kein Hardcoding der Keys - alles über Vite env-Prefix VITE_.
+    wave: 1
+    agent: gem-researcher
+    priority: high
+    status: pending
+    dependencies: []
+    conflicts_with: []
+    context_files:
+      - path: "projectdashboardv1/package.json"
+        description: "Prüfen ob @supabase/supabase-js bereits vorhanden"
+    estimated_effort: small
+    estimated_files: 2
+    estimated_lines: 80
+    focus_area: "Database & Security Architecture"
+    verification:
+      - "SQL Migration File erstellt in projectdashboardv1/supabase/migrations/"
+      - "RLS Policy für user_id-Isolierung definiert"
+      - "ENV-Var Naming Convention dokumentiert"
+    acceptance_criteria:
+      - "Keine Supabase Keys im Source Code"
+      - "RLS verhindert Cross-User-Datenzugriff"
+      - "Schema deckt alle DashboardEntry-Felder ab"
+    tech_stack:
+      - "PostgreSQL 15 (Supabase)"
+      - "Supabase RLS"
+    test_coverage: null
+    requires_review: true
+    review_depth: lightweight
+    review_security_sensitive: true
+    failure_modes:
+      - scenario: "RLS zu restrictiv - blockiert anon-key Inserts"
+        likelihood: medium
+        impact: high
+        mitigation: "Anon-key Insert Policy explizit erlauben, nur SELECT nach user_id einschränken"
+
+  # ─── WAVE 2 ─────────────────────────────────────────────────────────────────
+  - id: T3
+    title: "DashboardEntry Typen + Daily Score Algorithmus implementieren"
+    description: |
+      Basierend auf T1 Research: Erstelle finales src/types/DashboardEntry.ts.
+      Implementiere src/lib/score.ts mit calculateScore(entry) Funktion:
+      - Boolean Habits: je 3-5 Punkte (konfigurierbar)
+      - Schlaf 7+h: 10 Punkte, <6h: 0 Punkte
+      - Meditation 10+min: 8 Punkte
+      - Protein >=150g: 6 Punkte
+      - Deep Work >=4h: 10 Punkte
+      - Wasser >=2.5L: 6 Punkte
+      - Kalorien in Range: 5 Punkte
+      - Gewicht getrackt: 3 Punkte
+      - Journal geschrieben (len>50): 5 Punkte
+      Gesamtmax 100, Score auf 100 normalisiert.
+      Implementiere auch src/lib/storage.ts (localStorage-Wrapper mit Migration).
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T1
+    conflicts_with: []
+    context_files:
+      - path: "projectdashboardv1/src/App.tsx"
+        description: "Bestehende createDefaultEntry und Hilfsfunktionen"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 200
+    focus_area: "Core Business Logic"
+    verification:
+      - "calculateScore(emptyEntry) === 0"
+      - "calculateScore(fullPerfectDay) === 100"
+      - "storage.ts migriert alte Einträge ohne Datenverlust"
+    acceptance_criteria:
+      - "Score 0-100, nie negativ, nie über 100"
+      - "getScoreBreakdown() gibt detaillierte Kategorie-Aufschlüsselung zurück"
+      - "localStorage Migration: alte Einträge bekommen neue Felder mit Defaults"
+    tech_stack:
+      - "TypeScript 5.9"
+    test_coverage: "Unit-Tests für calculateScore edge cases"
+    requires_review: false
+    review_depth: null
+    review_security_sensitive: false
+    failure_modes:
+      - scenario: "Division by zero oder NaN bei leeren numerischen Feldern"
+        likelihood: medium
+        impact: medium
+        mitigation: "Alle numerischen Inputs mit || 0 defaulten vor Score-Berechnung"
+
+  - id: T4
+    title: "Supabase Client Setup + useEntries Hook"
+    description: |
+      Installiere @supabase/supabase-js. Erstelle src/lib/supabase.ts:
+      - createClient aus VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY
+      - Wenn ENV fehlt → null zurückgeben (offline-mode)
+      - user_id: UUID aus localStorage ('pl_user_id'), bei erstem Aufruf generieren
+      Erstelle src/hooks/useEntries.ts:
+      - loadEntry(date): Supabase query ODER localStorage fallback
+      - saveEntry(entry): Supabase upsert ODER localStorage
+      - loadAllEntries(): für Charts
+      - syncStatus State Management
+      - Optimistische Updates: erst localStorage schreiben, dann Supabase async
+    wave: 2
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T2
+    conflicts_with: []
+    context_files:
+      - path: "projectdashboardv1/package.json"
+        description: "package.json für dep-installation"
+      - path: "projectdashboardv1/vite.config.ts"
+        description: "Vite config für env-Handling"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 250
+    focus_area: "Data Layer"
+    verification:
+      - "App funktioniert ohne VITE_SUPABASE_URL (localStorage-only mode)"
+      - "App synct zu Supabase wenn ENVs gesetzt"
+      - "Kein API-Key im Build-Output (vite build + grep)"
+    acceptance_criteria:
+      - "VITE_ prefixed ENVs werden korrekt von Vite eingelesen"
+      - "user_id UUID wird einmalig generiert und persistiert"
+      - "Offline-Fallback: localStorage-Mode ohne Fehlermeldung"
+      - "Supabase-Verbindungsfehler werden als syncStatus 'error' angezeigt, nicht gecrashed"
+    tech_stack:
+      - "@supabase/supabase-js ^2.49"
+      - "TypeScript 5.9"
+      - "React 19 hooks"
+    test_coverage: null
+    requires_review: true
+    review_depth: standard
+    review_security_sensitive: true
+    failure_modes:
+      - scenario: "VITE_SUPABASE_ANON_KEY im Build-Bundle sichtbar via source maps"
+        likelihood: medium
+        impact: high
+        mitigation: "vite build --sourcemap=false in prod, anon_key ist per Definition öffentlich aber RLS schützt Daten"
+
+  # ─── WAVE 3 ─────────────────────────────────────────────────────────────────
+  - id: T5
+    title: "Chart.js Integration — WeeklyChart, MonthlyChart, ScoreGauge"
+    description: |
+      Installiere chart.js + react-chartjs-2. Erstelle 3 Komponenten:
+      1. WeeklyChart.tsx: Line Chart, letzte 7 Tage Daily Score + eine Habit-Linie
+         - X-Achse: Datum, Y-Achse: Score 0-100
+         - Farbe: gradient grün-gold
+      2. MonthlyChart.tsx: Bar Chart, 30 Tage Score-Bars
+         - Farbcodierung: <40 rot, 40-70 gelb, >70 grün
+      3. ScoreGauge.tsx: Doughnut Chart als Gauge für Tages-Score
+         - Große Zahl in der Mitte, animiert beim Laden
+      Alle Charts: dark-theme kompatibel (keine weißen Hintergründe),
+      responsive, lazy-loaded mit React.lazy().
+      Nur benötigte Chart-Typen registrieren (tree-shaking).
+    wave: 3
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T3
+    conflicts_with: []
+    context_files:
+      - path: "projectdashboardv1/src/App.css"
+        description: "Bestehende CSS-Variablen und dark-theme colors"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 300
+    focus_area: "Data Visualization"
+    verification:
+      - "Charts rendern mit leeren entries[] ohne crash"
+      - "Bundle-Größe Chart.js < 120KB gzipped (nur tree-shaken Charts)"
+      - "Charts responsive auf 375px Breite"
+    acceptance_criteria:
+      - "WeeklyChart zeigt letzten 7 Tage Score als Linie"
+      - "MonthlyChart zeigt 30-Tage Bar Chart"
+      - "ScoreGauge zeigt aktuellen Tages-Score als Doughnut"
+      - "Alle Charts dark-mode kompatibel"
+    tech_stack:
+      - "chart.js ^4.5.1"
+      - "react-chartjs-2 ^5.3"
+    test_coverage: null
+    requires_review: false
+    review_depth: null
+    review_security_sensitive: false
+    failure_modes:
+      - scenario: "Chart.js canvas memory leak bei Component-Remount"
+        likelihood: medium
+        impact: low
+        mitigation: "useEffect cleanup mit chart.destroy() oder react-chartjs-2 handles it natively"
+
+  - id: T6
+    title: "Erweiterte Entry-Forms mit neuen Feldern + Daily Score UI"
+    description: |
+      Refaktoriere das bestehende Formular aus App.tsx in saubere Komponenten:
+      src/components/forms/MorningForm.tsx:
+        - Mood-Selector (Emoji-Buttons), Schlaf-Dauer, Schlaf-Qualität
+        - Cold Shower, Protein Shake, Morning Routine Habits
+        - Gewicht (kg, numerisch), Wasser (Liter, 0.1 Schritte)
+      src/components/forms/EveningForm.tsx:
+        - Deep Work (Stunden, 0.5-Schritte), Kalorien, Protein
+        - Boolean Habits: Meditation, Gratitude, Focus, Winner Mode
+        - Journal Text (Textarea, min 3 Zeilen, Zeichenzähler)
+        - Tasks Done (Zahl)
+      src/components/ui/ScoreBadge.tsx:
+        - Zeigt Daily Score als große animierte Zahl
+        - Farbgradient: 0-39 rot, 40-69 gelb, 70-89 grün, 90-100 gold
+      Alle Inputs: sofortige Score-Neuberechnung bei jeder Änderung.
+    wave: 3
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T3
+    conflicts_with: []
+    context_files:
+      - path: "projectdashboardv1/src/App.tsx"
+        description: "Bestehende renderField Funktion und Tab-Logik als Basis"
+      - path: "projectdashboardv1/src/App.css"
+        description: "Bestehende Styles fortführen und erweitern"
+    estimated_effort: large
+    estimated_files: 3
+    estimated_lines: 450
+    focus_area: "Form UX & Data Entry"
+    verification:
+      - "Alle neuen Felder speichern korrekt in DashboardEntry"
+      - "Score-Badge aktualisiert sich live bei jeder Eingabe"
+      - "Journal Textarea zeigt Zeichenzähler"
+      - "Mobile Layout 375px: alle Inputs bedienbar ohne horizontales Scrollen"
+    acceptance_criteria:
+      - "weightKg, waterLiters, deepWorkHours, journalText Felder vorhanden und functional"
+      - "Daily Score 0-100 sichtbar im Header jeder View"
+      - "Form ist in Morning/Evening Tabs aufgeteilt"
+    tech_stack:
+      - "React 19"
+      - "TypeScript 5.9"
+    test_coverage: null
+    requires_review: false
+    review_depth: null
+    review_security_sensitive: false
+    failure_modes:
+      - scenario: "Zu viele Felder → UX überwältigend auf Mobile"
+        likelihood: medium
+        impact: medium
+        mitigation: "Collapsible Sections für optionale Felder (Gewicht, Wasser collapsible wenn leer)"
+
+  - id: T7
+    title: "Supabase Sync Service + Offline-Mode Fallback"
+    description: |
+      Vervollständige useEntries.ts Hook basierend auf T4 Skeleton:
+      - Debounced save (600ms) wie bisheriger setTimeout-Pattern
+      - Conflict Resolution: server-wins Strategy (simpel für v1)
+      - Bulk-Load für Charts: loadAllEntries() mit Supabase pagination wenn >1000 Rows
+      - Sync-Status in SyncStatus.tsx Komponente:
+        'syncing' (spinner), 'synced' (grüner dot), 'error' (retry-Button), 'offline' (gelber dot)
+      - Retry-Logik: bei Fehler max 3 retries mit exponential backoff
+      - Erstelle src/components/ui/SyncStatus.tsx
+    wave: 3
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T4
+    conflicts_with: []
+    context_files:
+      - path: "projectdashboardv1/src/App.tsx"
+        description: "Bestehender debounce save pattern mit saveTimeoutRef"
+    estimated_effort: medium
+    estimated_files: 2
+    estimated_lines: 180
+    focus_area: "Sync & Reliability"
+    verification:
+      - "Offline → Online: ausstehende Saves werden nachgeholt"
+      - "Supabase-Fehler: App crashed nicht, zeigt Error-Status"
+      - "SyncStatus zeigt korrekten Zustand in allen Szenarien"
+    acceptance_criteria:
+      - "Graceful degradation auf localStorage wenn Supabase nicht erreichbar"
+      - "Kein Datenverlust bei Offline → Online Transition"
+      - "SyncStatus visuell klar erkennbar"
+    tech_stack:
+      - "@supabase/supabase-js ^2.49"
+      - "React 19"
+    test_coverage: null
+    requires_review: false
+    review_depth: null
+    review_security_sensitive: false
+    failure_modes:
+      - scenario: "Race condition: mehrere Tabs speichern gleichzeitig"
+        likelihood: low
+        impact: low
+        mitigation: "localStorage BroadcastChannel für Tab-Sync erwägen, für v1 akzeptabel ignorieren"
+
+  # ─── WAVE 4 ─────────────────────────────────────────────────────────────────
+  - id: T8
+    title: "PWA Setup — Service Worker + Manifest + vite-plugin-pwa"
+    description: |
+      Installiere vite-plugin-pwa. Konfiguriere vite.config.ts:
+      - VitePWA plugin mit generateSW Strategie
+      - manifest: name 'Project Life', theme_color '#0a0a0a', icons (192, 512)
+      - Workbox: NetworkFirst für Supabase-Calls, CacheFirst für App-Shell
+      - Offline-Fallback HTML
+      Erstelle public/icons/: icon-192.png, icon-512.png (dark design).
+      Aktualisiere main.tsx für Service Worker Registration.
+      Registriere PWA Update-Prompt (Toast bei neuer Version).
+    wave: 4
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - T5
+      - T6
+      - T7
+    conflicts_with: []
+    context_files:
+      - path: "projectdashboardv1/vite.config.ts"
+        description: "Basis Vite Config"
+      - path: "projectdashboardv1/src/main.tsx"
+        description: "Entry point für SW registration"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 150
+    focus_area: "PWA & Offline Capability"
+    verification:
+      - "Lighthouse PWA Score >= 90"
+      - "App installierbar als Home Screen App (iOS Safari + Android Chrome)"
+      - "Offline: App lädt, zeigt gecachte Daten"
+    acceptance_criteria:
+      - "manifest.json korrekt mit Icons"
+      - "Service Worker registriert sich ohne Fehler"
+      - "vite build generiert Service Worker File"
+    tech_stack:
+      - "vite-plugin-pwa ^0.20"
+      - "Workbox"
+      - "Vite 7"
+    test_coverage: null
+    requires_review: false
+    review_depth: null
+    review_security_sensitive: false
+    failure_modes:
+      - scenario: "vite-plugin-pwa inkompatibel mit Vite 7"
+        likelihood: low
+        impact: medium
+        mitigation: "@latest tag verwenden, bei Inkompatibilität manuelles Service Worker Script als Fallback"
+
+  - id: T9
+    title: "UX Overhaul — Dark Theme Polish + Mobile-First Layout"
+    description: |
+      Überarbeite App.css und Komponenten-Styles:
+      - CSS Custom Properties für konsistentes Design-System:
+        --color-bg: #0a0a0a, --color-surface: #131313, --color-accent: #c8a84b (gold)
+        --color-text: #e8e8e8, --color-muted: #666, --border-radius: 12px
+      - Navigation: Bottom Tab Bar für Mobile (Dashboard / History / Stats)
+      - Cards: glassmorphism-style (backdrop-filter blur)
+      - Habit-Toggles: thumb-freundlich >=48px touch targets
+      - Score-Anzeige: prominent im Header mit Animation
+      - Typography: SF Pro / Inter Fallback Stack
+      - History View: Kalender-Grid oder scrollbare Liste der letzten 30 Tage
+      - Stats View: Aggregierte Statistiken + Charts Integration
+      Responsiv testen: 375px, 428px, 768px, 1280px.
+    wave: 4
+    agent: gem-implementer
+    priority: medium
+    status: pending
+    dependencies:
+      - T6
+    conflicts_with: []
+    context_files:
+      - path: "projectdashboardv1/src/App.css"
+        description: "Bestehende Styles als Basis"
+      - path: "projectdashboardv1/src/App.tsx"
+        description: "Bestehende Komponenten-Struktur und Tab-Logik"
+    estimated_effort: large
+    estimated_files: 3
+    estimated_lines: 400
+    focus_area: "UI/UX Design"
+    verification:
+      - "Alle Touch Targets >= 44px (iOS HIG)"
+      - "Kein horizontaler Scroll auf 375px"
+      - "Score prominent sichtbar above the fold"
+    acceptance_criteria:
+      - "Bottom Tab Bar auf Mobile vorhanden"
+      - "Dark Theme konsistent in allen Komponenten"
+      - "CSS Custom Properties für Design-Token genutzt"
+    tech_stack:
+      - "CSS3 Custom Properties"
+      - "React 19"
+    test_coverage: null
+    requires_review: false
+    review_depth: null
+    review_security_sensitive: false
+
+  # ─── WAVE 5 ─────────────────────────────────────────────────────────────────
+  - id: T10
+    title: "Integration — App.tsx Zusammenführung + Build-Test"
+    description: |
+      Füge alle Komponenten in App.tsx zusammen:
+      - Routing zwischen DashboardView / HistoryView / StatsView (URL hash-basiert)
+      - Provider-Setup: kein Context nötig, Props-Drilling für v1 ok
+      - DashboardView: Score Header + Morning/Evening Tabs + SyncStatus
+      - HistoryView: Liste letzter 30 Tage mit Score pro Tag
+      - StatsView: WeeklyChart + MonthlyChart + Streak-Tabelle
+      Führe vite build durch, prüfe auf TypeScript-Fehler.
+      Prüfe Bundle-Größe: Ziel < 400KB gzipped total.
+      Entferne alle console.logs, kein debug output.
+      Prüfe dass kein ENV-Key im Build-Output ist.
+    wave: 5
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T5
+      - T7
+      - T8
+      - T9
+    conflicts_with: []
+    context_files:
+      - path: "projectdashboardv1/src/App.tsx"
+        description: "Basis die refaktoriert und mit neuen Komponenten zusammengebaut wird"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 250
+    focus_area: "Integration & Build"
+    verification:
+      - "npm run build läuft ohne Fehler und TypeScript-Errors"
+      - "Bundle-Größe < 400KB gzipped"
+      - "Kein VITE_SUPABASE_ANON_KEY Substring im dist/ output"
+    acceptance_criteria:
+      - "Alle 3 Views navigierbar"
+      - "Daily Score sichtbar in jeder View"
+      - "Build-Artefakt in projectdashboardv1/dist/ vorhanden"
+    tech_stack:
+      - "React 19"
+      - "Vite 7"
+      - "TypeScript 5.9"
+    test_coverage: null
+    requires_review: false
+    review_depth: null
+    review_security_sensitive: false
+    failure_modes:
+      - scenario: "TypeScript-Fehler durch fehlende Types oder any-Casts"
+        likelihood: medium
+        impact: medium
+        mitigation: "Strict mode schrittweise: erst noImplicitAny, dann strictNullChecks"
+
+  - id: T11
+    title: "Deployment Config + Cleanup alter Verzeichnisse"
+    description: |
+      Aktualisiere Root-level vercel.json:
+      {
+        "buildCommand": "cd projectdashboardv1 && npm install && npm run build",
+        "outputDirectory": "projectdashboardv1/dist",
+        "installCommand": "echo 'install in buildCommand'",
+        "cleanUrls": true,
+        "rewrites": [{"source": "/(.*)", "destination": "/index.html"}]
+      }
+      Dokumentiere Vercel ENV-Vars die gesetzt werden müssen:
+      VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY.
+      Erstelle projectdashboardv1/.env.example mit Placeholder-Values.
+      NACH erfolgreichem Build Test: Lösche alte Verzeichnisse:
+        - project-life-dashboard__de/
+        - project-life-dashboard__v1/
+        - project-life-dashboard__v1-supabase/
+        - api/
+      Lösche auch api/ Verzeichnis im Root wenn vorhanden.
+    wave: 5
+    agent: gem-implementer
+    priority: high
+    status: pending
+    dependencies:
+      - T10
+    conflicts_with: []
+    context_files:
+      - path: "vercel.json"
+        description: "Root vercel.json die aktualisiert wird"
+    estimated_effort: small
+    estimated_files: 2
+    estimated_lines: 50
+    focus_area: "Deployment & Cleanup"
+    verification:
+      - "vercel.json build läuft: cd projectdashboardv1 && npm run build erfolgreich"
+      - ".env.example vorhanden mit Placeholder-Keys"
+      - "Alte Verzeichnisse nicht mehr vorhanden nach Cleanup"
+    acceptance_criteria:
+      - "vercel.json zeigt korrekt auf projectdashboardv1"
+      - ".env.example dokumentiert alle benötigten ENV-Vars"
+      - "README.md mit Deployment-Anleitung (Vercel ENV setup)"
+    tech_stack:
+      - "Vercel"
+    test_coverage: null
+    requires_review: false
+    review_depth: null
+    review_security_sensitive: false
+    failure_modes:
+      - scenario: "Vercel Build schlägt fehl wegen fehlendem node_modules"
+        likelihood: low
+        impact: medium
+        mitigation: "npm install in buildCommand explizit einschließen"
+
+  # ─── WAVE 6 ─────────────────────────────────────────────────────────────────
+  - id: T12
+    title: "Security Review — Supabase Keys, RLS, XSS, SSRF"
+    description: |
+      Vollständiger Security Audit des gebauten Systems:
+      1. ENV Exposure: grep dist/ auf SUPABASE Keys → kein Treffer erlaubt
+      2. RLS Verification: Supabase RLS Policy prüfen - kann User A Daten von User B lesen?
+      3. XSS check: Journal-Text Rendering - wird als text, nicht dangerouslySetInnerHTML gerendert?
+      4. SSRF: Keine server-seitige URL-Konstruktion aus User-Input
+      5. Supabase anon_key Scope: Nur minimal nötige Berechtigungen
+      6. localStorage user_id: Kann User es für Privilege Escalation manipulieren?
+         → user_id muss in RLS Server-seitig validiert werden
+      Erstelle Security Report in docs/plan/proj-life-maxsystem-2026/security-review.md.
+    wave: 6
+    agent: gem-reviewer
+    priority: high
+    status: pending
+    dependencies:
+      - T11
+    conflicts_with: []
+    context_files:
+      - path: "projectdashboardv1/src/lib/supabase.ts"
+        description: "Supabase Client Setup"
+      - path: "projectdashboardv1/src/hooks/useEntries.ts"
+        description: "Datenzugriff-Layer"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 80
+    focus_area: "Security Audit"
+    verification:
+      - "Security Report erstellt"
+      - "Alle OWASP Top 10 relevanten Punkte adressiert"
+      - "Keine kritischen Findings ohne Mitigation"
+    acceptance_criteria:
+      - "Keine Supabase-Keys in Build-Output"
+      - "XSS in Journal-Text nicht möglich"
+      - "RLS verhindert Cross-User Datenzugriff"
+    tech_stack:
+      - "Supabase RLS"
+      - "OWASP Top 10"
+    test_coverage: null
+    requires_review: false
+    review_depth: full
+    review_security_sensitive: true
+    failure_modes:
+      - scenario: "Kritisches Security Finding erfordert Architektur-Änderung"
+        likelihood: low
+        impact: high
+        mitigation: "Critical findings blockieren T13 und triggern Replan für betroffene Tasks"
+
+  - id: T13
+    title: "E2E Browser Testing — Happy Path + Edge Cases"
+    description: |
+      Playwright E2E Tests gegen Vercel Preview URL oder localhost:
+      Szenarien:
+      1. Erster Aufruf: App lädt, kein Crash, user_id generiert
+      2. Eintrag anlegen: alle Felder ausfüllen, Score berechnet sich
+      3. NavBar: zwischen Dashboard/History/Stats navigieren
+      4. Offline Mode: DevTools → Network offline → App zeigt 'offline' Status
+      5. PWA: manifest.json erreichbar, service worker registriert
+      6. Chart Rendering: History hat mindestens 1 Eintrag → Chart rendert ohne Fehler
+      7. Import/Export: JSON Export downloadable, Import funktioniert
+      Führe Tests aus, erstelle Report.
+    wave: 6
+    agent: gem-browser-tester
+    priority: medium
+    status: pending
+    dependencies:
+      - T11
+      - T12
+    conflicts_with: []
+    context_files:
+      - path: "projectdashboardv1/src/App.tsx"
+        description: "Finale App-Struktur für Test-Selektoren"
+    estimated_effort: medium
+    estimated_files: 2
+    estimated_lines: 200
+    focus_area: "Quality Assurance"
+    verification:
+      - "Alle 7 Szenarien grün"
+      - "Kein Console Error im Happy Path"
+      - "Lighthouse Score: Performance >=85, Accessibility >=90, PWA >=90"
+    acceptance_criteria:
+      - "Daily Score wird nach Eingabe sichtbar aktualisiert"
+      - "Alle 3 Navigations-Views erreichbar"
+      - "Charts rendern ohne JS-Fehler"
+    validation_matrix:
+      - scenario: "Erster Aufruf ohne Daten"
+        steps:
+          - "Navigiere zu localhost:3000"
+          - "Prüfe: keine JS Console Errors"
+          - "Prüfe: Score Badge zeigt 0"
+          - "Prüfe: user_id in localStorage gesetzt"
+        expected_result: "App lädt ohne Fehler, Score 0, empty state UX"
+      - scenario: "Daily Entry speichern"
+        steps:
+          - "Wechsle zu Morning Tab"
+          - "Setze Mood auf MOTIVIERT"
+          - "Toggle Cold Shower auf done"
+          - "Setze Gewicht auf 80.5"
+          - "Wechsle zu Evening Tab"
+          - "Setze Journal Text (>50 Zeichen)"
+          - "Prüfe Score Badge > 0"
+        expected_result: "Score aktualisiert sich in Echtzeit, Eintrag persistiert"
+      - scenario: "Navigation"
+        steps:
+          - "Klick auf History Tab"
+          - "Prüfe: Route wechselt"
+          - "Klick auf Stats Tab"
+          - "Prüfe: Charts sichtbar"
+        expected_result: "Alle 3 Views erreichbar ohne Reload"
+    tech_stack:
+      - "Playwright"
+    test_coverage: "7 E2E Szenarien"
+    requires_review: false
+    review_depth: null
+    review_security_sensitive: false
+    failure_modes:
+      - scenario: "Supabase ENV nicht in Test-Env → Sync-Fehler in Tests"
+        likelihood: medium
+        impact: low
+        mitigation: "Tests prüfen localStorage-Mode explizit, Supabase-Sync optional"

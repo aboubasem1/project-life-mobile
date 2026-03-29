@@ -1,6 +1,6 @@
 {
   "cleanUrls": true,
-  "buildCommand": "cd project-life-dashboard__v1-supabase && bash build.sh",
-  "outputDirectory": "project-life-dashboard__v1-supabase/web/dist",
-  "installCommand": "cd project-life-dashboard__v1-supabase/web && npm install"
+  "buildCommand": "cd projectdashboardv1 && npm install && npm run build",
+  "outputDirectory": "projectdashboardv1/dist",
+  "installCommand": "echo 'deps installed in buildCommand'"
 }

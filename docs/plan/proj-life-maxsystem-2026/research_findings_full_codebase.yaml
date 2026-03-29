@@ -1,0 +1,900 @@
+plan_id: proj-life-maxsystem-2026
+objective: >
+  Analysiere das 'Project Life' Dashboard-Projekt vollständig. Verstehe die aktuelle Architektur,
+  alle Features, alle Versionen, Code-Qualität, UX-Probleme, fehlende Features, und identifiziere
+  alle Optimization-Möglichkeiten für ein 'maximales System'.
+focus_area: Full codebase analysis - architecture, features, code quality, UX, performance, data management
+created_at: "2026-03-29"
+created_by: gem-researcher
+status: completed
+
+tldr: |
+  - VIER verschiedene Dashboard-Versionen existieren nebeneinander (vanilla JS, React/Vite ×2, Streamlit) mit INKOMPATIBLEN Datenschemata
+  - Production-Deployment (`vercel.json` root) zeigt auf `project-life-dashboard__v1-supabase`, aber die aktuellste Version ist `projectdashboardv1` (nur localStorage)
+  - KRITISCHES Sicherheitsproblem: Supabase Anon Key ist im Klartext in `build.sh` UND `index-clean.html` hardcoded
+  - Die Kernanwendung (`projectdashboardv1`) ist feature-reich (Streak-Tracking, 7-Tage-Kalender, Stats-View) aber hat KEIN Cloud-Sync, KEINE Charts, KEINE Gewichts-/Wassererfassung
+  - ~12 wichtige Features fehlen für ein "maximales System": Charts, Cloud-Sync, PWA, Wochenanalyse, Wassertracking, Gewicht, Deep Work, Benachrichtigungen, Multi-Device
+
+research_metadata:
+  methodology: >
+    Hybrid retrieval: direktes file_search + read_file für alle relevanten Dateien.
+    3 Passes: (1) Struktur & Versionen, (2) Feature-Analyse & Schema-Vergleich, (3) Sicherheit & Code-Qualität.
+    Alle 4 Versionen vollständig gelesen, Datenbankschema aus SUPABASE-SETUP.md extrahiert.
+  scope: >
+    Alle 4 Dashboard-Versionen, Root-Vercel-Config, API-Funktion, Daily Routine Kontext-Datei.
+    Vollständige Abdeckung aller .tsx, .html, .py, .json, .md Dateien.
+  confidence: high
+  coverage: 92
+
+# ─────────────────────────────────────────────
+# VERSIONSÜBERSICHT
+# ─────────────────────────────────────────────
+versions_overview:
+  - name: project-life-dashboard__de
+    path: project-life-dashboard__de/
+    type: mixed
+    components:
+      - name: mobile (index.html)
+        tech: Vanilla JS + Supabase SDK (CDN)
+        status: feature-complete, deployed
+        data: Supabase (daily_entries Tabelle)
+      - name: web/
+        tech: React 19 + Vite (TypeScript)
+        status: UI-Mockup only – keine Funktionalität, hardcoded Dummy-Daten
+        data: keine
+      - name: app-supabase.py
+        tech: Streamlit + Python + Supabase SDK
+        status: funktionsfähig für Desktop
+        data: Supabase (daily_entries Tabelle)
+    notes: Enthält Duplikat von project-life-dashboard__v1
+
+  - name: project-life-dashboard__v1
+    path: project-life-dashboard__v1/
+    type: copy
+    notes: Identische Kopie von __de, kein eigenständiger Entwicklungsstand
+
+  - name: project-life-dashboard__v1-supabase
+    path: project-life-dashboard__v1-supabase/
+    type: react_production
+    components:
+      - name: web/ (React App)
+        tech: React 19 + Vite + TypeScript + @supabase/supabase-js@2
+        status: Aktive Produktion (Vercel deployed)
+        data: localStorage (primär) – Supabase nur in build.sh als ENV Var definiert, aber nicht im Code verwendet!
+    vercel_config: root vercel.json zeigt auf dieses Verzeichnis
+    critical_bug: >
+      build.sh exportiert VITE_SUPABASE_URL und VITE_SUPABASE_ANON_KEY,
+      aber App.tsx nutzt diese Variablen NICHT – Supabase ist faktisch dead code im Deployment
+
+  - name: projectdashboardv1
+    path: projectdashboardv1/
+    type: react_latest
+    tech: React 19 + Vite + TypeScript + Chart.js
+    status: Aktuellste, feature-reichste Version (NICHT in prod deployed)
+    data: localStorage only
+    notes: Hat echtes Stats-View mit Streak-Tracking, fehlt aber Cloud-Sync
+
+  - name: api/entries.js
+    path: api/entries.js
+    type: serverless
+    tech: Vercel Serverless Function (Node.js)
+    status: nicht mit einem Frontend verbunden
+    critical_bug: >
+      Nutzt in-memory Map (new Map()) – Daten gehen bei jedem Cold Start verloren.
+      Kein persistentes Storage. Als "Backup" für localStorage beschrieben, faktisch non-functional.
+
+# ─────────────────────────────────────────────
+# FILES ANALYZED
+# ─────────────────────────────────────────────
+files_analyzed:
+  - file: App.tsx (projectdashboardv1)
+    path: projectdashboardv1/src/App.tsx
+    purpose: Haupt-Dashboard-Komponente (aktuellste Version) mit DashboardView + StatsView
+    language: TypeScript/TSX
+    lines: ~470
+    key_elements:
+      - element: DashboardEntry type
+        type: type
+        location: App.tsx:3-22
+        description: >
+          20 Felder: date, mood (string), sleepQuality (number 1-5), sleepDuration (string),
+          meditationMinutes, 4 boolean workout fields, 3 mindset booleans, proteinGrams,
+          calories, tasksDone, journalDone, familyTimeDone
+      - element: DashboardView component
+        type: function
+        location: App.tsx:120-317
+        description: >
+          Morning/Evening Tab-System, Auto-Save mit 800ms Debounce, localStorage,
+          Progress-Berechnung, Sync-Status-Pill
+      - element: StatsView component
+        type: function
+        location: App.tsx:320-415
+        description: >
+          11 Habits mit Streak + 30-Tage-Rate, 7-Tage-Kalender, Overall Stats,
+          JSON Export/Import. POLLING alle 1000ms (ineffizient)
+      - element: calculateStreakForHabit
+        type: function
+        location: App.tsx:95-103
+        description: Berechnet aktuellen Streak für ein Habit-Feld (desc sort, break on false)
+      - element: calculateCompletionRate
+        type: function
+        location: App.tsx:105-110
+        description: Berechnet Abschlussrate über letzte N Tage (default 30)
+
+  - file: App.tsx (v1-supabase)
+    path: project-life-dashboard__v1-supabase/web/src/App.tsx
+    purpose: Production React App mit 7-Tage-Navigation + Wochenübersicht
+    language: TypeScript/TSX
+    lines: ~610
+    key_elements:
+      - element: DashboardEntry type
+        type: type
+        location: App.tsx:3-22
+        description: Identisches Schema wie projectdashboardv1 – keine Supabase-spezifischen Felder
+      - element: getPastDays
+        type: function
+        location: App.tsx:68-79
+        description: Generiert Array der letzten N Tage (lokale Zeitzone)
+      - element: availableDates
+        type: variable
+        location: App.tsx:114
+        description: Nur letzte 7 Tage navigierbar – keine ältere Datumswahl möglich
+      - element: showOverview state
+        type: variable
+        location: App.tsx:111
+        description: Toggle zwischen Eingabe-View und 7-Tage-Übersicht-Grid
+      - element: Auto-Refresh Timer
+        type: pattern
+        location: App.tsx:117-125
+        description: Prüft jede Minute ob Datum sich geändert hat (für Midnight-Rollover)
+
+  - file: index.html (mobile, __de)
+    path: project-life-dashboard__de/index.html
+    purpose: Vollständige mobile Supabase-App in Vanilla JS
+    language: HTML/CSS/JavaScript
+    lines: ~550
+    key_elements:
+      - element: Supabase SDK
+        type: pattern
+        location: index.html:~400
+        description: Lazy-loaded via CDN (jsdelivr), createClient dynamisch
+      - element: Daily Score System
+        type: feature
+        location: index.html:~320-380
+        description: >
+          Gamification: Zone A (0-3) + Mindset (0-3) + Recovery (0-4) = max 10.
+          Score-Labels: 10=Elite Tag, 8-9=Stark, 6-7=Stabil, <6=Analyse
+      - element: calculateStreaks
+        type: function
+        location: index.html:~700-730
+        description: Berechnet currentStreak und bestStreak aus history-Objekt, konsekutive Tage korrekt
+
+  - file: app-supabase.py
+    path: project-life-dashboard__de/app-supabase.py
+    purpose: Streamlit Desktop-Dashboard mit Supabase Backend
+    language: Python
+    lines: ~200
+    key_elements:
+      - element: Streamlit Tabs (Eingabe / Analyse / Daten)
+        type: feature
+        location: app-supabase.py:55
+        description: Drei Tabs mit Morgen/Abend-Eingabe, 7-Tage-Analyse, CSV-Export
+
+  - file: build.sh
+    path: project-life-dashboard__v1-supabase/build.sh
+    purpose: Vercel Build Script
+    language: bash
+    lines: 3
+    key_elements:
+      - element: HARDCODED CREDENTIALS
+        type: security_vulnerability
+        location: build.sh:1-2
+        description: >
+          KRITISCH: Supabase URL und Anon Key als Klartext-Environment-Variablen.
+          URL: https://jdsojjjrxsknffuogdux.supabase.co
+          Key: eyJhbGci... (vollständiger JWT sichtbar im Repository)
+
+  - file: vercel.json (root)
+    path: vercel.json
+    purpose: Vercel Deployment-Konfiguration
+    language: JSON
+    lines: 6
+    key_elements:
+      - element: Deployment Mismatch
+        type: architectural_issue
+        location: vercel.json:1-6
+        description: >
+          Deployed: project-life-dashboard__v1-supabase/web/dist
+          Aktuellste Version: projectdashboardv1/
+          → Produktion ist NICHT die aktuellste Version
+
+# ─────────────────────────────────────────────
+# DATA SCHEMA ANALYSE
+# ─────────────────────────────────────────────
+data_schema_comparison:
+  note: >
+    KRITISCHES PROBLEM: Alle 3 aktiven Versionen haben INKOMPATIBLE Datenschemata.
+    Keine Datenmigration möglich ohne manuellen ETL-Prozess.
+
+  schema_react_local:
+    source: projectdashboardv1 + v1-supabase
+    storage: localStorage (key: 'project-life-entries')
+    format: Array<DashboardEntry>
+    fields:
+      - date (YYYY-MM-DD)
+      - mood (string: emoji + text, e.g. "😊 MOTIVIERT")
+      - sleepQuality (number 1-5, mapped to string options)
+      - sleepDuration (free text string - z.B. "7h 30m")
+      - meditationMinutes (number)
+      - coldShower, proteinShake (boolean)
+      - pushupsDone, squatsDone, wallsitDone, plankDone (boolean)
+      - gratitudeDone, focusDone, winnerModeDone (boolean)
+      - proteinGrams, calories, tasksDone (number)
+      - journalDone, familyTimeDone (boolean)
+
+  schema_mobile_supabase:
+    source: project-life-dashboard__de/index.html
+    storage: Supabase (daily_entries) + localStorage backup
+    format: Object per date
+    fields:
+      - datum (DATE, PK)
+      - am_training, pm_training (boolean)
+      - am_sleep_hours, pm_sleep_hours (numeric)
+      - am_sleep_quality_1_10, pm_sleep_quality_1_10 (integer 1-10)
+      - am_mood_1_10, pm_mood_1_10 (integer 1-10)
+      - am_weight_kg, pm_weight_kg (numeric)
+      - am_focus_goal (text)
+      - am_winner_mode, am_body_move, pm_winner_mode, pm_body_move (boolean)
+      - pm_best_task, pm_gratitude, pm_notes (text)
+      - score_zone_a (0-3), score_mindset (0-3), score_recovery (0-4)
+      - streak_current, streak_best (integer)
+
+  schema_streamlit_python:
+    source: app-supabase.py
+    storage: Supabase (daily_entries)
+    format: Object per date
+    fields:
+      - datum (DATE)
+      - training (boolean, single field - kein am/pm Split)
+      - meditation_min, cold_shower, protein_shake (mixed)
+      - deep_work_1_min, deep_work_2_min (number)
+      - schritte (number - nicht in anderen Versionen!)
+      - protein_gramm, bildschirmzeit_min, wasser_liter (number - nicht in anderen Versionen!)
+      - journal, reading_min (mixed)
+
+  missing_from_react_vs_mobile:
+    - weight_kg (nur in mobile)
+    - focus_goal_text (nur in mobile)
+    - notes/journal_text (nur in mobile / Python)
+    - deep_work_minutes (nur in Python)
+    - water_liter (nur in Python)
+    - steps (nur in Python)
+    - screen_time_minutes (nur in Python)
+    - score_zone_a/mindset/recovery (nur in mobile)
+    - streak_best (nur in mobile)
+    - reading_minutes (nur in Python)
+
+# ─────────────────────────────────────────────
+# FEATURES INVENTORY
+# ─────────────────────────────────────────────
+features_inventory:
+  implemented:
+    - id: F01
+      name: Daily Habit Tracking (Boolean)
+      description: 11 Habits als Checkboxen (Cold Shower, Protein Shake, Pushups, Squats, Wallsit, Plank, Gratitude, Focus, Winner Mode, Journal, Family Time)
+      versions: [projectdashboardv1, v1-supabase, mobile]
+      quality: good
+
+    - id: F02
+      name: Morning/Evening Tab Split
+      description: Morgens-/Abends-Eingabe in separaten Tabs
+      versions: [projectdashboardv1, v1-supabase, mobile]
+      quality: good
+
+    - id: F03
+      name: Auto-Save mit Debounce
+      description: 800ms Debounce, speichert automatisch bei Änderungen, kein manueller Save-Button nötig
+      versions: [projectdashboardv1, v1-supabase]
+      quality: good
+
+    - id: F04
+      name: Date Navigation
+      description: Datum auswählen für historische Einträge
+      versions: [projectdashboardv1 (date-picker), v1-supabase (7-Tage-Tabs), mobile (date input)]
+      quality: medium - v1 limitiert auf 7 Tage, v1-dash erlaubt beliebiges Datum
+
+    - id: F05
+      name: Habit Streak Berechnung
+      description: Aktueller Streak + 30-Tage-Completion-Rate pro Habit
+      versions: [projectdashboardv1 (StatsView), mobile (inline)]
+      quality: medium - nur im Stats-Tab sichtbar, keine Inline-Streaks im Dashboard
+
+    - id: F06
+      name: 7-Tage Habit Kalender
+      description: Visuelle Wochenübersicht aller Habits als farbige Grid-Zellen
+      versions: [projectdashboardv1 StatsView]
+      quality: good
+
+    - id: F07
+      name: Daily Progress Bar
+      description: Fortschrittsanzeige wie viele Habit-Checkboxen heute abgehakt
+      versions: [projectdashboardv1, v1-supabase]
+      quality: good
+
+    - id: F08
+      name: JSON Import/Export
+      description: Daten-Backup und Restore als JSON-Datei
+      versions: [projectdashboardv1, v1-supabase]
+      quality: good
+
+    - id: F09
+      name: Sync-Status-Anzeige
+      description: Loading/Syncing/Synced/Error Status-Pill
+      versions: [projectdashboardv1, v1-supabase]
+      quality: good
+
+    - id: F10
+      name: Supabase Cloud Sync
+      description: Automatische Synchronisation mit Supabase-Datenbank
+      versions: [mobile HTML version only]
+      quality: medium - nur in der HTML-Version funktional, React-Version hat Supabase nicht integriert
+
+    - id: F11
+      name: Streamlit Analytics Dashboard
+      description: 7-Tage-Metriken, Trend-Charts (line/bar), Daten-Tabelle, CSV-Export
+      versions: [app-supabase.py]
+      quality: medium - kein automatischer Start, erfordert Python-Env
+
+    - id: F12
+      name: Daily Score Gamification
+      description: Zone A + Mindset + Recovery Score (0-10), Elite/Stark/Stabil/Analyse Labels
+      versions: [mobile HTML only]
+      quality: good
+
+    - id: F13
+      name: 7-Tage Wochenübersicht Grid
+      description: Klickbare Tages-Cards mit Progress-Bar und Mood/Sleep-Details
+      versions: [v1-supabase]
+      quality: good
+
+    - id: F14
+      name: Mood Selection (Emoji)
+      description: 5 Mood-Optionen als Emoji-Strings
+      versions: [projectdashboardv1, v1-supabase]
+      quality: medium - gespeichert als roher Emoji-String, kein numerischer Wert zum Analysieren
+
+    - id: F15
+      name: Nutrition Tracking (Protein/Kalorien)
+      description: Protein (g) und Kalorien als Zahlfelder
+      versions: [projectdashboardv1, v1-supabase]
+      quality: medium - kein Zielwert-Vergleich, kein visuelles Feedback
+
+  missing_for_max_system:
+    - id: MF01
+      name: Charts & Visualisierungen in React App
+      priority: critical
+      description: >
+        Trends für Schlaf, Protein, Kalorien, Mood-Score über Zeit.
+        Chart.js ist in projectdashboardv1 installiert aber nicht verwendet!
+      effort: medium
+
+    - id: MF02
+      name: Cloud-Sync für React-Primärapp
+      priority: critical
+      description: >
+        Supabase oder ähnliche Backend-Integration für multi-device Sync.
+        Aktuell: Daten nur im Browser, verloren bei Clear/neuem Gerät.
+      effort: high
+
+    - id: MF03
+      name: PWA (Progressive Web App)
+      priority: high
+      description: >
+        Installierbar auf iPhone/Android, offline-fähig, Push-Benachrichtigungen möglich.
+        Erfordert service worker, manifest.json, Icons.
+      effort: medium
+
+    - id: MF04
+      name: Gewicht-Tracking
+      priority: high
+      description: Tägliches Körpergewicht, Trend-Linie, Zielgewicht-Vergleich
+      effort: low
+
+    - id: MF05
+      name: Water/Wasser-Tracking
+      priority: high
+      description: Wassermenge in Litern mit Tageschwarmziel (z.B. 3L)
+      effort: low
+
+    - id: MF06
+      name: Deep Work Minuten
+      priority: high
+      description: >
+        Erfassung der tatsächlichen Deep-Work-Zeit (2 Sessions á 50 Min ist das Ziel).
+        Exisitert nur in Streamlit, nicht in React-App.
+      effort: low
+
+    - id: MF07
+      name: Journal Text-Feld
+      priority: high
+      description: Freitextfeld für tägliche Reflexion/Notizen – aktuell nur boolean (journalDone)
+      effort: low
+
+    - id: MF08
+      name: Fokus-Ziel des Tages
+      priority: high
+      description: Ein-Satz-Fokus-Ziel für den Tag (exisitert in mobile, nicht in React)
+      effort: low
+
+    - id: MF09
+      name: Wöchentliche Review-Ansicht
+      priority: high
+      description: >
+        7-Tage-Aggregation: Habit-Completion in %, durchschnittlicher Schlaf,
+        bester/schlechtester Tag der Woche
+      effort: medium
+
+    - id: MF10
+      name: Inline Habit-Streaks im Dashboard
+      priority: medium
+      description: Streak-Zähler direkt neben jedem Habit-Toggle ohne Stats-Tab-Wechsel
+      effort: low
+
+    - id: MF11
+      name: Score-System / Tages-Rating
+      priority: medium
+      description: Daily Score 0-10 mit Zone A + Mindset + Recovery Kategorien (wie mobile)
+      effort: medium
+
+    - id: MF12
+      name: Erinnerungen / Benachrichtigungen
+      priority: medium
+      description: Push-Notifications für Morgenroutine (z.B. 7:00 Uhr) und Abendroutine
+      effort: high (PWA required)
+
+    - id: MF13
+      name: Bildschirmzeit-Tracking
+      priority: low
+      description: Tägliche Bildschirmzeit in Minuten erfassen
+      effort: low
+
+    - id: MF14
+      name: Schritte-Tracking
+      priority: low
+      description: Tagesschritte (manuell oder Health-App-Integration)
+      effort: low
+
+    - id: MF15
+      name: Lese-Minuten
+      priority: low
+      description: Lesedauer pro Tag erfassen
+      effort: low
+
+# ─────────────────────────────────────────────
+# CODE QUALITÄT
+# ─────────────────────────────────────────────
+code_quality:
+  issues:
+    - id: CQ01
+      severity: high
+      file: projectdashboardv1/src/App.tsx
+      location: App.tsx:~120
+      issue: "_allEntries unused variable"
+      detail: >
+        `const [_allEntries, setAllEntries] = useState<DashboardEntry[]>([])` – 
+        Prefix-Unterstrich signalisiert "unused", aber `setAllEntries` wird aufgerufen.
+        In StatsView gibt es ein separates `allEntries` state. Die Inkonsistenz deutet auf
+        Refactoring-Reste hin.
+
+    - id: CQ02
+      severity: high
+      file: projectdashboardv1/src/App.tsx
+      location: App.tsx:~135
+      issue: "void operator auf useState setter"
+      detail: >
+        `void setAllEntries(allData)` – Der `void` Operator auf einem synchronen Setter macht 
+        keinen Sinn und erzeugt verwirrenden Code.
+
+    - id: CQ03
+      severity: high
+      file: projectdashboardv1/src/App.tsx
+      location: App.tsx:StatsView
+      issue: "1-Sekunden-Polling für localStorage"
+      detail: >
+        `setInterval(loadData, 1000)` in StatsView um "in sync" zu bleiben.
+        Ineffizient (unnötige JSON-Parseoperationen), erzeugt Batterie-Drain auf Mobile.
+        Besser: State-Lifting oder React Context/Zustand statt Polling.
+
+    - id: CQ04
+      severity: medium
+      file: projectdashboardv1/src/App.tsx
+      location: App.tsx:StatsView habits array
+      issue: "Keine Memoization bei Streak-Berechnungen"
+      detail: >
+        `calculateStreakForHabit` und `calculateCompletionRate` werden bei jedem Render
+        für alle 11 Habits aufgerufen. Bei vielen Einträgen (>365) merkliche Performance-Einbuße.
+        Fix: useMemo für Streaks.
+
+    - id: CQ05
+      severity: medium
+      file: project-life-dashboard__v1-supabase/web/src/App.tsx
+      location: App.tsx:sleepQuality handling
+      issue: "sleepQuality Index-zu-String Konvertierung fehleranfällig"
+      detail: >
+        sleepQuality wird als Zahl (1-5) gespeichert, aber als String aus den sleepQualityOptions
+        angezeigt. Index-Berechnung `sleepQualityOptions[entry.sleepQuality - 1]` kann
+        `undefined` zurückgeben wenn Wert Out-of-Bounds.
+
+    - id: CQ06
+      severity: medium
+      file: projectdashboardv1/src/App.tsx
+      location: App.tsx:sleepDuration field
+      issue: "sleepDuration als Freitext"
+      detail: >
+        Schlaf-Dauer ist ein Text-Input. User tippt "7h 30m", "7.5", "7:30" – 
+        keine Normalisierung, keine Analyse möglich. Sollte number (Dezimalstunden) sein.
+
+    - id: CQ07
+      severity: medium
+      file: projectdashboardv1/src/App.tsx
+      location: App.tsx:DashboardEntry.mood
+      issue: "Mood als Emoji-String nicht analysierbar"
+      detail: >
+        Mood wird als "😊 MOTIVIERT" gespeichert. Für Trendanalyse wäre ein numerischer
+        Wert (1-5) und der Text getrennt sinnvoll. Chart.js kann keinen Emoji-String plotten.
+
+    - id: CQ08
+      severity: low
+      file: all React versions
+      issue: "Kein Error Boundary"
+      detail: >
+        Kein React Error Boundary – ein Fehler in einer Komponente crasht die gesamte App.
+
+    - id: CQ09
+      severity: low
+      file: project-life-dashboard__v1-supabase/web/src/App.tsx
+      location: App.tsx:~117
+      issue: "Nur letzte 7 Tage navigierbar"
+      detail: >
+        `availableDates = getPastDays(7)` – Einträge älter als 7 Tage sind nur im Export
+        zugänglich, nicht im UI navigierbar.
+
+    - id: CQ10
+      severity: low
+      file: api/entries.js
+      issue: "In-Memory Map ohne Persistenz"
+      detail: >
+        `const entries = new Map()` auf Modul-Level – jeder Vercel Cold Start leert alle Daten.
+        Funktion ist faktisch non-persistent und täuschend (false sense of API backend).
+
+# ─────────────────────────────────────────────
+# SICHERHEIT
+# ─────────────────────────────────────────────
+domain_security_considerations:
+  sensitive_areas:
+    - area: Supabase Credentials in build.sh
+      location: project-life-dashboard__v1-supabase/build.sh:1-2
+      concern: >
+        KRITISCH: Supabase URL und Anon Key sind als Klartext in build.sh hardcoded.
+        Wenn dieses Repository jemals public wird (GitHub, etc.), sind die Credentials
+        sofort kompromittiert. Selbst bei privatem Repo ist das ein schlechtes Muster.
+        Fix: Vercel Environment Variables über das Vercel Dashboard setzen.
+
+    - area: Supabase Anon Key in index-clean.html
+      location: project-life-dashboard__de/index-clean.html:~84-85
+      concern: >
+        KRITISCH: Vollständiger Supabase Anon Key als Value im Input-Feld hardcoded.
+        Dieser Key ist für jeden sichtbar, der die Seite öffnet (View Source).
+
+    - area: Supabase RLS Policy
+      location: SUPABASE-SETUP.md:~70-76
+      concern: >
+        DEVELOPMENT-POLICY: `CREATE POLICY "Enable all access for development" ON daily_entries
+        FOR ALL USING (true) WITH CHECK (true)` – erlaubt JEDEM, der den Anon Key kennt,
+        alle Daten zu lesen, schreiben und löschen. Keine User-Authentifizierung.
+
+    - area: CORS-Konfiguration in API
+      location: api/entries.js:5-7
+      concern: >
+        MEDIUM: Access-Control-Allow-Origin: '*' combined with Access-Control-Allow-Credentials: 'true'.
+        Browser blockieren das, aber für Nicht-Browser-Clients (curl etc.) problem.
+
+  authentication_patterns_in_domain: >
+    Keine Authentifizierung implementiert. Alle Daten sind public durch den Anon Key zugänglich.
+    Kein Login, kein User-Account, kein RLS mit echtem User-Kontext.
+  authorization_patterns_in_domain: >
+    Supabase RLS Policy erlaubt vollen Zugriff ohne Auth. In Produktion werden eigene private
+    Health-Daten ohne Schutz gespeichert.
+  data_validation_in_domain: >
+    Clientseitig: HTML-native min/max auf number inputs (z.B. min="1" max="10").
+    Serverseitig: Keine Validierung in api/entries.js (nur date required check).
+    Keine Sanitisierung in der Serverless Function.
+
+# ─────────────────────────────────────────────
+# UX ANALYSE
+# ─────────────────────────────────────────────
+ux_issues:
+  - id: UX01
+    severity: high
+    issue: "Kein einheitliches Produkt – 4 Versionen verwirrend"
+    detail: >
+      User muss wissen welche Version er starten soll.
+      projectdashboardv1 ist am besten, aber nicht in Prod deployed.
+      Fix: Eine klare Primär-App definieren und anderen Versionen archivieren.
+
+  - id: UX02
+    severity: high
+    issue: "Daten bleiben im Browser – kein Cloud-Sync in der besten Version"
+    detail: >
+      Bei Browser-Cache-Clear, neuem Gerät oder Inkognito-Tab sind alle Daten weg.
+      Der User muss aktiv exportieren und importieren. Hohe Datenverlust-Gefahr.
+
+  - id: UX03
+    severity: high
+    issue: "Keine Charts/Visualisierung in der React-App"
+    detail: >
+      Stats-View zeigt Streak-Zahlen und ein 7-Tage-Grid, aber keine Trend-Linien,
+      keine Mood-Kurven, keine Schlaf-Patterns. Chart.js ist bereits installiert aber ungenutzt.
+
+  - id: UX04
+    severity: medium
+    issue: "Kein Inline-Streak im Eingabe-Dashboard"
+    detail: >
+      User sieht Streak nur im Stats-Tab. Motivationspsychologisch wichtig wäre
+      "🔥 12-Tage-Streak" direkt neben dem Habit-Toggle beim Abhaken.
+
+  - id: UX05
+    severity: medium
+    issue: "sleepDuration als Freitext unintuitiv"
+    detail: >
+      User muss selbst entscheiden: "7h30m" oder "7.5" oder "7:30"? Keine Standardisierung.
+      Fix: Dezimalzahl-Input in Stunden + automatische hh:mm Anzeige.
+
+  - id: UX06
+    severity: medium
+    issue: "Mood als Emoji-String ohne visuellen Score"
+    detail: >
+      "😊 MOTIVIERT" als String zeigt kein Trend-Potential. Im Stats-View können
+      Moods nicht auf einer Zeitachse dargestellt werden.
+
+  - id: UX07
+    severity: medium
+    issue: "Kein Tages-Score / Summary"
+    detail: >
+      Kein aggregierter Daily Score wie in der Mobile-HTML-Version.
+      User sieht Progress-Prozent aber kein "Elite / Stark / Stabil" Label.
+
+  - id: UX08
+    severity: medium
+    issue: "Morning/Evening Tab-Status nicht persistent"
+    detail: >
+      Letzte aktiver Tab (Morgens/Abends) wird nicht gespeichert.
+      Bei Page-Refresh immer wieder auf 'Morgens'. Abends unbenutzerfreundlich.
+
+  - id: UX09
+    severity: low
+    issue: "Kein Onboarding für Erstnutzer"
+    detail: >
+      Leere App mit leeren Feldern, keine Erklärung welche Habits warum tracked werden.
+      Fix: Kurzer Onboarding-Screen beim ersten Start.
+
+  - id: UX10
+    severity: low
+    issue: "Desktop-Layout nicht optimal für >1200px"
+    detail: >
+      max-width: 920px in CSS. Auf großen Monitoren viel weißer Raum.
+      Ein 2-Spalten-Layout für Desktop würde die Nutzfläche besser nutzen.
+
+# ─────────────────────────────────────────────
+# ARCHITEKTUR
+# ─────────────────────────────────────────────
+related_architecture:
+  components_relevant_to_domain:
+    - component: React + Vite (projectdashboardv1)
+      responsibility: Primäre interaktive Oberfläche, localStorage-State-Management
+      location: projectdashboardv1/src/
+      relationship_to_domain: Hauptkomponente für tägliche Dateneingabe
+
+    - component: Supabase PostgreSQL
+      responsibility: Persistente Cloud-Datenbank für daily_entries
+      location: extern (Online-Service)
+      relationship_to_domain: Backend für mobile HTML-Version und Streamlit, NICHT für React-Primärapp
+
+    - component: Streamlit (Python)
+      responsibility: Desktop-Analytics-Dashboard
+      location: project-life-dashboard__de/app-supabase.py
+      relationship_to_domain: Analytics-Layer, liest von Supabase
+
+    - component: Vercel Edge Network
+      responsibility: Static File Hosting + Serverless Functions
+      location: vercel.json (root)
+      relationship_to_domain: Production Deployment, CDN, API Host
+
+    - component: localStorage (Browser)
+      responsibility: Lokale Datenpersistenz
+      location: Browser-Storage
+      relationship_to_domain: Primärer Datenspeicher in allen React-Versionen
+
+  data_flow_involving_domain: |
+    AKTUELL (fragmentiert):
+    Mobile HTML → Supabase DB ← Streamlit Python (bidirektional)
+    React App (v1-supabase/projectdashboardv1) → localStorage nur (Browser-Silo)
+    api/entries.js → in-memory Map (ephemeral, nicht genutzt)
+
+    SOLL (maximales System):
+    React PWA → Supabase DB ← Streamlit Analytics (bidirektional, einheitliches Schema)
+
+  key_relationships_to_domain:
+    - from: projectdashboardv1
+      to: Chart.js
+      relationship: imports (installiert, NICHT verwendet)
+    - from: project-life-dashboard__v1-supabase
+      to: "@supabase/supabase-js"
+      relationship: imports (installiert, aber Variablen werden im Code nicht genutzt trotz build.sh)
+    - from: project-life-dashboard__de/index.html
+      to: Supabase CDN
+      relationship: lazy-loads via script tag
+
+related_technology_stack:
+  languages_used_in_domain:
+    - TypeScript/TSX (React-Apps)
+    - HTML/CSS/JavaScript (Vanilla mobile version)
+    - Python (Streamlit desktop dashboard)
+    - bash (build scripts)
+  frameworks_used_in_domain:
+    - name: React 19
+      usage_in_domain: UI-Komponenten für alle drei React-Versionen
+    - name: Vite 7
+      usage_in_domain: Build tool + Dev server
+    - name: TypeScript ~5.9
+      usage_in_domain: Type safety in allen React-Versionen
+    - name: Tailwind CSS (config vorhanden)
+      usage_in_domain: tailwind.config.js existiert, aber postcss/tw wird nur in __de/__v1 genutzt, NICHT in projectdashboardv1
+    - name: Streamlit
+      usage_in_domain: Python-basiertes UI-Framework für Analytics
+  libraries_used_in_domain:
+    - name: Chart.js ^4.5.1
+      purpose_in_domain: Datenvisualisierung – installiert in projectdashboardv1 aber NICHT verwendet
+    - name: "@supabase/supabase-js ^2.95.3"
+      purpose_in_domain: Supabase Client – installiert in v1-supabase aber faktisch nicht genutzt
+    - name: pandas, supabase (Python)
+      purpose_in_domain: Datenanalyse und DB-Zugriff in Streamlit
+
+# ─────────────────────────────────────────────
+# OPTIMIERUNGS-ROADMAP (MAXIMUM SYSTEM)
+# ─────────────────────────────────────────────
+optimization_roadmap:
+  phase_1_critical_security:
+    priority: P0
+    effort: 1-2 Stunden
+    items:
+      - "Supabase Credentials aus build.sh und index-clean.html entfernen"
+      - "Vercel Environment Variables über Vercel Dashboard setzen"
+      - "Supabase RLS Policy auf User-basierte Auth umstellen"
+      - ".gitignore für .env Dateien prüfen"
+
+  phase_2_consolidate_architecture:
+    priority: P1
+    effort: 1 Tag
+    items:
+      - "projectdashboardv1 als einzige aktive Version definieren"
+      - "Alten Versionen in /archive/ verschieben"
+      - "Root vercel.json auf projectdashboardv1 umzeigen"
+      - "Einheitliches Datenschema definieren (React-Schema als Basis, Plus-Felder hinzufügen)"
+
+  phase_3_extend_data_model:
+    priority: P1
+    effort: 2-3 Stunden
+    items:
+      - "weight_kg Feld hinzufügen"
+      - "waterLiters Feld hinzufügen"
+      - "deepWorkMinutes Feld hinzufügen"
+      - "journalText Feld ändern (boolean → text)"
+      - "focusGoal (text) Feld hinzufügen"
+      - "sleepDuration: Freitext → number (Dezimalstunden)"
+      - "mood: string → number (1-5) + displayLabel"
+      - "sleepQuality: number 1-5 konsistent machen"
+
+  phase_4_cloud_sync:
+    priority: P1
+    effort: 1 Tag
+    items:
+      - "Supabase Integration in projectdashboardv1 aktivieren"
+      - "Supabase-Schema an neues einheitliches Schema anpassen"
+      - "Offline-First: localStorage als Cache, Supabase als Source of Truth"
+      - "Conflict Resolution bei Multi-Device-Sync"
+
+  phase_5_charts_and_analytics:
+    priority: P2
+    effort: 1-2 Tage
+    items:
+      - "Chart.js in StatsView nutzen (ist bereits installiert!)"
+      - "Mood-Trend-Linie (letzte 30 Tage)"
+      - "Schlaf-Qualität-Trend"
+      - "Protein/Kalorien Balkendiagramm"
+      - "Tages-Score-Verlauf"
+      - "Custom Streak-Heatmap (GitHub-style) für 3 Monate"
+
+  phase_6_gamification_score:
+    priority: P2
+    effort: 4-6 Stunden
+    items:
+      - "Daily Score System (Zone A + Mindset + Recovery) aus mobile-Version portieren"
+      - "Elite/Stark/Stabil Label + Badge im Dashboard"
+      - "Weekly Summary: Bester Tag der Woche"
+      - "Inline Streak Counter neben jedem Habit-Toggle"
+
+  phase_7_pwa:
+    priority: P3
+    effort: 1 Tag
+    items:
+      - "manifest.json erstellen (App-Name, Icons, Theme-Color)"
+      - "Service Worker für Offline-Fähigkeit"
+      - "Add-to-Home-Screen auf iPhone"
+      - "Push Notifications für Morgen/Abend-Routine (optional)"
+
+  phase_8_ux_polish:
+    priority: P3
+    effort: 4-6 Stunden
+    items:
+      - "localStorage-Polling durch React Context + Event-basiertes Update ersetzen"
+      - "Morning/Evening Tab-State persistent machen (sessionStorage)"
+      - "Desktop 2-Spalten-Layout bei >1200px"
+      - "Empty State Onboarding für neue User"
+      - "Error Boundary hinzufügen"
+      - "useMemo für Streak-Berechnungen"
+
+# ─────────────────────────────────────────────
+# OFFENE FRAGEN
+# ─────────────────────────────────────────────
+open_questions:
+  - question: "Welche Version soll die zentrale Primär-App werden?"
+    context: >
+      projectdashboardv1 hat das beste UX und Stats-View, aber ist nicht in Prod.
+      v1-supabase hat die bessere Wochenübersicht. Sollen Features zusammengeführt werden?
+
+  - question: "Soll die Streamlit/Python-Komponente beibehalten werden?"
+    context: >
+      Streamlit erfordert separaten Server/Python-Env. Wenn alle Analytics in die React-App
+      integriert werden, ist Streamlit redundant.
+
+  - question: "Welches Schema soll das 'maximale System' verwenden?"
+    context: >
+      Mobile HTML-Schema ist umfangreicher (Gewicht, Fokus-Ziel, Score-System).
+      React-Schema ist einfacher aber besser strukturiert. Unified Schema müsste beide vereinen.
+
+  - question: "Soll Auth (Login) implementiert werden?"
+    context: >
+      Aktuell keine Authentifizierung. Mit Supabase Auth können Multi-User, Privacy,
+      und sichere RLS-Policies implementiert werden. Für den persönlichen Use-Case
+      könnte ein einfacher Magic-Link-Login ausreichen.
+
+  - question: "Wo sollen historische Daten (aus bestehenden localStorage-Einträgen) migriert werden?"
+    context: >
+      User hat möglicherweise bereits Einträge im localStorage.
+      Bei Schema-Erweiterung und Cloud-Sync müssen alte Daten migriert werden.
+
+gaps:
+  - area: Test Coverage
+    description: Kein einziger Test (Unit, Integration, E2E) in irgendeiner Version
+    impact: Refactoring-Risiko bei Schema-Änderungen, keine Regressionsabsicherung
+
+  - area: Build/CI Pipeline
+    description: >
+      Kein automatisierter Build außer manuelles `npm run build`.
+      Kein Lint in CI, kein Type-Check in CI-Gate.
+    impact: Build-Fehler werden erst bei Deployment entdeckt
+
+  - area: Error Tracking
+    description: Kein Sentry oder ähnliches Error Monitoring in Produktion
+    impact: Produktionsfehler werden vom User nicht an Entwickler gemeldet
+
+  - area: Offline/Network Error Handling
+    description: >
+      In der HTML-Mobile-Version wird bei Supabase-Fehler nur ein Status angezeigt,
+      aber keine Offline-Queue für später-Sync.
+    impact: Bei schlechter Verbindung gehen Eingaben verloren
+
+  - area: Data Migration Strategy
+    description: Kein Migrations-Script für Schema-Änderungen zwischen Versionen
+    impact: Zukünftige Schema-Änderungen sind manuell und fehleranfällig

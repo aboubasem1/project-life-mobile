@@ -1,6 +1,0 @@
-{
-  "cleanUrls": true,
-  "buildCommand": "bash build.sh",
-  "outputDirectory": "web/dist",
-  "installCommand": "cd web && npm install"
-}
