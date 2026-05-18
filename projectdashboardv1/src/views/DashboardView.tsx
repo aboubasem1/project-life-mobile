@@ -8,7 +8,7 @@ import { calculateScore, getScoreBreakdown } from '../lib/score'
 import {
   Sunrise, Zap, Brain, Apple, Briefcase, Moon, BarChart2,
   SmilePlus, Smile, Meh, Frown, AlertCircle,
-  BatteryFull, Battery, BatteryMedium, BatteryLow, BatteryWarning,
+  BatteryFull, Battery, BatteryMedium, BatteryLow, BatteryCharging,
 } from 'lucide-react'
 
 const getToday = (): string => {
@@ -76,11 +76,11 @@ export function DashboardView({ entries, syncStatus, onSave }: Props) {
     { value: 'GESTRESST',     Icon: AlertCircle,   label: 'GESTRESST'   },
   ]
   const SLEEP_OPTIONS = [
-    { value: 'SEHR SCHLECHT', Icon: BatteryWarning, label: 'S.SCHLECHT'  },
-    { value: 'SCHLECHT',      Icon: BatteryLow,     label: 'SCHLECHT'    },
-    { value: 'OKAY',          Icon: BatteryMedium,  label: 'OKAY'        },
-    { value: 'GUT',           Icon: Battery,        label: 'GUT'         },
-    { value: 'SEHR GUT',      Icon: BatteryFull,    label: 'S.GUT'       },
+    { value: 'SEHR SCHLECHT', Icon: Battery,         label: 'S.SCHLECHT'  },
+    { value: 'SCHLECHT',      Icon: BatteryLow,      label: 'SCHLECHT'    },
+    { value: 'OKAY',          Icon: BatteryMedium,   label: 'OKAY'        },
+    { value: 'GUT',           Icon: BatteryFull,     label: 'GUT'         },
+    { value: 'SEHR GUT',      Icon: BatteryCharging, label: 'S.GUT'       },
   ]
   const SLEEP_DURATION_OPTIONS = ['5h', '6h', '6.5h', '7h', '7.5h', '8h', '9h']
   const MEDITATION_OPTIONS = [0, 5, 10, 15, 20, 30]
