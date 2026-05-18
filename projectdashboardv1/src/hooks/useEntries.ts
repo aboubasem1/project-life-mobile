@@ -45,7 +45,8 @@ export function useEntries(): UseEntriesReturn {
     }
     const local = loadAllEntries()
     setEntries(local)
-    setSyncStatus(isOnline ? 'error' : 'offline')
+    // No Supabase configured → localStorage-only mode, not an error
+    setSyncStatus(isSupabaseAvailable() ? (isOnline ? 'error' : 'offline') : 'idle')
   }, [isOnline])
 
   // Initial load — async sync with Supabase + localStorage fallback

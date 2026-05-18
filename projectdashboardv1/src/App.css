@@ -1680,3 +1680,106 @@ body {
   .topbar-nav { gap: 2px; }
   .nav-tab { padding: 6px 12px; }
 }
+/* ═══════════════════════════════════════════════════════════════════
+   iPhone / iOS Native Feel — ADHD Optimized
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Safe-area support for notch + Dynamic Island + home bar */
+.app {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.topbar {
+  padding-top: max(28px, calc(12px + env(safe-area-inset-top, 0px)));
+}
+
+/* Prevent pull-to-refresh & overscroll glow */
+html, body {
+  overscroll-behavior-y: contain;
+}
+
+/* Remove iOS tap flash */
+* {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* ── Quick-Select Pill Buttons ────────────────────────────────────── */
+.quick-select-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.quick-btn {
+  padding: 10px 14px;
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1.5px solid var(--border);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-secondary);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+  line-height: 1;
+  user-select: none;
+  -webkit-user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.quick-btn.active {
+  border-color: var(--accent);
+  background: rgba(124,123,255,0.18);
+  color: var(--text);
+}
+
+/* ── Mobile / iPhone specific overrides ─────────────────────────── */
+@media (max-width: 768px) and (pointer: coarse) {
+  /* Larger tap targets */
+  .habit-toggle        { min-height: 52px; padding: 14px 16px; }
+  .nav-btn             { min-height: 44px; min-width: 44px; padding: 10px 14px; }
+  .tab-btn             { min-height: 52px; }
+  .quick-btn           { flex: 1 0 auto; min-height: 48px; font-size: 18px; }
+
+  /* Remove hover transforms — on iOS they get stuck on first tap */
+  .panel:hover,
+  .section:hover,
+  .stat-card:hover,
+  .kpi-card:hover,
+  .streak-card:hover,
+  .stat-item:hover,
+  .badge:hover,
+  .habit-toggle:hover:not(.done),
+  .nav-btn:hover:not(:disabled) {
+    transform: none;
+    box-shadow: var(--shadow-sm);
+    border-color: var(--border);
+    background: revert;
+  }
+
+  /* Compact topbar — saves 30px of precious iPhone real estate */
+  .topbar {
+    padding-left: 16px;
+    padding-right: 16px;
+    padding-bottom: 12px;
+    gap: 10px;
+  }
+  .topbar-title  { font-size: 22px; }
+  .topbar-eyebrow { font-size: 9px; }
+  .topbar h1     { font-size: 22px; margin-bottom: 4px; }
+
+  /* Bottom clearance above iPhone home indicator */
+  .dashboard-view,
+  .stats-view {
+    padding-bottom: calc(40px + env(safe-area-inset-bottom, 16px));
+  }
+
+  /* Bigger score gauge area */
+  .score-header { padding: 20px 18px; gap: 12px; }
+
+  /* Panel padding reduced on small screens */
+  .panel, .section { padding: 20px 18px; }
+}

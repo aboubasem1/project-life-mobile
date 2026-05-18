@@ -64,7 +64,9 @@ export function DashboardView({ entries, syncStatus, onSave }: Props) {
   const isToday   = date === today
 
   const MOOD_OPTIONS  = ['😊 MOTIVIERT', '🙂 GUT', '😐 NEUTRAL', '😔 MÜDE', '😤 GESTRESST']
-  const SLEEP_OPTIONS = ['SEHR SCHLECHT', 'SCHLECHT', 'OKAY', 'GUT', 'SEHR GUT']
+  const SLEEP_OPTIONS = ['😴 SEHR SCHLECHT', '😞 SCHLECHT', '😐 OKAY', '😊 GUT', '🌟 SEHR GUT']
+  const SLEEP_DURATION_OPTIONS = ['5h', '6h', '6.5h', '7h', '7.5h', '8h', '9h']
+  const MEDITATION_OPTIONS = [0, 5, 10, 15, 20, 30]
 
   return (
     <div className="dashboard-view">
@@ -114,40 +116,63 @@ export function DashboardView({ entries, syncStatus, onSave }: Props) {
           <section className="panel">
             <div className="panel-header"><span className="chip">🌅 AUFWACHEN</span></div>
             <div className="metric-grid">
+
               <label className="metric-card">
                 <span>STIMMUNG</span>
-                <select value={entry.mood} onChange={e => update({ mood: e.target.value })}>
-                  <option value="">WÄHLEN</option>
-                  {MOOD_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                </select>
+                <div className="quick-select-row">
+                  {MOOD_OPTIONS.map(o => (
+                    <button
+                      key={o}
+                      type="button"
+                      className={`quick-btn ${entry.mood === o ? 'active' : ''}`}
+                      onClick={() => update({ mood: o })}
+                    >{o.split(' ')[0]}</button>
+                  ))}
+                </div>
               </label>
+
               <label className="metric-card">
                 <span>SCHLAFQUALITÄT</span>
-                <select value={entry.sleepQuality} onChange={e => update({ sleepQuality: e.target.value })}>
-                  <option value="">WÄHLEN</option>
-                  {SLEEP_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                </select>
+                <div className="quick-select-row">
+                  {SLEEP_OPTIONS.map(o => (
+                    <button
+                      key={o}
+                      type="button"
+                      className={`quick-btn ${entry.sleepQuality === o ? 'active' : ''}`}
+                      onClick={() => update({ sleepQuality: o })}
+                    >{o.split(' ')[0]}</button>
+                  ))}
+                </div>
               </label>
-              <div className="row-2">
-                <label className="metric-card">
-                  <span>SCHLAFDAUER</span>
-                  <input
-                    type="text"
-                    value={entry.sleepDuration}
-                    placeholder="z.B. 7h30m"
-                    onChange={e => update({ sleepDuration: e.target.value })}
-                  />
-                </label>
-                <label className="metric-card">
-                  <span>MEDITATION MIN</span>
-                  <input
-                    type="number"
-                    value={entry.meditationMinutes || ''}
-                    min={0}
-                    onChange={e => update({ meditationMinutes: parseInt(e.target.value) || 0 })}
-                  />
-                </label>
-              </div>
+
+              <label className="metric-card">
+                <span>SCHLAFDAUER</span>
+                <div className="quick-select-row">
+                  {SLEEP_DURATION_OPTIONS.map(o => (
+                    <button
+                      key={o}
+                      type="button"
+                      className={`quick-btn ${entry.sleepDuration === o ? 'active' : ''}`}
+                      onClick={() => update({ sleepDuration: o })}
+                    >{o}</button>
+                  ))}
+                </div>
+              </label>
+
+              <label className="metric-card">
+                <span>MEDITATION MIN</span>
+                <div className="quick-select-row">
+                  {MEDITATION_OPTIONS.map(o => (
+                    <button
+                      key={o}
+                      type="button"
+                      className={`quick-btn ${entry.meditationMinutes === o ? 'active' : ''}`}
+                      onClick={() => update({ meditationMinutes: o })}
+                    >{o === 0 ? '–' : `${o}m`}</button>
+                  ))}
+                </div>
+              </label>
+
             </div>
           </section>
 
