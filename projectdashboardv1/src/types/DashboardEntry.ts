@@ -1,3 +1,9 @@
+import type { LucideIcon } from 'lucide-react'
+import {
+  Snowflake, GlassWater, Dumbbell, Activity,
+  Timer, Zap, Heart, Target, Crown, BookOpen, Users,
+} from 'lucide-react'
+
 export interface DashboardEntry {
   id?: string
   date: string        // YYYY-MM-DD
@@ -75,21 +81,21 @@ export type HabitKey = keyof Pick<DashboardEntry,
 export interface HabitMeta {
   key: HabitKey
   label: string
-  emoji: string
+  icon: LucideIcon
   color: string
   group: 'habits' | 'mindset' | 'evening'
 }
 
 export const HABITS: HabitMeta[] = [
-  { key: 'coldShower',    label: 'COLD SHOWER',    emoji: '❄️',  color: '#4facfe', group: 'habits'  },
-  { key: 'proteinShake',  label: 'PROTEIN SHAKE',  emoji: '🥤',  color: '#34c759', group: 'habits'  },
-  { key: 'pushupsDone',   label: '50 PUSHUPS',     emoji: '💪',  color: '#ff9500', group: 'habits'  },
-  { key: 'squatsDone',    label: '50 SQUATS',      emoji: '🦵',  color: '#ff3b30', group: 'habits'  },
-  { key: 'wallsitDone',   label: '50s WALLSIT',    emoji: '🏋️', color: '#667eea', group: 'habits'  },
-  { key: 'plankDone',     label: '50s PLANK',      emoji: '📍',  color: '#f5576c', group: 'habits'  },
-  { key: 'gratitudeDone', label: 'DANKBARKEIT',    emoji: '🙏',  color: '#00d084', group: 'mindset' },
-  { key: 'focusDone',     label: 'DEEP FOCUS',     emoji: '🎯',  color: '#0071e3', group: 'mindset' },
-  { key: 'winnerModeDone',label: 'WINNER MODE',    emoji: '👑',  color: '#ffd60a', group: 'mindset' },
-  { key: 'journalDone',   label: 'JOURNAL',        emoji: '📔',  color: '#8b5cf6', group: 'evening' },
-  { key: 'familyTimeDone',label: 'FAMILIENZEIT',   emoji: '👨‍👩‍👧', color: '#ec4899', group: 'evening' },
+  { key: 'coldShower',     label: 'COLD SHOWER',   icon: Snowflake,  color: '#4facfe', group: 'habits'  },
+  { key: 'proteinShake',   label: 'PROTEIN SHAKE', icon: GlassWater, color: '#34c759', group: 'habits'  },
+  { key: 'pushupsDone',    label: '50 PUSHUPS',    icon: Dumbbell,   color: '#ff9500', group: 'habits'  },
+  { key: 'squatsDone',     label: '50 SQUATS',     icon: Activity,   color: '#ff3b30', group: 'habits'  },
+  { key: 'wallsitDone',    label: '50s WALLSIT',   icon: Timer,      color: '#667eea', group: 'habits'  },
+  { key: 'plankDone',      label: '50s PLANK',     icon: Zap,        color: '#f5576c', group: 'habits'  },
+  { key: 'gratitudeDone',  label: 'DANKBARKEIT',   icon: Heart,      color: '#00d084', group: 'mindset' },
+  { key: 'focusDone',      label: 'DEEP FOCUS',    icon: Target,     color: '#0071e3', group: 'mindset' },
+  { key: 'winnerModeDone', label: 'WINNER MODE',   icon: Crown,      color: '#ffd60a', group: 'mindset' },
+  { key: 'journalDone',    label: 'JOURNAL',       icon: BookOpen,   color: '#8b5cf6', group: 'evening' },
+  { key: 'familyTimeDone', label: 'FAMILIENZEIT',  icon: Users,      color: '#ec4899', group: 'evening' },
 ]

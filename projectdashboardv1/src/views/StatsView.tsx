@@ -4,6 +4,7 @@ import { HABITS } from '../types/DashboardEntry'
 import { WeeklyChart } from '../components/charts/WeeklyChart'
 import { calculateScore, calculateStreakForHabit, calculateCompletionRate, getScoreLabel } from '../lib/score'
 import { exportJSON, importJSON, upsertEntry } from '../lib/storage'
+import { TrendingUp, Flame, Calendar, HardDrive, Download, Upload, RefreshCw } from 'lucide-react'
 
 interface Props {
   entries: DashboardEntry[]
@@ -89,7 +90,7 @@ export function StatsView({ entries, onReload }: Props) {
 
       {/* ── Chart ───────────────────────────────────────────────────────── */}
       <section className="panel">
-        <div className="panel-header"><span className="chip">📈 30-TAGE VERLAUF</span></div>
+        <div className="panel-header"><span className="chip"><TrendingUp size={12} /> 30-TAGE VERLAUF</span></div>
         <div className="chart-wrap">
           <WeeklyChart entries={last30} />
         </div>
@@ -97,7 +98,7 @@ export function StatsView({ entries, onReload }: Props) {
 
       {/* ── Habit streaks ───────────────────────────────────────────────── */}
       <section className="panel">
-        <div className="panel-header"><span className="chip">🔥 HABIT STREAKS</span></div>
+        <div className="panel-header"><span className="chip"><Flame size={12} /> HABIT STREAKS</span></div>
         <div className="habit-streak-list">
           {HABITS.map(h => {
             const streak  = calculateStreakForHabit(sorted, h.key)
@@ -105,7 +106,7 @@ export function StatsView({ entries, onReload }: Props) {
             const rate30  = calculateCompletionRate(sorted, h.key, 30)
             return (
               <div key={h.key} className="streak-row">
-                <span className="streak-emoji">{h.emoji}</span>
+                <span className="streak-emoji"><h.icon size={18} style={{ color: h.color }} /></span>
                 <div className="streak-info">
                   <span className="streak-label">{h.label}</span>
                   <div className="streak-bars">
@@ -118,7 +119,7 @@ export function StatsView({ entries, onReload }: Props) {
                   </div>
                 </div>
                 <div className="streak-stats">
-                  <span className="streak-fire">{streak > 0 ? `🔥${streak}` : '—'}</span>
+                  <span className="streak-fire">{streak > 0 ? <><Flame size={12} style={{ color: '#ff9500', verticalAlign: 'middle' }} />{streak}</> : '—'}</span>
                   <span className="streak-pct">{rate7}%</span>
                 </div>
               </div>
@@ -130,7 +131,7 @@ export function StatsView({ entries, onReload }: Props) {
       {/* ── Score history table ─────────────────────────────────────────── */}
       {sorted.length > 0 && (
         <section className="panel">
-          <div className="panel-header"><span className="chip">📅 VERLAUF</span></div>
+          <div className="panel-header"><span className="chip"><Calendar size={12} /> VERLAUF</span></div>
           <div className="history-list">
             {[...sorted].reverse().slice(0, 14).map(e => {
               const s = e.dailyScore ?? calculateScore(e)
@@ -151,16 +152,16 @@ export function StatsView({ entries, onReload }: Props) {
 
       {/* ── Data management ─────────────────────────────────────────────── */}
       <section className="panel">
-        <div className="panel-header"><span className="chip">💾 DATEN</span></div>
+        <div className="panel-header"><span className="chip"><HardDrive size={12} /> DATEN</span></div>
         <div className="data-actions">
           <button className="action-btn" onClick={() => { exportJSON(entries); }}>
-            ↓ EXPORTIEREN
+            <Download size={14} /> EXPORTIEREN
           </button>
           <button className="action-btn secondary" onClick={handleImport}>
-            ↑ IMPORTIEREN
+            <Upload size={14} /> IMPORTIEREN
           </button>
           <button className="action-btn ghost" onClick={() => void onReload()}>
-            ↻ SYNC
+            <RefreshCw size={14} /> SYNC
           </button>
         </div>
         <p className="data-hint">{sorted.length} Einträge lokal gespeichert</p>

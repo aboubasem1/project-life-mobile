@@ -348,7 +348,9 @@ body {
 }
 
 .chip {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.5px;
@@ -1007,8 +1009,11 @@ body {
 }
 
 .streak-emoji {
-  font-size: 26px;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
 }
 
 .streak-name {
@@ -1202,7 +1207,8 @@ body {
   }
 
   .streak-emoji {
-    font-size: 22px;
+    width: 20px;
+    height: 20px;
   }
 
   .streak-name {
@@ -1341,7 +1347,7 @@ body {
   background: color-mix(in srgb, var(--habit-color, var(--accent)) 10%, transparent);
   color: var(--text);
 }
-.habit-emoji { font-size: 20px; flex-shrink: 0; }
+.habit-emoji { display: flex; align-items: center; width: 20px; height: 20px; flex-shrink: 0; }
 .habit-label { flex: 1; }
 .habit-check {
   width: 24px;
@@ -1461,7 +1467,7 @@ body {
   border-bottom: 1px solid var(--border-light);
 }
 .streak-row:last-child { border-bottom: none; }
-.streak-emoji { font-size: 20px; flex-shrink: 0; }
+.streak-emoji { display: flex; align-items: center; width: 20px; height: 20px; flex-shrink: 0; }
 .streak-info {
   flex: 1;
   display: flex;

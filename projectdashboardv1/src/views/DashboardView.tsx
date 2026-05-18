@@ -5,6 +5,11 @@ import { ScoreGauge } from '../components/charts/ScoreGauge'
 import { SyncStatusBadge } from '../components/ui/SyncStatusBadge'
 import type { SyncStatus } from '../hooks/useEntries'
 import { calculateScore, getScoreBreakdown } from '../lib/score'
+import {
+  Sunrise, Zap, Brain, Apple, Briefcase, Moon, BarChart2,
+  SmilePlus, Smile, Meh, Frown, AlertCircle,
+  BatteryFull, Battery, BatteryMedium, BatteryLow, BatteryWarning,
+} from 'lucide-react'
 
 const getToday = (): string => {
   const d = new Date()
@@ -63,8 +68,20 @@ export function DashboardView({ entries, syncStatus, onSave }: Props) {
   const breakdown = getScoreBreakdown(entry)
   const isToday   = date === today
 
-  const MOOD_OPTIONS  = ['😊 MOTIVIERT', '🙂 GUT', '😐 NEUTRAL', '😔 MÜDE', '😤 GESTRESST']
-  const SLEEP_OPTIONS = ['😴 SEHR SCHLECHT', '😞 SCHLECHT', '😐 OKAY', '😊 GUT', '🌟 SEHR GUT']
+  const MOOD_OPTIONS = [
+    { value: 'MOTIVIERT',     Icon: SmilePlus,     label: 'MOTIVIERT'   },
+    { value: 'GUT',           Icon: Smile,         label: 'GUT'         },
+    { value: 'NEUTRAL',       Icon: Meh,           label: 'NEUTRAL'     },
+    { value: 'MÜDE',          Icon: Frown,         label: 'MÜDE'        },
+    { value: 'GESTRESST',     Icon: AlertCircle,   label: 'GESTRESST'   },
+  ]
+  const SLEEP_OPTIONS = [
+    { value: 'SEHR SCHLECHT', Icon: BatteryWarning, label: 'S.SCHLECHT'  },
+    { value: 'SCHLECHT',      Icon: BatteryLow,     label: 'SCHLECHT'    },
+    { value: 'OKAY',          Icon: BatteryMedium,  label: 'OKAY'        },
+    { value: 'GUT',           Icon: Battery,        label: 'GUT'         },
+    { value: 'SEHR GUT',      Icon: BatteryFull,    label: 'S.GUT'       },
+  ]
   const SLEEP_DURATION_OPTIONS = ['5h', '6h', '6.5h', '7h', '7.5h', '8h', '9h']
   const MEDITATION_OPTIONS = [0, 5, 10, 15, 20, 30]
 
@@ -102,11 +119,11 @@ export function DashboardView({ entries, syncStatus, onSave }: Props) {
         <button
           className={`tab-btn ${tab === 'morning' ? 'active' : ''}`}
           onClick={() => setTab('morning')}
-        >🌅 MORGENS</button>
+        ><Sunrise size={14} style={{flexShrink:0}} /> MORGENS</button>
         <button
           className={`tab-btn ${tab === 'evening' ? 'active' : ''}`}
           onClick={() => setTab('evening')}
-        >🌙 ABENDS</button>
+        ><Moon size={14} style={{flexShrink:0}} /> ABENDS</button>
       </nav>
 
       {/* ── Morning tab ─────────────────────────────────────────────────── */}
@@ -114,19 +131,20 @@ export function DashboardView({ entries, syncStatus, onSave }: Props) {
         <div className="tab-content">
 
           <section className="panel">
-            <div className="panel-header"><span className="chip">🌅 AUFWACHEN</span></div>
+            <div className="panel-header"><span className="chip"><Sunrise size={12} /> AUFWACHEN</span></div>
             <div className="metric-grid">
 
               <label className="metric-card">
                 <span>STIMMUNG</span>
                 <div className="quick-select-row">
-                  {MOOD_OPTIONS.map(o => (
+                  {MOOD_OPTIONS.map(({ value, Icon, label }) => (
                     <button
-                      key={o}
+                      key={value}
                       type="button"
-                      className={`quick-btn ${entry.mood === o ? 'active' : ''}`}
-                      onClick={() => update({ mood: o })}
-                    >{o.split(' ')[0]}</button>
+                      className={`quick-btn ${entry.mood === value ? 'active' : ''}`}
+                      onClick={() => update({ mood: value })}
+                      title={label}
+                    ><Icon size={18} /></button>
                   ))}
                 </div>
               </label>
@@ -134,13 +152,14 @@ export function DashboardView({ entries, syncStatus, onSave }: Props) {
               <label className="metric-card">
                 <span>SCHLAFQUALITÄT</span>
                 <div className="quick-select-row">
-                  {SLEEP_OPTIONS.map(o => (
+                  {SLEEP_OPTIONS.map(({ value, Icon, label }) => (
                     <button
-                      key={o}
+                      key={value}
                       type="button"
-                      className={`quick-btn ${entry.sleepQuality === o ? 'active' : ''}`}
-                      onClick={() => update({ sleepQuality: o })}
-                    >{o.split(' ')[0]}</button>
+                      className={`quick-btn ${entry.sleepQuality === value ? 'active' : ''}`}
+                      onClick={() => update({ sleepQuality: value })}
+                      title={label}
+                    ><Icon size={18} /></button>
                   ))}
                 </div>
               </label>
@@ -177,7 +196,7 @@ export function DashboardView({ entries, syncStatus, onSave }: Props) {
           </section>
 
           <section className="panel">
-            <div className="panel-header"><span className="chip">⚡ DAILY HABITS</span></div>
+            <div className="panel-header"><span className="chip"><Zap size={12} /> DAILY HABITS</span></div>
             <div className="habit-list">
               {HABITS.filter(h => h.group === 'habits').map(h => (
                 <button
@@ -187,7 +206,7 @@ export function DashboardView({ entries, syncStatus, onSave }: Props) {
                   onClick={() => update({ [h.key]: !entry[h.key] } as Partial<DashboardEntry>)}
                   type="button"
                 >
-                  <span className="habit-emoji">{h.emoji}</span>
+                  <h.icon size={18} style={{ color: h.color, flexShrink: 0 }} />
                   <span className="habit-label">{h.label}</span>
                   <span className="habit-check">{entry[h.key] ? '✓' : ''}</span>
                 </button>
@@ -196,7 +215,7 @@ export function DashboardView({ entries, syncStatus, onSave }: Props) {
           </section>
 
           <section className="panel">
-            <div className="panel-header"><span className="chip">🧠 MINDSET</span></div>
+            <div className="panel-header"><span className="chip"><Brain size={12} /> MINDSET</span></div>
             <div className="habit-list">
               {HABITS.filter(h => h.group === 'mindset').map(h => (
                 <button
@@ -206,7 +225,7 @@ export function DashboardView({ entries, syncStatus, onSave }: Props) {
                   onClick={() => update({ [h.key]: !entry[h.key] } as Partial<DashboardEntry>)}
                   type="button"
                 >
-                  <span className="habit-emoji">{h.emoji}</span>
+                  <h.icon size={18} style={{ color: h.color, flexShrink: 0 }} />
                   <span className="habit-label">{h.label}</span>
                   <span className="habit-check">{entry[h.key] ? '✓' : ''}</span>
                 </button>
@@ -222,7 +241,7 @@ export function DashboardView({ entries, syncStatus, onSave }: Props) {
         <div className="tab-content">
 
           <section className="panel">
-            <div className="panel-header"><span className="chip">🥗 ERNÄHRUNG & KÖRPER</span></div>
+            <div className="panel-header"><span className="chip"><Apple size={12} /> ERNÄHRUNG</span></div>
             <div className="metric-grid">
               <div className="row-2">
                 <label className="metric-card">
@@ -252,7 +271,7 @@ export function DashboardView({ entries, syncStatus, onSave }: Props) {
           </section>
 
           <section className="panel">
-            <div className="panel-header"><span className="chip">💼 WORK & FOKUS</span></div>
+            <div className="panel-header"><span className="chip"><Briefcase size={12} /> WORK & FOKUS</span></div>
             <div className="metric-grid">
               <div className="row-2">
                 <label className="metric-card">
@@ -270,7 +289,7 @@ export function DashboardView({ entries, syncStatus, onSave }: Props) {
           </section>
 
           <section className="panel">
-            <div className="panel-header"><span className="chip">🌙 ABEND RITUAL</span></div>
+            <div className="panel-header"><span className="chip"><Moon size={12} /> ABEND RITUAL</span></div>
             <div className="habit-list">
               {HABITS.filter(h => h.group === 'evening').map(h => (
                 <button
@@ -280,7 +299,7 @@ export function DashboardView({ entries, syncStatus, onSave }: Props) {
                   onClick={() => update({ [h.key]: !entry[h.key] } as Partial<DashboardEntry>)}
                   type="button"
                 >
-                  <span className="habit-emoji">{h.emoji}</span>
+                  <h.icon size={18} style={{ color: h.color, flexShrink: 0 }} />
                   <span className="habit-label">{h.label}</span>
                   <span className="habit-check">{entry[h.key] ? '✓' : ''}</span>
                 </button>
@@ -305,7 +324,7 @@ export function DashboardView({ entries, syncStatus, onSave }: Props) {
 
       {/* ── Score breakdown ─────────────────────────────────────────────── */}
       <section className="panel">
-        <div className="panel-header"><span className="chip">📊 SCORE BREAKDOWN</span></div>
+        <div className="panel-header"><span className="chip"><BarChart2 size={12} /> SCORE BREAKDOWN</span></div>
         <div className="breakdown-grid">
           {breakdown.map(cat => (
             <div key={cat.category} className="breakdown-cat">
