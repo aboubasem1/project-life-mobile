@@ -1,7 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import type { DashboardEntry } from '../types/DashboardEntry'
-import { loadAllEntries, saveAllEntries, upsertEntry } from '../lib/storage'
-import { fetchAllEntriesRemote, upsertEntryRemote, isSupabaseAvailable } from '../lib/supabase'
+import { loadAllEntries, upsertEntry } from '../lib/storage'
 import { calculateScore } from '../lib/score'
 
 export type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error' | 'offline'
@@ -15,80 +14,37 @@ export interface UseEntriesReturn {
 }
 
 export function useEntries(): UseEntriesReturn {
-  // Initialize synchronously from localStorage for instant render
-  const [entries, setEntries]     = useState<DashboardEntry[]>(() => loadAllEntries())
+  // Synchronous init — instant render, no loading state needed
+  const [entries, setEntries]       = useState<DashboardEntry[]>(() => loadAllEntries())
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
-  const [isOnline, setIsOnline]   = useState(navigator.onLine)
-  const pendingQueue = useRef<DashboardEntry[]>([])
+  const resetTimer = useRef<number | null>(null)
 
+  // Reload from localStorage (no network call)
   const reloadAll = useCallback(async () => {
-    setSyncStatus('syncing')
-    try {
-      if (isSupabaseAvailable() && isOnline) {
-        const remote = await fetchAllEntriesRemote()
-        if (remote) {
-          // Merge: remote is authoritative, but local unsaved entries win
-          const localMap = new Map(loadAllEntries().map(e => [e.date, e]))
-          for (const r of remote) {
-            if (!localMap.has(r.date)) localMap.set(r.date, r)
-          }
-          const merged = Array.from(localMap.values())
-            .sort((a, b) => b.date.localeCompare(a.date))
-          saveAllEntries(merged)
-          setEntries(merged)
-          setSyncStatus('synced')
-          return
-        }
-      }
-    } catch {
-      setSyncStatus('error')
-    }
-    const local = loadAllEntries()
-    setEntries(local)
-    // No Supabase configured → localStorage-only mode, not an error
-    setSyncStatus(isSupabaseAvailable() ? (isOnline ? 'error' : 'offline') : 'idle')
-  }, [isOnline])
-
-  // Initial load — async sync with Supabase + localStorage fallback
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { void reloadAll() }, [isOnline])
-
-  // Online/offline detection
-  useEffect(() => {
-    const onOnline  = () => { setIsOnline(true);  reloadAll() }
-    const onOffline = () => { setIsOnline(false); setSyncStatus('offline') }
-    window.addEventListener('online',  onOnline)
-    window.addEventListener('offline', onOffline)
-    return () => {
-      window.removeEventListener('online',  onOnline)
-      window.removeEventListener('offline', onOffline)
-    }
-  }, [reloadAll])
+    setEntries(loadAllEntries())
+  }, [])
 
   const saveEntry = useCallback(async (entry: DashboardEntry) => {
     const scored: DashboardEntry = { ...entry, dailyScore: calculateScore(entry) }
+
+    // Write to localStorage
     const updated = upsertEntry(scored)
+
+    // Per-day backup slot (keeps last entries individually recoverable)
+    try {
+      localStorage.setItem('project-life-backup-' + scored.date, JSON.stringify(scored))
+    } catch { /* storage quota — ignore */ }
+
     setEntries(updated)
+
+    // Brief visual feedback: syncing → synced → idle
     setSyncStatus('syncing')
+    resetTimer.current && clearTimeout(resetTimer.current)
+    resetTimer.current = window.setTimeout(() => {
+      setSyncStatus('synced')
+      resetTimer.current = window.setTimeout(() => setSyncStatus('idle'), 1500)
+    }, 150)
+  }, [])
 
-    if (isSupabaseAvailable() && isOnline) {
-      try {
-        await upsertEntryRemote(scored)
-        // Flush any queued entries
-        while (pendingQueue.current.length > 0) {
-          const queued = pendingQueue.current.shift()!
-          await upsertEntryRemote(queued)
-        }
-        setSyncStatus('synced')
-      } catch {
-        pendingQueue.current.push(scored)
-        setSyncStatus('error')
-      }
-    } else {
-      pendingQueue.current.push(scored)
-      setSyncStatus('offline')
-    }
-  }, [isOnline])
-
-  return { entries, syncStatus, isOnline, saveEntry, reloadAll }
+  return { entries, syncStatus, isOnline: true, saveEntry, reloadAll }
 }
