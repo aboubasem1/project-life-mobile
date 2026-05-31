@@ -29,6 +29,8 @@ export interface DashboardEntry {
   winnerModeDone: boolean
 
   // Evening
+  proteinReached: boolean
+  caloriesReached: boolean
   proteinGrams: number
   calories: number
   tasksDone: number
@@ -60,6 +62,8 @@ export const createDefaultEntry = (date: string): DashboardEntry => ({
   gratitudeDone: false,
   focusDone: false,
   winnerModeDone: false,
+  proteinReached: false,
+  caloriesReached: false,
   proteinGrams: 0,
   calories: 0,
   tasksDone: 0,

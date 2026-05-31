@@ -88,6 +88,8 @@ function migrateLegacy(raw: Record<string, unknown>): DashboardEntry {
     gratitudeDone:      Boolean(raw.gratitudeDone),
     focusDone:          Boolean(raw.focusDone),
     winnerModeDone:     Boolean(raw.winnerModeDone),
+    proteinReached:     Boolean(raw.proteinReached),
+    caloriesReached:    Boolean(raw.caloriesReached),
     proteinGrams:       Number(raw.proteinGrams)       || 0,
     calories:           Number(raw.calories)           || 0,
     tasksDone:          Number(raw.tasksDone)          || 0,

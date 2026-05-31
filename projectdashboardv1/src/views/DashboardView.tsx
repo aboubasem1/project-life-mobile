@@ -241,31 +241,44 @@ export function DashboardView({ entries, syncStatus, onSave }: Props) {
         <div className="tab-content">
 
           <section className="panel">
-            <div className="panel-header"><span className="chip"><Apple size={12} /> ERNÄHRUNG</span></div>
-            <div className="metric-grid">
-              <div className="row-2">
-                <label className="metric-card">
-                  <span>PROTEIN (G)</span>
-                  <input type="number" value={entry.proteinGrams || ''} min={0}
-                    onChange={e => update({ proteinGrams: parseInt(e.target.value) || 0 })} />
-                </label>
-                <label className="metric-card">
-                  <span>KALORIEN</span>
-                  <input type="number" value={entry.calories || ''} min={0}
-                    onChange={e => update({ calories: parseInt(e.target.value) || 0 })} />
-                </label>
-              </div>
-              <div className="row-2">
-                <label className="metric-card">
-                  <span>WASSER (L)</span>
-                  <input type="number" value={entry.waterLiters || ''} min={0} step={0.1}
-                    onChange={e => update({ waterLiters: parseFloat(e.target.value) || 0 })} />
-                </label>
-                <label className="metric-card">
-                  <span>GEWICHT (KG)</span>
-                  <input type="number" value={entry.weightKg || ''} min={0} step={0.1}
-                    onChange={e => update({ weightKg: parseFloat(e.target.value) || 0 })} />
-                </label>
+            <div className="panel-header"><span className="chip"><Apple size={12} /> ABEND-CHECK</span></div>
+            <div className="habit-list">
+              <button
+                className={`habit-toggle ${entry.proteinReached ? 'done' : ''}`}
+                style={{ '--habit-color': '#34c759' } as React.CSSProperties}
+                onClick={() => update({ proteinReached: !entry.proteinReached })}
+                type="button"
+              >
+                <Apple size={18} style={{ color: '#34c759', flexShrink: 0 }} />
+                <span className="habit-label">Protein erreicht</span>
+                <span className="habit-check">{entry.proteinReached ? '✓' : ''}</span>
+              </button>
+              <button
+                className={`habit-toggle ${entry.caloriesReached ? 'done' : ''}`}
+                style={{ '--habit-color': '#ff9f0a' } as React.CSSProperties}
+                onClick={() => update({ caloriesReached: !entry.caloriesReached })}
+                type="button"
+              >
+                <Zap size={18} style={{ color: '#ff9f0a', flexShrink: 0 }} />
+                <span className="habit-label">Kalorien erreicht</span>
+                <span className="habit-check">{entry.caloriesReached ? '✓' : ''}</span>
+              </button>
+            </div>
+            <div className="weight-picker-row">
+              <span className="weight-picker-label">GEWICHT</span>
+              <div className="weight-picker-wrap">
+                <select
+                  className="weight-picker-select"
+                  value={entry.weightKg || 65}
+                  onChange={e => update({ weightKg: parseFloat(e.target.value) })}
+                >
+                  {Array.from({ length: (100 - 45) / 0.5 + 1 }, (_, i) => 45 + i * 0.5).map(w => (
+                    <option key={w} value={w}>{w.toFixed(1)} kg</option>
+                  ))}
+                </select>
+                <span className="weight-picker-value">
+                  {(entry.weightKg || 65).toFixed(1)} kg
+                </span>
               </div>
             </div>
           </section>
