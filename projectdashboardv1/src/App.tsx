@@ -5,13 +5,14 @@ import { DashboardView } from './views/DashboardView'
 import { StatsView } from './views/StatsView'
 import { SyncStatusBadge } from './components/ui/SyncStatusBadge'
 import { AchievementToast } from './components/ui/AchievementToast'
+import { LandingView } from './views/LandingView'
 import { checkAchievements } from './lib/achievements'
 import type { Achievement } from './lib/achievements'
 
-type View = 'dashboard' | 'stats'
+type View = 'landing' | 'dashboard' | 'stats'
 
 export default function App() {
-  const [view, setView] = useState<View>('dashboard')
+  const [view, setView] = useState<View>('landing')
   const { entries, syncStatus, saveEntry, reloadAll } = useEntries()
   const [newAchievements, setNewAchievements] = useState<Achievement[]>([])
 
@@ -27,6 +28,10 @@ export default function App() {
       void Notification.requestPermission()
     }
   }, [])
+
+  if (view === 'landing') {
+    return <LandingView onEnter={() => setView('dashboard')} />
+  }
 
   return (
     <div className="app">

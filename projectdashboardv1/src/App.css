@@ -1906,3 +1906,22 @@ html, body {
 .ach-toast-desc{font-size:11px;color:#aaa;margin-top:2px;}
 .ach-toast-xp{font-size:12px;color:#c8b07a;font-weight:700;margin-top:4px;}
 .ach-toast-counter{position:absolute;top:8px;right:12px;font-size:10px;color:#555;}
+
+/* Landing Page */
+.landing{position:relative;min-height:100dvh;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#0b0b0b;}
+.landing-bg{position:absolute;inset:0;pointer-events:none;}
+.landing-orb{position:absolute;border-radius:50%;filter:blur(80px);opacity:.35;}
+.landing-orb-1{width:400px;height:400px;background:radial-gradient(circle,#c8b07a,transparent);top:-80px;left:-100px;}
+.landing-orb-2{width:350px;height:350px;background:radial-gradient(circle,#3a5a8a,transparent);bottom:-60px;right:-80px;}
+.landing-content{position:relative;z-index:1;text-align:center;padding:40px 28px;max-width:400px;width:100%;}
+.landing-badge{display:inline-block;font-size:10px;letter-spacing:.12em;text-transform:uppercase;border:1px solid rgba(200,176,122,.35);color:#c8b07a;border-radius:20px;padding:4px 14px;margin-bottom:28px;}
+.landing-title{font-size:clamp(52px,14vw,80px);font-weight:900;line-height:.95;letter-spacing:-.02em;color:#f2f2f2;margin:0 0 16px;}
+.landing-title-accent{color:#c8b07a;}
+.landing-subtitle{font-size:16px;color:#888;line-height:1.5;margin-bottom:36px;}
+.landing-features{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:40px;text-align:left;}
+.landing-feat{display:flex;align-items:center;gap:10px;background:#111;border:1px solid #222;border-radius:10px;padding:10px 14px;font-size:12px;color:#ccc;}
+.landing-feat-icon{font-size:18px;flex-shrink:0;}
+.landing-cta{width:100%;padding:16px;background:linear-gradient(135deg,#c8b07a,#a8904a);color:#000;font-size:16px;font-weight:800;letter-spacing:.04em;border:none;border-radius:14px;cursor:pointer;margin-bottom:16px;transition:opacity .2s,transform .1s;}
+.landing-cta:hover{opacity:.9;}
+.landing-cta:active{transform:scale(.98);}
+.landing-hint{font-size:11px;color:#444;}
