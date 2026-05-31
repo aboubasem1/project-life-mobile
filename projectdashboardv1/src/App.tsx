@@ -30,7 +30,7 @@ export default function App() {
   }, [])
 
   if (view === 'landing') {
-    return <LandingView onEnter={() => setView('dashboard')} />
+    return <LandingView onEnter={() => setView('dashboard')} onStats={() => setView('stats')} />
   }
 
   return (
