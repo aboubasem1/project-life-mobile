@@ -481,14 +481,7 @@ var QUOTES=[
 ════════════════════════════════════════════════════ */
 function lSt(){try{var r=localStorage.getItem(LS);if(r)return JSON.parse(r);}catch(e){}
   return{xp:0,lv:1,streak:0,txp:0,done:[],date:'',combo:0,balBonus:false,earlyBonus:false,sessions:0};}
-function sSt(){
-  localStorage.setItem(LS,JSON.stringify(ST));
-  // ── Shared XP key — keeps React app in sync (lifeos-xp-v1) ──────────────
-  var LVLXP=500;
-  var shared={xp:ST.xp%LVLXP,level:ST.lv,totalXP:ST.xp,streakDays:ST.streak,
-    lastUpdated:todayISO,lastScoreDate:todayISO};
-  localStorage.setItem('lifeos-xp-v1',JSON.stringify(shared));
-}
+function sSt(){localStorage.setItem(LS,JSON.stringify(ST));}
 function lQs(){try{var r=localStorage.getItem(LQ);if(r)return JSON.parse(r);}catch(e){}
   return DEF.map(function(q){return Object.assign({},q);});}
 function sQs(){localStorage.setItem(LQ,JSON.stringify(Qs));}

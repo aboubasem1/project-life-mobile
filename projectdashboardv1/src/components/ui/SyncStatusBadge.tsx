@@ -5,12 +5,12 @@ interface SyncStatusProps {
 }
 
 const CONFIGS: Record<string, { icon: string; text: string; cls: string }> = {
-  idle:    { icon: '○',  text: 'BEREIT',       cls: 'idle'    },
-  syncing: { icon: '↻',  text: 'SPEICHERT...', cls: 'syncing' },
-  loading: { icon: '↻',  text: 'LÄDT...',      cls: 'syncing' },
-  synced:  { icon: '✓',  text: 'GESPEICHERT',  cls: 'synced'  },
-  error:   { icon: '⚠',  text: 'FEHLER',       cls: 'error'   },
-  offline: { icon: '⊠',  text: 'OFFLINE',      cls: 'offline' },
+  idle:    { icon: '◈',  text: 'LOKAL',           cls: 'idle'    },
+  syncing: { icon: '↓',  text: 'SPEICHERT...',    cls: 'syncing' },
+  loading: { icon: '↻',  text: 'LÄDT...',         cls: 'syncing' },
+  synced:  { icon: '✓',  text: 'LOKAL GESPEICHERT', cls: 'synced'  },
+  error:   { icon: '⚠',  text: 'FEHLER',          cls: 'error'   },
+  offline: { icon: '⊠',  text: 'OFFLINE',         cls: 'offline' },
 }
 
 export function SyncStatusBadge({ status }: SyncStatusProps) {

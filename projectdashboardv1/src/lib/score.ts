@@ -25,6 +25,24 @@ const NUMERIC_SCORES: { key: keyof DashboardEntry; threshold: number; points: nu
   { key: 'tasksDone',         threshold: 3,   points: 4, label: 'Tasks ≥3'           },
 ]
 
+// Mood bonus (5 pts max) — previously tracked but never scored
+const MOOD_SCORES: Record<string, number> = {
+  'MOTIVIERT': 5,
+  'GUT':       3,
+  'NEUTRAL':   1,
+  'MÜDE':      0,
+  'GESTRESST': 0,
+}
+
+// Sleep quality bonus (5 pts max) — previously tracked but never scored
+const SLEEP_SCORES: Record<string, number> = {
+  'SEHR GUT':      5,
+  'GUT':           3,
+  'OKAY':          1,
+  'SCHLECHT':      0,
+  'SEHR SCHLECHT': 0,
+}
+
 // ─── Score calc ───────────────────────────────────────────────────────────────
 export function calculateScore(entry: DashboardEntry): number {
   let score = 0
@@ -34,6 +52,8 @@ export function calculateScore(entry: DashboardEntry): number {
   for (const n of NUMERIC_SCORES) {
     if ((entry[n.key] as number) >= n.threshold) score += n.points
   }
+  score += MOOD_SCORES[entry.mood]          ?? 0
+  score += SLEEP_SCORES[entry.sleepQuality] ?? 0
   return Math.min(100, score)
 }
 

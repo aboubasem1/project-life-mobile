@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react'
 import type { DashboardEntry } from '../types/DashboardEntry'
 import { loadAllEntries, upsertEntry } from '../lib/storage'
 import { calculateScore } from '../lib/score'
+import { awardDailyXP } from '../lib/xp-store'
 
 export type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error' | 'offline'
 
@@ -29,6 +30,7 @@ export function useEntries(): UseEntriesReturn {
 
     // Write to localStorage
     const updated = upsertEntry(scored)
+    awardDailyXP(scored.dailyScore, scored.date)
 
     // Per-day backup slot (keeps last entries individually recoverable)
     try {
@@ -36,14 +38,9 @@ export function useEntries(): UseEntriesReturn {
     } catch { /* storage quota — ignore */ }
 
     setEntries(updated)
-
-    // Brief visual feedback: syncing → synced → idle
-    setSyncStatus('syncing')
+    setSyncStatus('synced')
     resetTimer.current && clearTimeout(resetTimer.current)
-    resetTimer.current = window.setTimeout(() => {
-      setSyncStatus('synced')
-      resetTimer.current = window.setTimeout(() => setSyncStatus('idle'), 1500)
-    }, 150)
+    resetTimer.current = window.setTimeout(() => setSyncStatus('idle'), 2000)
   }, [])
 
   return { entries, syncStatus, isOnline: true, saveEntry, reloadAll }
