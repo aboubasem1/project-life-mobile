@@ -1,0 +1,1917 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Extended Dashboard — Preview</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f1419;
+    --bg2: #1a2038;
+    --bg3: #212840;
+    --text: #e4e9f7;
+    --muted: #6b7499;
+    --accent: #7c7bff;
+    --accent2: #5f6bff;
+    --green: #34c759;
+    --orange: #ff9f0a;
+    --red: #ff3b30;
+    --blue: #0a84ff;
+    --pink: #ff375f;
+    --teal: #5ac8fa;
+    --yellow: #ffd60a;
+    --r: 14px;
+    --r-sm: 10px;
+  }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Layout ── */
+  .app {
+    max-width: 420px;
+    margin: 0 auto;
+    padding: env(safe-area-inset-top, 0) 0 120px;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  .app-header {
+    padding: 20px 20px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+  .app-header h1 {
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    background: linear-gradient(135deg, var(--accent), var(--teal));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .app-header .date-badge {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+    background: var(--bg2);
+    border: 1px solid rgba(255,255,255,0.06);
+    padding: 6px 12px;
+    border-radius: 20px;
+    margin-top: 4px;
+  }
+
+  /* ── Bottom Nav ── */
+  .bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 420px;
+    background: rgba(15,20,25,0.92);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid rgba(255,255,255,0.07);
+    display: flex;
+    padding: 10px 0 calc(10px + env(safe-area-inset-bottom, 0));
+    z-index: 100;
+  }
+  .nav-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+    padding: 4px 0;
+    transition: color 0.15s;
+  }
+  .nav-btn.active { color: var(--accent); }
+  .nav-btn svg { width: 22px; height: 22px; }
+
+  /* ── Page views ── */
+  .page { display: none; padding: 20px; }
+  .page.active { display: block; }
+
+  /* ── Score Ring (summary) ── */
+  .score-ring-wrap {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    background: var(--bg2);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: var(--r);
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .ring { position: relative; width: 88px; height: 88px; flex-shrink: 0; }
+  .ring svg { transform: rotate(-90deg); }
+  .ring-label {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .ring-label .score-num {
+    font-size: 22px;
+    font-weight: 900;
+    background: linear-gradient(135deg, var(--accent), var(--teal));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .ring-label .score-max { font-size: 10px; color: var(--muted); margin-top: -2px; }
+  .score-details { flex: 1; }
+  .score-details .score-title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: var(--text);
+    margin-bottom: 10px;
+  }
+  .mini-stat-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .mini-stat {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    background: rgba(255,255,255,0.04);
+    border-radius: 8px;
+    padding: 5px 8px;
+  }
+  .mini-stat .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ── Section ── */
+  .section { margin-bottom: 16px; }
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .section-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    color: var(--accent);
+    background: rgba(124,123,255,0.10);
+    border: 1px solid rgba(124,123,255,0.2);
+    padding: 6px 14px;
+    border-radius: 20px;
+  }
+  .section-action {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent);
+    background: none;
+    border: none;
+    cursor: pointer;
+    opacity: 0.8;
+  }
+
+  /* ── TODO ── */
+  .project-tabs {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 4px;
+    margin-bottom: 12px;
+  }
+  .project-tabs::-webkit-scrollbar { display: none; }
+  .project-tab {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    padding: 8px 14px;
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: var(--bg2);
+    color: var(--muted);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+  }
+  .project-tab.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .project-tab .tab-count {
+    background: rgba(255,255,255,0.2);
+    color: inherit;
+    font-size: 10px;
+    font-weight: 800;
+    border-radius: 10px;
+    padding: 1px 6px;
+    min-width: 18px;
+    text-align: center;
+  }
+  .project-tab:not(.active) .tab-count {
+    background: rgba(124,123,255,0.15);
+    color: var(--accent);
+  }
+  .add-tab-btn {
+    flex-shrink: 0;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.05);
+    border: 1px dashed rgba(255,255,255,0.15);
+    color: var(--muted);
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .todo-card {
+    background: var(--bg2);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: var(--r);
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .todo-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    cursor: pointer;
+    transition: background 0.1s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .todo-item:last-child { border-bottom: none; }
+  .todo-item:active { background: rgba(255,255,255,0.03); }
+
+  .todo-check {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    border: 2px solid rgba(255,255,255,0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+  .todo-check.done {
+    background: var(--green);
+    border-color: var(--green);
+  }
+  .todo-check.done::after {
+    content: '';
+    width: 5px;
+    height: 9px;
+    border: 2px solid #fff;
+    border-top: none;
+    border-left: none;
+    transform: rotate(45deg) translateY(-1px);
+    display: block;
+  }
+  .todo-priority {
+    width: 4px;
+    height: 36px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  .todo-body { flex: 1; min-width: 0; }
+  .todo-text {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .todo-text.done { text-decoration: line-through; color: var(--muted); }
+  .todo-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 3px;
+  }
+  .todo-tag {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    padding: 2px 7px;
+    border-radius: 6px;
+    opacity: 0.85;
+  }
+  .todo-time {
+    font-size: 10px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .todo-drag {
+    color: rgba(255,255,255,0.15);
+    font-size: 14px;
+    padding: 4px;
+  }
+
+  .focus-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    color: var(--yellow);
+    background: rgba(255,214,10,0.1);
+    border: 1px solid rgba(255,214,10,0.2);
+    padding: 4px 10px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+  }
+  .focus-badge::before { content: '⚡'; font-size: 12px; }
+
+  .add-todo-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    background: transparent;
+    border: 1px dashed rgba(255,255,255,0.1);
+    border-radius: var(--r);
+    color: var(--muted);
+    font-size: 13px;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: all 0.15s;
+  }
+  .add-todo-btn:active { background: rgba(255,255,255,0.03); }
+
+  /* ── Supplements ── */
+  .supp-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .supp-card {
+    background: var(--bg2);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: var(--r);
+    padding: 14px;
+    position: relative;
+    overflow: hidden;
+  }
+  .supp-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+  .supp-name {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+  .supp-brand {
+    font-size: 10px;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  .supp-stock-bar {
+    height: 4px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 6px;
+  }
+  .supp-stock-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.4s ease;
+  }
+  .supp-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .supp-remain {
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .supp-days {
+    font-size: 10px;
+    color: var(--muted);
+  }
+  .supp-warn {
+    position: absolute;
+    top: 10px; right: 10px;
+    font-size: 14px;
+  }
+
+  .shopping-list { display: flex; flex-direction: column; gap: 8px; }
+  .shop-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: var(--bg2);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: var(--r-sm);
+  }
+  .shop-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .shop-body { flex: 1; }
+  .shop-name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .shop-note { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .shop-price {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--green);
+  }
+  .shop-check {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.1);
+    flex-shrink: 0;
+  }
+  .shop-check.bought {
+    background: var(--green);
+    border-color: var(--green);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .shop-check.bought::after {
+    content: '';
+    width: 5px;
+    height: 9px;
+    border: 2px solid #fff;
+    border-top: none;
+    border-left: none;
+    transform: rotate(45deg) translateY(-1px);
+    display: block;
+  }
+
+  /* ── Stats Overview ── */
+  .stats-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .stat-card {
+    background: var(--bg2);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: var(--r);
+    padding: 16px;
+  }
+  .stat-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .stat-value {
+    font-size: 28px;
+    font-weight: 900;
+    letter-spacing: -1px;
+    line-height: 1;
+  }
+  .stat-sub {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  .heatmap-wrap {
+    background: var(--bg2);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: var(--r);
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  .heatmap-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  .heatmap-grid {
+    display: grid;
+    grid-template-columns: repeat(14, 1fr);
+    gap: 3px;
+  }
+  .heatmap-cell {
+    aspect-ratio: 1;
+    border-radius: 3px;
+    background: rgba(255,255,255,0.05);
+  }
+
+  .week-chart {
+    background: var(--bg2);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: var(--r);
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  .week-bars {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+    height: 70px;
+  }
+  .week-bar-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    height: 100%;
+    justify-content: flex-end;
+  }
+  .week-bar {
+    width: 100%;
+    border-radius: 4px 4px 0 0;
+    transition: height 0.3s ease;
+  }
+  .week-day {
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--muted);
+    text-align: center;
+  }
+
+  /* ── Sync Banner ── */
+  .sync-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    background: rgba(52,199,89,0.08);
+    border: 1px solid rgba(52,199,89,0.2);
+    border-radius: var(--r-sm);
+    margin-bottom: 16px;
+  }
+  .sync-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 2s infinite;
+    flex-shrink: 0;
+  }
+  .sync-text { font-size: 12px; font-weight: 600; color: var(--green); }
+  .sync-time { font-size: 11px; color: var(--muted); margin-left: auto; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+
+  /* ── Modal overlay (Projekt hinzufügen) ── */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(4px);
+    z-index: 200;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    width: 100%;
+    max-width: 420px;
+    background: #1c2336;
+    border-radius: 24px 24px 0 0;
+    padding: 24px 20px calc(24px + env(safe-area-inset-bottom, 0));
+    border-top: 1px solid rgba(255,255,255,0.1);
+  }
+  .modal-handle {
+    width: 36px; height: 4px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 2px;
+    margin: 0 auto 20px;
+  }
+  .modal-title {
+    font-size: 17px;
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: 16px;
+  }
+  .modal-input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    color: var(--text);
+    font-size: 15px;
+    padding: 14px 16px;
+    outline: none;
+    margin-bottom: 12px;
+  }
+  .modal-input:focus { border-color: var(--accent); }
+  .color-picker-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .color-swatch {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: transform 0.15s;
+  }
+  .color-swatch.selected { border-color: #fff; transform: scale(1.1); }
+  .modal-btn {
+    width: 100%;
+    padding: 16px;
+    border: none;
+    border-radius: 14px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    background: var(--accent);
+    color: #fff;
+  }
+
+  /* ── Empties / misc ── */
+  .empty-state {
+    text-align: center;
+    padding: 32px 16px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .empty-state .icon { font-size: 32px; margin-bottom: 8px; }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+  }
+
+  /* ── Verbrauch / Consumption tracking ── */
+  /* ── Finance ───────────────────────────────── */
+  .fin-section-label {
+    font-size: 10px; font-weight: 800; letter-spacing: 1px;
+    color: var(--muted); margin: 18px 0 8px;
+  }
+  .bill-card {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 14px;
+    padding: 13px 14px;
+    margin-bottom: 8px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .bill-dot {
+    width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  }
+  .bill-body { flex: 1; min-width: 0; }
+  .bill-name { font-size: 13px; font-weight: 700; color: #fff; }
+  .bill-sub  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .bill-right { text-align: right; flex-shrink: 0; }
+  .bill-amount { font-size: 14px; font-weight: 800; }
+  .bill-due   { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .bill-status {
+    display: inline-block;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
+    padding: 2px 8px; border-radius: 20px; margin-left: 8px;
+  }
+  .bill-status.paid   { background: rgba(52,199,89,0.15); color: var(--green); }
+  .bill-status.open   { background: rgba(255,159,10,0.15); color: var(--orange); }
+  .bill-status.overdue{ background: rgba(255,69,58,0.18); color: var(--red); }
+  .fin-summary-row {
+    display: flex; gap: 10px; margin-bottom: 18px;
+  }
+  .fin-kpi {
+    flex: 1; background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 14px; padding: 12px;
+    text-align: center;
+  }
+  .fin-kpi-label { font-size: 9px; font-weight: 700; letter-spacing: 0.8px; color: var(--muted); }
+  .fin-kpi-value { font-size: 20px; font-weight: 900; margin-top: 4px; }
+  .fin-kpi-sub   { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+  .supp-verbrauch {
+    font-size: 10px;
+    color: var(--muted);
+    margin: 6px 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .supp-verbrauch strong { color: var(--text); font-weight: 600; }
+  .days-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 6px;
+  }
+  .days-badge.ok  { background: rgba(52,199,89,0.12);   color: var(--green); }
+  .days-badge.warn{ background: rgba(255,159,10,0.12);  color: var(--orange); }
+  .days-badge.crit{ background: rgba(255,59,48,0.12);   color: var(--red); }
+
+  .cat-toggle {
+    display: flex;
+    background: var(--bg);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 3px;
+    gap: 3px;
+    margin-bottom: 14px;
+  }
+  .cat-toggle-btn {
+    flex: 1;
+    padding: 8px;
+    border: none;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted);
+    background: transparent;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .cat-toggle-btn.active {
+    background: var(--accent);
+    color: #fff;
+  }
+  .modal-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .modal-row .modal-input { margin-bottom: 0; }
+  .modal-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+    margin-bottom: 5px;
+    margin-top: 2px;
+  }
+  .cat-section-label {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+    padding: 4px 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .cat-section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: rgba(255,255,255,0.06);
+  }
+
+  .progress-ring-wrap {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: rgba(124,123,255,0.07);
+    border: 1px solid rgba(124,123,255,0.15);
+    border-radius: var(--r);
+    padding: 14px 16px;
+    margin-bottom: 12px;
+  }
+  .prog-label { font-size: 12px; font-weight: 600; color: var(--text); }
+  .prog-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .prog-num {
+    margin-left: auto;
+    font-size: 20px;
+    font-weight: 900;
+    color: var(--accent);
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ── HEADER ── -->
+  <header class="app-header">
+    <div>
+      <h1>Dashboard+</h1>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px;">Sonntag, 1. Jun 2026</div>
+    </div>
+    <div class="date-badge">PREVIEW</div>
+  </header>
+
+  <!-- ══════════════════════════════════════════
+       PAGE 1 — ÜBERSICHT
+  ══════════════════════════════════════════ -->
+  <div id="page-overview" class="page active" style="padding-top:18px;">
+
+    <!-- Sync -->
+    <div class="sync-banner">
+      <div class="sync-dot"></div>
+      <span class="sync-text">Lokal gespeichert</span>
+      <span class="sync-time">gerade eben</span>
+    </div>
+
+    <!-- Score Ring -->
+    <div class="score-ring-wrap">
+      <div class="ring">
+        <svg viewBox="0 0 88 88" width="88" height="88">
+          <circle cx="44" cy="44" r="36" fill="none" stroke="rgba(124,123,255,0.1)" stroke-width="8"/>
+          <circle cx="44" cy="44" r="36" fill="none"
+            stroke="url(#grad)" stroke-width="8"
+            stroke-linecap="round"
+            stroke-dasharray="226" stroke-dashoffset="54"/>
+          <defs>
+            <linearGradient id="grad" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#7c7bff"/>
+              <stop offset="100%" stop-color="#5ac8fa"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <div class="ring-label">
+          <span class="score-num">76</span>
+          <span class="score-max">/100</span>
+        </div>
+      </div>
+      <div class="score-details">
+        <div class="score-title">TAGES-SCORE</div>
+        <div class="mini-stat-row">
+          <div class="mini-stat"><div class="dot" style="background:var(--green)"></div> 8 Habits</div>
+          <div class="mini-stat"><div class="dot" style="background:var(--orange)"></div> 5 Todos</div>
+          <div class="mini-stat"><div class="dot" style="background:var(--blue)"></div> 3 Projekte</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tages-Fokus -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          TAGES-FOKUS
+        </div>
+      </div>
+      <div class="focus-badge">TOP 3 AUFGABEN HEUTE</div>
+      <div class="todo-card">
+        <div class="todo-item" onclick="toggleTodo(this)">
+          <div class="todo-check"></div>
+          <div class="todo-priority" style="background:var(--red)"></div>
+          <div class="todo-body">
+            <div class="todo-text">Creatine bestellen (Lager fast leer)</div>
+            <div class="todo-meta">
+              <span class="todo-tag badge" style="background:rgba(255,59,48,0.15);color:var(--red)">DRINGEND</span>
+              <span class="todo-time">⏱ heute</span>
+            </div>
+          </div>
+        </div>
+        <div class="todo-item" onclick="toggleTodo(this)">
+          <div class="todo-check done"></div>
+          <div class="todo-priority" style="background:var(--orange)"></div>
+          <div class="todo-body">
+            <div class="todo-text done">Morning Routine abschließen</div>
+            <div class="todo-meta">
+              <span class="todo-tag badge" style="background:rgba(255,159,10,0.15);color:var(--orange)">PERSONAL</span>
+              <span class="todo-time">✓ 08:15</span>
+            </div>
+          </div>
+        </div>
+        <div class="todo-item" onclick="toggleTodo(this)">
+          <div class="todo-check"></div>
+          <div class="todo-priority" style="background:var(--blue)"></div>
+          <div class="todo-body">
+            <div class="todo-text">Landing Page copy finalisieren</div>
+            <div class="todo-meta">
+              <span class="todo-tag badge" style="background:rgba(10,132,255,0.15);color:var(--blue)">MONDAS</span>
+              <span class="todo-time">⏱ 14:00</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Supplement Kurzstatus -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/></svg>
+          SUPPLEMENTS
+        </div>
+        <button class="section-action" onclick="switchPage('supplements')">Alle →</button>
+      </div>
+      <div class="supp-grid" id="overview-supp-grid"></div>
+    </div>
+
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       PAGE 2 — TODOS
+  ══════════════════════════════════════════ -->
+  <div id="page-todos" class="page" style="padding-top:18px;">
+
+    <div class="section-header" style="margin-bottom:14px">
+      <div class="section-title">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        TODO-BOARDS
+      </div>
+      <button class="section-action" onclick="document.getElementById('modal-proj').classList.add('open')">+ Projekt</button>
+    </div>
+
+    <!-- Project Tabs -->
+    <div class="project-tabs" id="project-tabs">
+      <button class="project-tab active" data-board="personal" onclick="switchBoard(this)">
+        👤 Personal <span class="tab-count">4</span>
+      </button>
+      <button class="project-tab" data-board="mondas" onclick="switchBoard(this)">
+        🍽️ Mondas <span class="tab-count">6</span>
+      </button>
+      <button class="project-tab" data-board="health" onclick="switchBoard(this)">
+        💪 Health <span class="tab-count">3</span>
+      </button>
+      <button class="project-tab" data-board="coding" onclick="switchBoard(this)">
+        💻 Coding <span class="tab-count">5</span>
+      </button>
+      <button class="add-tab-btn" onclick="document.getElementById('modal-proj').classList.add('open')" title="Projekt hinzufügen">+</button>
+    </div>
+
+    <!-- Board: Personal -->
+    <div id="board-personal" class="board-panel">
+      <div class="progress-ring-wrap">
+        <div>
+          <div class="prog-label">Heute erledigt</div>
+          <div class="prog-sub">2 von 4 Aufgaben</div>
+        </div>
+        <div class="prog-num">50%</div>
+      </div>
+      <div class="todo-card">
+        <div class="todo-item" onclick="toggleTodo(this)">
+          <div class="todo-check done"></div>
+          <div class="todo-priority" style="background:var(--green)"></div>
+          <div class="todo-body">
+            <div class="todo-text done">Morning Routine</div>
+            <div class="todo-meta"><span class="todo-time">✓ 08:15</span></div>
+          </div>
+          <div class="todo-drag">⠿</div>
+        </div>
+        <div class="todo-item" onclick="toggleTodo(this)">
+          <div class="todo-check done"></div>
+          <div class="todo-priority" style="background:var(--green)"></div>
+          <div class="todo-body">
+            <div class="todo-text done">Training absolviert</div>
+            <div class="todo-meta"><span class="todo-time">✓ 09:45</span></div>
+          </div>
+          <div class="todo-drag">⠿</div>
+        </div>
+        <div class="todo-item" onclick="toggleTodo(this)">
+          <div class="todo-check"></div>
+          <div class="todo-priority" style="background:var(--orange)"></div>
+          <div class="todo-body">
+            <div class="todo-text">Creatine bestellen</div>
+            <div class="todo-meta">
+              <span class="todo-tag badge" style="background:rgba(255,159,10,0.15);color:var(--orange)">HEUTE</span>
+            </div>
+          </div>
+          <div class="todo-drag">⠿</div>
+        </div>
+        <div class="todo-item" onclick="toggleTodo(this)">
+          <div class="todo-check"></div>
+          <div class="todo-priority" style="background:var(--muted)"></div>
+          <div class="todo-body">
+            <div class="todo-text">Arzttermin vereinbaren</div>
+            <div class="todo-meta"><span class="todo-time">diese Woche</span></div>
+          </div>
+          <div class="todo-drag">⠿</div>
+        </div>
+      </div>
+      <button class="add-todo-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+        Aufgabe hinzufügen
+      </button>
+    </div>
+
+    <!-- Board: Mondas -->
+    <div id="board-mondas" class="board-panel" style="display:none">
+      <div class="progress-ring-wrap">
+        <div>
+          <div class="prog-label">Heute erledigt</div>
+          <div class="prog-sub">1 von 6 Aufgaben</div>
+        </div>
+        <div class="prog-num">17%</div>
+      </div>
+      <div class="todo-card">
+        <div class="todo-item" onclick="toggleTodo(this)">
+          <div class="todo-check done"></div>
+          <div class="todo-priority" style="background:var(--green)"></div>
+          <div class="todo-body">
+            <div class="todo-text done">Social Media Post geplant</div>
+            <div class="todo-meta"><span class="todo-time">✓ 10:30</span></div>
+          </div>
+          <div class="todo-drag">⠿</div>
+        </div>
+        <div class="todo-item" onclick="toggleTodo(this)">
+          <div class="todo-check"></div>
+          <div class="todo-priority" style="background:var(--red)"></div>
+          <div class="todo-body">
+            <div class="todo-text">Landing Page copy finalisieren</div>
+            <div class="todo-meta">
+              <span class="todo-tag badge" style="background:rgba(255,59,48,0.15);color:var(--red)">DEADLINE</span>
+              <span class="todo-time">⏱ 14:00</span>
+            </div>
+          </div>
+          <div class="todo-drag">⠿</div>
+        </div>
+        <div class="todo-item" onclick="toggleTodo(this)">
+          <div class="todo-check"></div>
+          <div class="todo-priority" style="background:var(--orange)"></div>
+          <div class="todo-body">
+            <div class="todo-text">Speisekarte für Sommer aktualisieren</div>
+            <div class="todo-meta"><span class="todo-time">diese Woche</span></div>
+          </div>
+          <div class="todo-drag">⠿</div>
+        </div>
+        <div class="todo-item" onclick="toggleTodo(this)">
+          <div class="todo-check"></div>
+          <div class="todo-priority" style="background:var(--muted)"></div>
+          <div class="todo-body">
+            <div class="todo-text">Dienstplan KW 24 erstellen</div>
+          </div>
+          <div class="todo-drag">⠿</div>
+        </div>
+      </div>
+      <button class="add-todo-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+        Aufgabe hinzufügen
+      </button>
+    </div>
+
+    <!-- Board: Health -->
+    <div id="board-health" class="board-panel" style="display:none">
+      <div class="todo-card">
+        <div class="todo-item" onclick="toggleTodo(this)">
+          <div class="todo-check done"></div>
+          <div class="todo-priority" style="background:var(--green)"></div>
+          <div class="todo-body">
+            <div class="todo-text done">Training — Brust/Trizeps</div>
+          </div>
+          <div class="todo-drag">⠿</div>
+        </div>
+        <div class="todo-item" onclick="toggleTodo(this)">
+          <div class="todo-check"></div>
+          <div class="todo-priority" style="background:var(--orange)"></div>
+          <div class="todo-body">
+            <div class="todo-text">Creatine + Omega-3 nehmen</div>
+            <div class="todo-meta">
+              <span class="todo-tag badge" style="background:rgba(255,159,10,0.15);color:var(--orange)">TÄGLICH</span>
+            </div>
+          </div>
+          <div class="todo-drag">⠿</div>
+        </div>
+        <div class="todo-item" onclick="toggleTodo(this)">
+          <div class="todo-check"></div>
+          <div class="todo-priority" style="background:var(--muted)"></div>
+          <div class="todo-body">
+            <div class="todo-text">Protein-Ziel 180g erreichen</div>
+          </div>
+          <div class="todo-drag">⠿</div>
+        </div>
+      </div>
+      <button class="add-todo-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+        Aufgabe hinzufügen
+      </button>
+    </div>
+
+    <!-- Board: Coding -->
+    <div id="board-coding" class="board-panel" style="display:none">
+      <div class="empty-state">
+        <div class="icon">💻</div>
+        <div>Noch keine Aufgaben</div>
+      </div>
+      <button class="add-todo-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+        Aufgabe hinzufügen
+      </button>
+    </div>
+
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       PAGE 3 — BESTÄNDE (dynamic)
+  ══════════════════════════════════════════ -->
+  <div id="page-supplements" class="page" style="padding-top:18px;">
+
+    <div class="section-header" style="margin-bottom:14px">
+      <div class="section-title">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/></svg>
+        BESTÄNDE
+      </div>
+      <button class="section-action" onclick="openAddProduct()">+ Hinzufügen</button>
+    </div>
+
+    <!-- Warning banner (JS-injected) -->
+    <div id="supp-warnings"></div>
+
+    <!-- SUPPLEMENTS section -->
+    <div class="cat-section-label">💊 SUPPLEMENTS</div>
+    <div class="supp-grid" id="supp-grid-supplements"></div>
+
+    <!-- LEBENSMITTEL / PROTEIN section -->
+    <div class="cat-section-label" style="margin-top:20px">🥛 LEBENSMITTEL & PROTEIN</div>
+    <div class="supp-grid" id="supp-grid-food"></div>
+
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       PAGE 4 — KAUFLISTE
+  ══════════════════════════════════════════ -->
+  <div id="page-shopping" class="page" style="padding-top:18px;">
+
+    <div class="section-header" style="margin-bottom:14px">
+      <div class="section-title">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+        KAUFLISTE
+      </div>
+      <button class="section-action">+ Hinzufügen</button>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;padding:10px 14px;background:rgba(52,199,89,0.07);border-radius:10px;border:1px solid rgba(52,199,89,0.15)">
+      <span style="font-size:11px;color:var(--muted)">GESAMT OFFEN:</span>
+      <span style="font-size:15px;font-weight:800;color:var(--green)">≈ 89,90 €</span>
+      <span style="font-size:11px;color:var(--muted);margin-left:auto">3 Artikel</span>
+    </div>
+
+    <div class="shopping-list">
+      <div class="shop-item">
+        <div class="shop-icon" style="background:rgba(255,59,48,0.1)">🧪</div>
+        <div class="shop-body">
+          <div class="shop-name">Creatine Monohydrate 1kg</div>
+          <div class="shop-note">BulkPowders · Bestand kritisch ⚠️</div>
+        </div>
+        <div class="shop-price">24,99€</div>
+        <div class="shop-check" onclick="toggleShop(this)"></div>
+      </div>
+      <div class="shop-item">
+        <div class="shop-icon" style="background:rgba(90,200,250,0.1)">🐟</div>
+        <div class="shop-body">
+          <div class="shop-name">Omega-3 Nachfüllpack</div>
+          <div class="shop-note">Optimum · 300 Caps</div>
+        </div>
+        <div class="shop-price">34,90€</div>
+        <div class="shop-check" onclick="toggleShop(this)"></div>
+      </div>
+      <div class="shop-item">
+        <div class="shop-icon" style="background:rgba(255,159,10,0.1)">💊</div>
+        <div class="shop-body">
+          <div class="shop-name">Magnesium Bisglycinate</div>
+          <div class="shop-note">Bioptimizers · 240 Caps</div>
+        </div>
+        <div class="shop-price">34,00€</div>
+        <div class="shop-check" onclick="toggleShop(this)"></div>
+      </div>
+    </div>
+
+    <!-- Gekauft -->
+    <div style="margin-top:20px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.5px;color:var(--muted);margin-bottom:10px">ZULETZT GEKAUFT</div>
+      <div class="shopping-list">
+        <div class="shop-item" style="opacity:0.5">
+          <div class="shop-icon" style="background:rgba(52,199,89,0.1)">🥛</div>
+          <div class="shop-body">
+            <div class="shop-name" style="text-decoration:line-through">Whey Protein 2.5kg</div>
+            <div class="shop-note">MyProtein · gekauft 24.05.</div>
+          </div>
+          <div class="shop-price" style="color:var(--muted)">49,99€</div>
+          <div class="shop-check bought"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       PAGE 5 — STATS
+  ══════════════════════════════════════════ -->
+  <div id="page-stats" class="page" style="padding-top:18px;">
+
+    <div class="section-header" style="margin-bottom:14px">
+      <div class="section-title">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        ÜBERSICHT
+      </div>
+    </div>
+
+    <!-- KPI Row -->
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">Ø SCORE (7T)</div>
+        <div class="stat-value" style="color:var(--accent)">74</div>
+        <div class="stat-sub">↑ +8 vs. letzte Woche</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">LONGEST STREAK</div>
+        <div class="stat-value" style="color:var(--orange)">12🔥</div>
+        <div class="stat-sub">Training Streak</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">TODOS (heute)</div>
+        <div class="stat-value" style="color:var(--green)">9/18</div>
+        <div class="stat-sub">alle Projekte</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Ø GEWICHT (7T)</div>
+        <div class="stat-value" style="color:var(--teal)">76.2</div>
+        <div class="stat-sub">kg</div>
+      </div>
+    </div>
+
+    <!-- Week Chart -->
+    <div class="week-chart">
+      <div class="heatmap-title">SCORE — LETZTE 7 TAGE</div>
+      <div class="week-bars">
+        <div class="week-bar-wrap">
+          <div class="week-bar" style="height:55%;background:linear-gradient(180deg,var(--accent),var(--accent2))"></div>
+          <div class="week-day">Mo</div>
+        </div>
+        <div class="week-bar-wrap">
+          <div class="week-bar" style="height:72%;background:linear-gradient(180deg,var(--accent),var(--accent2))"></div>
+          <div class="week-day">Di</div>
+        </div>
+        <div class="week-bar-wrap">
+          <div class="week-bar" style="height:48%;background:linear-gradient(180deg,var(--accent),var(--accent2))"></div>
+          <div class="week-day">Mi</div>
+        </div>
+        <div class="week-bar-wrap">
+          <div class="week-bar" style="height:85%;background:linear-gradient(180deg,var(--accent),var(--accent2))"></div>
+          <div class="week-day">Do</div>
+        </div>
+        <div class="week-bar-wrap">
+          <div class="week-bar" style="height:91%;background:linear-gradient(180deg,var(--teal),var(--accent))"></div>
+          <div class="week-day">Fr</div>
+        </div>
+        <div class="week-bar-wrap">
+          <div class="week-bar" style="height:63%;background:linear-gradient(180deg,var(--accent),var(--accent2))"></div>
+          <div class="week-day">Sa</div>
+        </div>
+        <div class="week-bar-wrap">
+          <div class="week-bar" style="height:76%;background:linear-gradient(180deg,var(--green),var(--teal));opacity:0.9"></div>
+          <div class="week-day" style="color:var(--accent)">So</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Heatmap -->
+    <div class="heatmap-wrap">
+      <div class="heatmap-title">TODO-ABSCHLUSS — LETZTE 2 WOCHEN</div>
+      <div class="heatmap-grid" id="heatmap"></div>
+    </div>
+
+    <!-- Projekt-Stats -->
+    <div class="section">
+      <div class="section-header" style="margin-bottom:10px">
+        <div class="section-title">PROJEKTE</div>
+      </div>
+      <div class="todo-card">
+        <div class="todo-item">
+          <div style="width:10px;height:10px;border-radius:50%;background:var(--accent);flex-shrink:0"></div>
+          <div class="todo-body">
+            <div class="todo-text">Personal</div>
+          </div>
+          <div style="font-size:12px;font-weight:700;color:var(--accent)">50%</div>
+          <div style="width:60px;height:4px;background:rgba(255,255,255,0.07);border-radius:2px;overflow:hidden;margin-left:8px;flex-shrink:0">
+            <div style="width:50%;height:100%;background:var(--accent);border-radius:2px"></div>
+          </div>
+        </div>
+        <div class="todo-item">
+          <div style="width:10px;height:10px;border-radius:50%;background:var(--orange);flex-shrink:0"></div>
+          <div class="todo-body">
+            <div class="todo-text">Mondas</div>
+          </div>
+          <div style="font-size:12px;font-weight:700;color:var(--orange)">17%</div>
+          <div style="width:60px;height:4px;background:rgba(255,255,255,0.07);border-radius:2px;overflow:hidden;margin-left:8px;flex-shrink:0">
+            <div style="width:17%;height:100%;background:var(--orange);border-radius:2px"></div>
+          </div>
+        </div>
+        <div class="todo-item">
+          <div style="width:10px;height:10px;border-radius:50%;background:var(--green);flex-shrink:0"></div>
+          <div class="todo-body">
+            <div class="todo-text">Health</div>
+          </div>
+          <div style="font-size:12px;font-weight:700;color:var(--green)">33%</div>
+          <div style="width:60px;height:4px;background:rgba(255,255,255,0.07);border-radius:2px;overflow:hidden;margin-left:8px;flex-shrink:0">
+            <div style="width:33%;height:100%;background:var(--green);border-radius:2px"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       PAGE 6 — FINANZEN
+  ══════════════════════════════════════════ -->
+  <div id="page-finanzen" class="page" style="padding-top:18px;">
+
+    <div class="section-header" style="margin-bottom:14px">
+      <div class="section-title">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+        FINANZEN
+      </div>
+      <button class="section-action" onclick="openModal('modal-bill')">+ Rechnung</button>
+    </div>
+
+    <!-- KPI Summary -->
+    <div class="fin-summary-row">
+      <div class="fin-kpi">
+        <div class="fin-kpi-label">MONATLICH FIX</div>
+        <div class="fin-kpi-value" style="color:var(--accent)">€ 847</div>
+        <div class="fin-kpi-sub">wiederkehrend</div>
+      </div>
+      <div class="fin-kpi">
+        <div class="fin-kpi-label">OFFEN</div>
+        <div class="fin-kpi-value" style="color:var(--orange)">€ 340</div>
+        <div class="fin-kpi-sub">3 Rechnungen</div>
+      </div>
+      <div class="fin-kpi">
+        <div class="fin-kpi-label">ÜBERFÄLLIG</div>
+        <div class="fin-kpi-value" style="color:var(--red)">€ 89</div>
+        <div class="fin-kpi-sub">1 Rechnung</div>
+      </div>
+    </div>
+
+    <!-- Wiederkehrende Rechnungen -->
+    <div class="fin-section-label">💳 WIEDERKEHREND</div>
+
+    <div class="bill-card">
+      <div class="bill-dot" style="background:var(--accent)"></div>
+      <div class="bill-body">
+        <div class="bill-name">Miete</div>
+        <div class="bill-sub">Monatlich · 1. jeden Monat</div>
+      </div>
+      <div class="bill-right">
+        <div class="bill-amount" style="color:var(--accent)">€ 520</div>
+        <div class="bill-due">nächste: 01.06</div>
+      </div>
+    </div>
+
+    <div class="bill-card">
+      <div class="bill-dot" style="background:var(--teal)"></div>
+      <div class="bill-body">
+        <div class="bill-name">Strom · Vattenfall</div>
+        <div class="bill-sub">Monatlich · 15. jeden Monat</div>
+      </div>
+      <div class="bill-right">
+        <div class="bill-amount" style="color:var(--teal)">€ 89</div>
+        <div class="bill-due">nächste: 15.06</div>
+      </div>
+    </div>
+
+    <div class="bill-card">
+      <div class="bill-dot" style="background:var(--green)"></div>
+      <div class="bill-body">
+        <div class="bill-name">Internet · Telekom</div>
+        <div class="bill-sub">Monatlich · 20. jeden Monat</div>
+      </div>
+      <div class="bill-right">
+        <div class="bill-amount" style="color:var(--green)">€ 44</div>
+        <div class="bill-due">nächste: 20.06</div>
+      </div>
+    </div>
+
+    <div class="bill-card">
+      <div class="bill-dot" style="background:var(--purple, #bf5af2)"></div>
+      <div class="bill-body">
+        <div class="bill-name">Spotify + Netflix</div>
+        <div class="bill-sub">Monatlich · 5. jeden Monat</div>
+      </div>
+      <div class="bill-right">
+        <div class="bill-amount" style="color:#bf5af2">€ 28</div>
+        <div class="bill-due">nächste: 05.06</div>
+      </div>
+    </div>
+
+    <div class="bill-card">
+      <div class="bill-dot" style="background:var(--orange)"></div>
+      <div class="bill-body">
+        <div class="bill-name">Gym · McFit</div>
+        <div class="bill-sub">Monatlich · 1. jeden Monat</div>
+      </div>
+      <div class="bill-right">
+        <div class="bill-amount" style="color:var(--orange)">€ 24</div>
+        <div class="bill-due">nächste: 01.06</div>
+      </div>
+    </div>
+
+    <div class="bill-card">
+      <div class="bill-dot" style="background:var(--accent2, #5ac8fa)"></div>
+      <div class="bill-body">
+        <div class="bill-name">iCloud 200GB</div>
+        <div class="bill-sub">Monatlich · 12. jeden Monat</div>
+      </div>
+      <div class="bill-right">
+        <div class="bill-amount" style="color:var(--accent2,#5ac8fa)">€ 3</div>
+        <div class="bill-due">nächste: 12.06</div>
+      </div>
+    </div>
+
+    <!-- Offene Rechnungen -->
+    <div class="fin-section-label" style="margin-top:24px">🧾 OFFENE RECHNUNGEN</div>
+
+    <div class="bill-card" style="border-color:rgba(255,69,58,0.3)">
+      <div class="bill-dot" style="background:var(--red)"></div>
+      <div class="bill-body">
+        <div class="bill-name">Steuerberater <span class="bill-status overdue">ÜBERFÄLLIG</span></div>
+        <div class="bill-sub">Fällig: 15.05.2026</div>
+      </div>
+      <div class="bill-right">
+        <div class="bill-amount" style="color:var(--red)">€ 89</div>
+        <div class="bill-due" style="color:var(--red)">16 Tage überfällig</div>
+      </div>
+    </div>
+
+    <div class="bill-card">
+      <div class="bill-dot" style="background:var(--orange)"></div>
+      <div class="bill-body">
+        <div class="bill-name">Lieferant Design-Assets <span class="bill-status open">OFFEN</span></div>
+        <div class="bill-sub">Fällig: 05.06.2026</div>
+      </div>
+      <div class="bill-right">
+        <div class="bill-amount" style="color:var(--orange)">€ 149</div>
+        <div class="bill-due">in 5 Tagen</div>
+      </div>
+    </div>
+
+    <div class="bill-card">
+      <div class="bill-dot" style="background:var(--orange)"></div>
+      <div class="bill-body">
+        <div class="bill-name">Software-Lizenz Figma <span class="bill-status open">OFFEN</span></div>
+        <div class="bill-sub">Fällig: 15.06.2026</div>
+      </div>
+      <div class="bill-right">
+        <div class="bill-amount" style="color:var(--orange)">€ 102</div>
+        <div class="bill-due">in 15 Tagen</div>
+      </div>
+    </div>
+
+    <div class="bill-card" style="border-color:rgba(52,199,89,0.2)">
+      <div class="bill-dot" style="background:var(--green)"></div>
+      <div class="bill-body">
+        <div class="bill-name">Hosting · Vercel Pro <span class="bill-status paid">BEZAHLT</span></div>
+        <div class="bill-sub">Bezahlt am 01.05.2026</div>
+      </div>
+      <div class="bill-right">
+        <div class="bill-amount" style="color:var(--green)">€ 20</div>
+        <div class="bill-due">✓ erledigt</div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- ── Bottom Nav ── -->
+<nav class="bottom-nav">
+  <button class="nav-btn active" id="nav-overview" onclick="switchPage('overview')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+    Übersicht
+  </button>
+  <button class="nav-btn" id="nav-todos" onclick="switchPage('todos')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+    Todos
+  </button>
+  <button class="nav-btn" id="nav-supplements" onclick="switchPage('supplements')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/></svg>
+    Bestände
+  </button>
+  <button class="nav-btn" id="nav-shopping" onclick="switchPage('shopping')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+    Kaufliste
+  </button>
+  <button class="nav-btn" id="nav-stats" onclick="switchPage('stats')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+    Stats
+  </button>
+  <button class="nav-btn" id="nav-finanzen" onclick="switchPage('finanzen')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+    Finanzen
+  </button>
+</nav>
+
+<!-- ── Modal: Neues Projekt ── -->
+<div class="modal-overlay" id="modal-proj" onclick="closeModal(event)">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Neues Projekt</div>
+    <input class="modal-input" placeholder="Projektname z.B. Side Project" />
+    <div style="font-size:11px;font-weight:700;letter-spacing:0.5px;color:var(--muted);margin-bottom:8px">FARBE</div>
+    <div class="color-picker-row">
+      <div class="color-swatch selected" style="background:#7c7bff" onclick="selectColor(this)"></div>
+      <div class="color-swatch" style="background:#ff9f0a" onclick="selectColor(this)"></div>
+      <div class="color-swatch" style="background:#34c759" onclick="selectColor(this)"></div>
+      <div class="color-swatch" style="background:#0a84ff" onclick="selectColor(this)"></div>
+      <div class="color-swatch" style="background:#ff375f" onclick="selectColor(this)"></div>
+      <div class="color-swatch" style="background:#5ac8fa" onclick="selectColor(this)"></div>
+      <div class="color-swatch" style="background:#ffd60a" onclick="selectColor(this)"></div>
+    </div>
+    <button class="modal-btn" onclick="document.getElementById('modal-proj').classList.remove('open')">Erstellen</button>
+  </div>
+</div>
+
+<!-- ── Modal: Produkt hinzufügen ── -->
+<div class="modal-overlay" id="modal-product" onclick="closeModal(event)">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Produkt hinzufügen</div>
+
+    <!-- Kategorie Toggle -->
+    <div class="cat-toggle">
+      <button class="cat-toggle-btn active" id="cat-btn-supplement" onclick="setCategory('supplement')">💊 Supplement</button>
+      <button class="cat-toggle-btn" id="cat-btn-food" onclick="setCategory('food')">🥛 Lebensmittel</button>
+    </div>
+
+    <div class="modal-label">NAME</div>
+    <input class="modal-input" id="prod-name" placeholder="z.B. Creatine Monohydrate" />
+
+    <div class="modal-label">MARKE / INFO</div>
+    <input class="modal-input" id="prod-brand" placeholder="z.B. BulkPowders · 500g" />
+
+    <div class="modal-row">
+      <div>
+        <div class="modal-label">AKTUELLER BESTAND</div>
+        <input class="modal-input" id="prod-stock" type="number" placeholder="500" min="0" />
+      </div>
+      <div>
+        <div class="modal-label">EINHEIT</div>
+        <input class="modal-input" id="prod-unit" placeholder="g / Caps / ml" />
+      </div>
+    </div>
+
+    <div class="modal-row">
+      <div>
+        <div class="modal-label">TAGESVERBRAUCH</div>
+        <input class="modal-input" id="prod-daily" type="number" placeholder="10" min="0.1" step="0.5" />
+      </div>
+      <div>
+        <div class="modal-label">EINHEIT/TAG</div>
+        <input class="modal-input" id="prod-daily-unit" placeholder="g / Caps" />
+      </div>
+    </div>
+
+    <div style="font-size:11px;font-weight:700;letter-spacing:0.5px;color:var(--muted);margin-bottom:8px">FARBE</div>
+    <div class="color-picker-row" id="prod-color-row">
+      <div class="color-swatch selected" data-color="#7c7bff" style="background:#7c7bff" onclick="selectProdColor(this)"></div>
+      <div class="color-swatch" data-color="#34c759" style="background:#34c759" onclick="selectProdColor(this)"></div>
+      <div class="color-swatch" data-color="#ff9f0a" style="background:#ff9f0a" onclick="selectProdColor(this)"></div>
+      <div class="color-swatch" data-color="#ff3b30" style="background:#ff3b30" onclick="selectProdColor(this)"></div>
+      <div class="color-swatch" data-color="#5ac8fa" style="background:#5ac8fa" onclick="selectProdColor(this)"></div>
+      <div class="color-swatch" data-color="#ff375f" style="background:#ff375f" onclick="selectProdColor(this)"></div>
+      <div class="color-swatch" data-color="#ffd60a" style="background:#ffd60a" onclick="selectProdColor(this)"></div>
+    </div>
+
+    <!-- Live preview of days -->
+    <div id="prod-preview" style="display:none;margin-bottom:14px;padding:10px 14px;background:rgba(124,123,255,0.07);border:1px solid rgba(124,123,255,0.15);border-radius:10px;font-size:12px;color:var(--muted)">
+      Bestand laut Verbrauchsschätzung: <strong id="prod-preview-days" style="color:var(--accent)">—</strong>
+    </div>
+
+    <button class="modal-btn" onclick="saveProduct()">Speichern</button>
+  </div>
+</div>
+
+<script>
+  // ── Page navigation ────────────────────────────────────
+  function switchPage(name) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'))
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'))
+    document.getElementById('page-' + name).classList.add('active')
+    document.getElementById('nav-' + name).classList.add('active')
+    window.scrollTo(0, 0)
+  }
+
+  // ── Todo toggle ────────────────────────────────────────
+  function toggleTodo(item) {
+    const check = item.querySelector('.todo-check')
+    const text  = item.querySelector('.todo-text')
+    check.classList.toggle('done')
+    text.classList.toggle('done')
+  }
+
+  function toggleShop(el) { el.classList.toggle('bought') }
+
+  function switchBoard(btn) {
+    document.querySelectorAll('.project-tab').forEach(t => t.classList.remove('active'))
+    document.querySelectorAll('.board-panel').forEach(b => b.style.display = 'none')
+    btn.classList.add('active')
+    document.getElementById('board-' + btn.dataset.board).style.display = 'block'
+  }
+
+  function selectColor(el) {
+    document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'))
+    el.classList.add('selected')
+  }
+
+  function closeModal(e) {
+    if (e.target.classList.contains('modal-overlay'))
+      e.target.classList.remove('open')
+  }
+
+  // ── Heatmap ─────────────────────────────────────────────
+  const heatmap   = document.getElementById('heatmap')
+  const hmColors  = ['rgba(255,255,255,0.05)','rgba(124,123,255,0.2)','rgba(124,123,255,0.4)','rgba(124,123,255,0.7)','rgba(90,200,250,0.8)']
+  const hmData    = [1,2,3,4,3,2,1,0,2,3,4,4,3,2,2,3,1,0,1,3,4,3,2,1,0,2,3,4]
+  for (let i = 0; i < 28; i++) {
+    const cell = document.createElement('div')
+    cell.className = 'heatmap-cell'
+    cell.style.background = hmColors[hmData[i] || 0]
+    heatmap.appendChild(cell)
+  }
+
+  // ════════════════════════════════════════════════════════
+  // PRODUCTS — data-driven consumption tracking
+  // ════════════════════════════════════════════════════════
+
+  // Load from localStorage or use defaults
+  const STORAGE_KEY = 'ext-dashboard-products'
+
+  const DEFAULT_PRODUCTS = [
+    // Supplements
+    { id: 1, cat: 'supplement', name: 'Creatine Monohydrate', brand: 'BulkPowders · 500g',
+      stock: 60,   unit: 'g',    dailyUse: 10,  dailyUnit: 'g',    color: '#ff3b30', addedDate: today() },
+    { id: 2, cat: 'supplement', name: 'Omega-3',              brand: 'Optimum · 180 Caps',
+      stock: 63,   unit: 'Caps', dailyUse: 2,   dailyUnit: 'Caps', color: '#ff9f0a', addedDate: today() },
+    { id: 3, cat: 'supplement', name: 'Vitamin D3 + K2',      brand: 'Now Foods · 365 Caps',
+      stock: 299,  unit: 'Caps', dailyUse: 1,   dailyUnit: 'Caps', color: '#5ac8fa', addedDate: today() },
+    { id: 4, cat: 'supplement', name: 'Magnesium',            brand: 'Bioptimizers · 120 Caps',
+      stock: 66,   unit: 'Caps', dailyUse: 2,   dailyUnit: 'Caps', color: '#ff375f', addedDate: today() },
+    { id: 5, cat: 'supplement', name: 'Zink',                 brand: 'Naturafit · 90 Tabs',
+      stock: 81,   unit: 'Tabs', dailyUse: 1,   dailyUnit: 'Tab',  color: '#ffd60a', addedDate: today() },
+    // Lebensmittel / Protein
+    { id: 6, cat: 'food', name: 'Whey Protein',               brand: 'MyProtein · Impact Whey 2.5kg',
+      stock: 1700, unit: 'g',    dailyUse: 50,  dailyUnit: 'g',    color: '#34c759', addedDate: today() },
+    { id: 7, cat: 'food', name: 'Haferflocken',               brand: 'Naturgut · 1kg',
+      stock: 600,  unit: 'g',    dailyUse: 80,  dailyUnit: 'g',    color: '#7c7bff', addedDate: today() },
+    { id: 8, cat: 'food', name: 'Hüttenkäse',                 brand: '500g Becher',
+      stock: 400,  unit: 'g',    dailyUse: 200, dailyUnit: 'g',    color: '#0a84ff', addedDate: today() },
+  ]
+
+  function today() { return new Date().toISOString().slice(0,10) }
+
+  function loadProducts() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY)
+      return raw ? JSON.parse(raw) : DEFAULT_PRODUCTS
+    } catch { return DEFAULT_PRODUCTS }
+  }
+
+  function saveProducts(products) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(products))
+  }
+
+  // Calculate days remaining from stock + daily use
+  // Accounts for days elapsed since addedDate
+  function calcDaysRemaining(p) {
+    const elapsed = Math.max(0, Math.floor((Date.now() - new Date(p.addedDate).getTime()) / 86400000))
+    const consumed = elapsed * p.dailyUse
+    const remaining = Math.max(0, p.stock - consumed)
+    return { remaining, days: p.dailyUse > 0 ? Math.floor(remaining / p.dailyUse) : 999 }
+  }
+
+  function daysClass(days) {
+    if (days <= 7)  return 'crit'
+    if (days <= 20) return 'warn'
+    return 'ok'
+  }
+
+  function formatAmount(val, unit) {
+    if (val >= 1000 && (unit === 'g' || unit === 'ml'))
+      return (val / 1000).toFixed(1).replace('.0','') + (unit === 'g' ? 'kg' : 'L')
+    return Math.round(val) + ' ' + unit
+  }
+
+  function renderSuppCard(p) {
+    const { remaining, days } = calcDaysRemaining(p)
+    const cls   = daysClass(days)
+    const clrMap = { ok: '#34c759', warn: '#ff9f0a', crit: '#ff3b30' }
+    const barColor = clrMap[cls]
+    // bar width = remaining / (daily * 60) capped at 100%
+    const maxStock = p.dailyUse * 60
+    const pct = Math.min(100, (remaining / maxStock) * 100)
+    const warn = cls === 'crit' ? '<div class="supp-warn">⚠️</div>' : ''
+
+    return `
+      <div class="supp-card" style="border-top:2px solid ${p.color}" data-id="${p.id}">
+        ${warn}
+        <div class="supp-name">${p.name}</div>
+        <div class="supp-brand">${p.brand}</div>
+        <div class="supp-verbrauch">≈ <strong>${p.dailyUse} ${p.dailyUnit}</strong>&thinsp;/&thinsp;Tag</div>
+        <div class="supp-stock-bar">
+          <div class="supp-stock-fill" style="width:${pct.toFixed(0)}%;background:${barColor}"></div>
+        </div>
+        <div class="supp-footer">
+          <span class="supp-remain" style="color:${barColor}">${formatAmount(remaining, p.unit)} übrig</span>
+          <span class="days-badge ${cls}">~${days} Tage</span>
+        </div>
+        <div style="font-size:10px;color:var(--muted);margin-top:6px">Bestand laut Verbrauchsschätzung</div>
+      </div>`
+  }
+
+  function renderAllProducts() {
+    const products = loadProducts()
+    const suppGrid = document.getElementById('supp-grid-supplements')
+    const foodGrid = document.getElementById('supp-grid-food')
+    if (!suppGrid || !foodGrid) return
+
+    const supps = products.filter(p => p.cat === 'supplement')
+    const foods = products.filter(p => p.cat === 'food')
+
+    suppGrid.innerHTML = supps.map(renderSuppCard).join('')
+    foodGrid.innerHTML = foods.map(renderSuppCard).join('')
+
+    // Warning banner
+    const critical = products.filter(p => calcDaysRemaining(p).days <= 7)
+    const warnEl = document.getElementById('supp-warnings')
+    if (warnEl) {
+      if (critical.length > 0) {
+        warnEl.innerHTML = `
+          <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;
+            background:rgba(255,59,48,0.08);border:1px solid rgba(255,59,48,0.2);
+            border-radius:var(--r-sm);margin-bottom:16px;">
+            <span style="font-size:16px">⚠️</span>
+            <div>
+              <div style="font-size:12px;font-weight:700;color:var(--red)">${critical.length} Produkt${critical.length > 1 ? 'e' : ''} fast leer</div>
+              <div style="font-size:11px;color:var(--muted)">${critical.map(p => p.name + ': ~' + calcDaysRemaining(p).days + ' Tage').join(', ')}</div>
+            </div>
+            <button style="margin-left:auto;font-size:11px;font-weight:700;color:var(--red);
+              background:rgba(255,59,48,0.15);border:none;border-radius:8px;padding:6px 10px;cursor:pointer"
+              onclick="switchPage('shopping')">Kaufliste →</button>
+          </div>`
+      } else {
+        warnEl.innerHTML = ''
+      }
+    }
+
+    // Also update overview mini-grid
+    renderOverviewSupps(products)
+  }
+
+  function renderOverviewSupps(products) {
+    const grid = document.getElementById('overview-supp-grid')
+    if (!grid) return
+    const top4 = [...products].sort((a,b) => calcDaysRemaining(a).days - calcDaysRemaining(b).days).slice(0,4)
+    grid.innerHTML = top4.map(p => {
+      const { remaining, days } = calcDaysRemaining(p)
+      const cls = daysClass(days)
+      const clrMap = { ok: '#34c759', warn: '#ff9f0a', crit: '#ff3b30' }
+      const barColor = clrMap[cls]
+      const maxStock = p.dailyUse * 60
+      const pct = Math.min(100, (remaining / maxStock) * 100)
+      return `
+        <div class="supp-card" style="border-top-color:${p.color}">
+          ${cls === 'crit' ? '<div class="supp-warn">⚠️</div>' : ''}
+          <div class="supp-name">${p.name}</div>
+          <div class="supp-brand">${p.brand}</div>
+          <div class="supp-stock-bar"><div class="supp-stock-fill" style="width:${pct.toFixed(0)}%;background:${barColor}"></div></div>
+          <div class="supp-footer">
+            <span class="supp-remain" style="color:${barColor}">${formatAmount(remaining, p.unit)}</span>
+            <span class="days-badge ${cls}">~${days}T</span>
+          </div>
+        </div>`
+    }).join('')
+  }
+
+  // ── Add Product Modal ───────────────────────────────────
+  let _selectedCat   = 'supplement'
+  let _selectedColor = '#7c7bff'
+
+  function openAddProduct() {
+    _selectedCat = 'supplement'
+    _selectedColor = '#7c7bff'
+    document.getElementById('prod-name').value = ''
+    document.getElementById('prod-brand').value = ''
+    document.getElementById('prod-stock').value = ''
+    document.getElementById('prod-unit').value = ''
+    document.getElementById('prod-daily').value = ''
+    document.getElementById('prod-daily-unit').value = ''
+    document.getElementById('prod-preview').style.display = 'none'
+    setCategory('supplement')
+    document.getElementById('modal-product').classList.add('open')
+  }
+
+  function setCategory(cat) {
+    _selectedCat = cat
+    document.getElementById('cat-btn-supplement').classList.toggle('active', cat === 'supplement')
+    document.getElementById('cat-btn-food').classList.toggle('active', cat === 'food')
+  }
+
+  function selectProdColor(el) {
+    document.querySelectorAll('#prod-color-row .color-swatch').forEach(s => s.classList.remove('selected'))
+    el.classList.add('selected')
+    _selectedColor = el.dataset.color
+  }
+
+  // Live preview as user types
+  function updatePreview() {
+    const stock = parseFloat(document.getElementById('prod-stock').value)
+    const daily = parseFloat(document.getElementById('prod-daily').value)
+    const unit  = document.getElementById('prod-unit').value || ''
+    const prev  = document.getElementById('prod-preview')
+    if (stock > 0 && daily > 0) {
+      const days = Math.floor(stock / daily)
+      document.getElementById('prod-preview-days').textContent = '~' + days + ' Tage (' + formatAmount(stock, unit) + ' ÷ ' + daily + '/Tag)'
+      prev.style.display = 'block'
+    } else {
+      prev.style.display = 'none'
+    }
+  }
+
+  function saveProduct() {
+    const name  = document.getElementById('prod-name').value.trim()
+    const brand = document.getElementById('prod-brand').value.trim()
+    const stock = parseFloat(document.getElementById('prod-stock').value)
+    const unit  = document.getElementById('prod-unit').value.trim()
+    const daily = parseFloat(document.getElementById('prod-daily').value)
+    const dunit = document.getElementById('prod-daily-unit').value.trim() || unit
+
+    if (!name || !stock || !daily) {
+      alert('Bitte Name, Bestand und Tagesverbrauch eingeben.')
+      return
+    }
+
+    const products = loadProducts()
+    products.push({
+      id: Date.now(), cat: _selectedCat, name, brand,
+      stock, unit, dailyUse: daily, dailyUnit: dunit,
+      color: _selectedColor, addedDate: today()
+    })
+    saveProducts(products)
+    renderAllProducts()
+    document.getElementById('modal-product').classList.remove('open')
+  }
+
+  // Wire up live preview inputs
+  document.addEventListener('DOMContentLoaded', () => {
+    ['prod-stock','prod-daily','prod-unit'].forEach(id =>
+      document.getElementById(id)?.addEventListener('input', updatePreview)
+    )
+  })
+
+  // ── INIT ────────────────────────────────────────────────
+  renderAllProducts()
+</script>
+</body>
+</html>
