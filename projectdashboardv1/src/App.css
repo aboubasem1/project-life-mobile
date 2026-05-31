@@ -1835,3 +1835,74 @@ html, body {
   text-align: center;
   pointer-events: none;
 }
+
+/* ── Backup Banner ── */
+.backup-banner{display:flex;align-items:center;gap:8px;background:#2a1a0a;border:1px solid #ff9500;border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#ff9500;}
+.backup-btn{margin-left:auto;padding:4px 10px;background:#ff9500;color:#000;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;}
+
+/* ── Goal Section ── */
+.goal-edit{display:flex;gap:8px;align-items:center;margin-top:8px;}
+.goal-input{flex:1;background:#111;border:1px solid #333;border-radius:8px;padding:8px 12px;color:#f2f2f2;font-size:14px;}
+.ghost-btn{background:transparent;border:1px solid #444;color:#aaa;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;}
+.goal-bar-bg{height:8px;background:#1a1a1a;border-radius:4px;overflow:hidden;margin:6px 0;}
+.goal-bar-fill{height:100%;background:#c8b07a;border-radius:4px;transition:width .4s;}
+.goal-bar-fill.reached{background:#4caf50;}
+.goal-labels{display:flex;justify-content:space-between;font-size:12px;color:#aaa;}
+.goal-status{font-size:12px;color:#aaa;margin-top:4px;}
+.chip-count{font-size:11px;color:#aaa;background:#1a1a1a;border-radius:10px;padding:2px 8px;}
+
+/* ── Challenge Card ── */
+.challenge-card{display:flex;gap:12px;align-items:flex-start;padding:12px;background:#111;border-radius:10px;}
+.challenge-icon{font-size:28px;line-height:1;}
+.challenge-body{flex:1;}
+.challenge-title{font-size:13px;font-weight:700;color:#f2f2f2;margin-bottom:2px;}
+.challenge-desc{font-size:11px;color:#888;margin-bottom:8px;}
+.challenge-progress-row{display:flex;align-items:center;gap:8px;}
+.challenge-bar-bg{flex:1;height:6px;background:#1a1a1a;border-radius:3px;overflow:hidden;}
+.challenge-bar-fill{height:100%;background:#c8b07a;border-radius:3px;transition:width .4s;}
+.challenge-bar-fill.done{background:#4caf50;}
+.challenge-counter{font-size:11px;color:#888;white-space:nowrap;}
+.challenge-xp{text-align:center;font-size:18px;font-weight:800;color:#c8b07a;line-height:1.1;}
+.challenge-xp span{font-size:10px;font-weight:400;color:#888;}
+.challenge-done-badge{text-align:center;font-size:12px;color:#4caf50;margin-top:8px;padding:6px;background:#0a1a0a;border-radius:8px;}
+
+/* ── Heatmap ── */
+.heatmap-wrap{overflow-x:auto;padding-bottom:4px;}
+.heatmap-grid{display:flex;gap:3px;}
+.heatmap-grid > div{display:flex;flex-direction:column;gap:3px;}
+.hm-cell{width:12px;height:12px;border-radius:2px;flex-shrink:0;}
+.hm-cell.today{outline:2px solid #c8b07a;}
+.hm-cell.empty{background:transparent!important;}
+.heatmap-legend{display:flex;align-items:center;gap:4px;margin-top:8px;font-size:10px;color:#666;}
+.hm-leg-cell{width:10px;height:10px;border-radius:2px;}
+.hm-leg-label{margin-right:6px;}
+
+/* ── Correlations ── */
+.correlation-list{display:flex;flex-direction:column;gap:8px;}
+.corr-row{display:flex;align-items:center;gap:8px;}
+.corr-habit{font-size:11px;color:#aaa;width:90px;flex-shrink:0;}
+.corr-body{flex:1;display:flex;flex-direction:column;gap:3px;}
+.corr-bar-wrap{height:5px;background:#1a1a1a;border-radius:3px;overflow:hidden;}
+.corr-bar-without{height:100%;background:#444;border-radius:3px;}
+.corr-bar-with{height:100%;background:#c8b07a;border-radius:3px;}
+.corr-delta{font-size:13px;font-weight:700;width:36px;text-align:right;flex-shrink:0;}
+.corr-delta.pos{color:#4caf50;}
+.corr-delta.neg{color:#f44;}
+.corr-hint{font-size:10px;color:#555;margin-top:4px;}
+
+/* ── Achievement Grid ── */
+.achievement-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:10px;margin-top:8px;}
+.ach-badge{display:flex;flex-direction:column;align-items:center;gap:4px;background:#111;border-radius:10px;padding:10px 6px;}
+.ach-badge-icon{font-size:22px;}
+.ach-badge-name{font-size:9px;color:#aaa;text-align:center;line-height:1.2;}
+.ach-badge-date{font-size:8px;color:#555;}
+
+/* ── Achievement Toast ── */
+.achievement-toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1a1500;border:1px solid #c8b07a;border-radius:16px;padding:14px 18px;display:flex;align-items:center;gap:12px;z-index:1000;box-shadow:0 8px 32px rgba(0,0,0,.6);max-width:320px;width:90%;}
+.ach-toast-icon{font-size:32px;flex-shrink:0;}
+.ach-toast-body{flex:1;}
+.ach-toast-title{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#c8b07a;margin-bottom:2px;}
+.ach-toast-name{font-size:14px;font-weight:700;color:#f2f2f2;}
+.ach-toast-desc{font-size:11px;color:#aaa;margin-top:2px;}
+.ach-toast-xp{font-size:12px;color:#c8b07a;font-weight:700;margin-top:4px;}
+.ach-toast-counter{position:absolute;top:8px;right:12px;font-size:10px;color:#555;}

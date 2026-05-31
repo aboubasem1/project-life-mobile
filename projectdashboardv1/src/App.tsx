@@ -1,15 +1,32 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import './App.css'
 import { useEntries } from './hooks/useEntries'
 import { DashboardView } from './views/DashboardView'
 import { StatsView } from './views/StatsView'
 import { SyncStatusBadge } from './components/ui/SyncStatusBadge'
+import { AchievementToast } from './components/ui/AchievementToast'
+import { checkAchievements } from './lib/achievements'
+import type { Achievement } from './lib/achievements'
 
 type View = 'dashboard' | 'stats'
 
 export default function App() {
   const [view, setView] = useState<View>('dashboard')
   const { entries, syncStatus, saveEntry, reloadAll } = useEntries()
+  const [newAchievements, setNewAchievements] = useState<Achievement[]>([])
+
+  useEffect(() => {
+    if (entries.length > 0) {
+      const unlocked = checkAchievements(entries)
+      if (unlocked.length > 0) setNewAchievements(unlocked)
+    }
+  }, [entries])
+
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      void Notification.requestPermission()
+    }
+  }, [])
 
   return (
     <div className="app">
@@ -49,6 +66,12 @@ export default function App() {
           />
         )}
       </main>
+      {newAchievements.length > 0 && (
+        <AchievementToast
+          achievements={newAchievements}
+          onDismiss={() => setNewAchievements([])}
+        />
+      )}
     </div>
   )
 }
