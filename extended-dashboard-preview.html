@@ -1913,5 +1913,957 @@
   // ── INIT ────────────────────────────────────────────────
   renderAllProducts()
 </script>
+<script>
+(() => {
+  const KEY = 'project-life-dashboard-v3';
+  const PAGE_IDS = [
+    'page-overview',
+    'page-todos',
+    'page-supplements',
+    'page-shopping',
+    'page-finance'
+  ];
+
+  const EDITABLE = [
+    '.todo-text',
+    '.todo-tag',
+    '.todo-time',
+    '.supp-name',
+    '.supp-brand',
+    '.supp-remain',
+    '.supp-days',
+    '.supp-verbrauch',
+    '.supp-usage',
+    '.shop-name',
+    '.shop-note',
+    '.shop-price',
+    '.bill-name',
+    '.bill-sub',
+    '.bill-amount',
+    '.bill-due',
+    '.bill-status'
+  ].join(',');
+
+  const ITEMS = '.todo-item, .supp-card, .shop-item, .bill-card';
+
+  const $ = (selector, root = document) =>
+    root.querySelector(selector);
+
+  const $$ = (selector, root = document) =>
+    [...root.querySelectorAll(selector)];
+
+  let editing = false;
+
+  const css = document.createElement('style');
+
+  css.textContent = `
+    #pl-edit-btn {
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      z-index: 9998;
+      min-height: 42px;
+      padding: 0 16px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 999px;
+      background: rgba(18, 23, 20, 0.95);
+      color: #f2f3ee;
+      font: inherit;
+      font-weight: 750;
+      cursor: pointer;
+      backdrop-filter: blur(14px);
+    }
+
+    #pl-edit-btn.is-active {
+      background: #9caf9e;
+      color: #111511;
+    }
+
+    #pl-edit-bar {
+      position: fixed;
+      left: 50%;
+      bottom: max(18px, env(safe-area-inset-bottom));
+      z-index: 9998;
+      display: none;
+      gap: 8px;
+      transform: translateX(-50%);
+      padding: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+      background: rgba(18, 23, 20, 0.96);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.36);
+      backdrop-filter: blur(16px);
+    }
+
+    body.pl-editing #pl-edit-bar {
+      display: flex;
+    }
+
+    #pl-edit-bar button {
+      min-height: 40px;
+      padding: 0 14px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: #f2f3ee;
+      font: inherit;
+      font-weight: 750;
+      cursor: pointer;
+    }
+
+    #pl-edit-bar button:first-child {
+      background: #9caf9e;
+      color: #111511;
+    }
+
+    body.pl-editing ${ITEMS},
+    body.pl-editing .project-tab[data-board] {
+      position: relative;
+      outline: 1px dashed rgba(156, 175, 158, 0.72);
+      outline-offset: 3px;
+    }
+
+    body.pl-editing [contenteditable="true"] {
+      min-width: 24px;
+      border-radius: 6px;
+      cursor: text;
+      outline: none;
+    }
+
+    body.pl-editing [contenteditable="true"]:focus {
+      background: rgba(156, 175, 158, 0.12);
+      box-shadow: 0 0 0 3px rgba(156, 175, 158, 0.14);
+    }
+
+    .pl-delete {
+      position: absolute;
+      top: 7px;
+      right: 7px;
+      z-index: 10;
+      width: 30px;
+      height: 30px;
+      border: 0;
+      border-radius: 50%;
+      background: rgba(18, 23, 20, 0.94);
+      color: #e4a19b;
+      font-size: 18px;
+      cursor: pointer;
+    }
+
+    .pl-project-delete {
+      position: static;
+      width: 24px;
+      height: 24px;
+      margin-left: 5px;
+      font-size: 14px;
+    }
+
+    @media (max-width: 640px) {
+      #pl-edit-bar {
+        width: calc(100vw - 24px);
+        justify-content: space-between;
+      }
+
+      #pl-edit-bar button {
+        flex: 1;
+        padding: 0 8px;
+        font-size: 12px;
+      }
+    }
+  `;
+
+  document.head.appendChild(css);
+
+  function cloneClean(node) {
+    const clone = node.cloneNode(true);
+
+    $$('[data-pl-editor]', clone).forEach(element =>
+      element.remove()
+    );
+
+    $$('[contenteditable]', clone).forEach(element =>
+      element.removeAttribute('contenteditable')
+    );
+
+    return clone;
+  }
+
+  function save() {
+    const pages = {};
+
+    PAGE_IDS.forEach(id => {
+      const page = document.getElementById(id);
+
+      if (page) {
+        pages[id] = cloneClean(page).innerHTML;
+      }
+    });
+
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({ pages })
+    );
+
+    $$('.sync-time').forEach(element => {
+      element.textContent = 'gerade eben';
+    });
+  }
+
+  function restore() {
+    try {
+      const data = JSON.parse(
+        localStorage.getItem(KEY) || 'null'
+      );
+
+      if (!data?.pages) {
+        return;
+      }
+
+      Object.entries(data.pages).forEach(([id, html]) => {
+        const page = document.getElementById(id);
+
+        if (page && typeof html === 'string') {
+          page.innerHTML = html;
+        }
+      });
+    } catch (error) {
+      console.warn(
+        'Gespeicherter Dashboard-Stand konnte nicht geladen werden.',
+        error
+      );
+    }
+  }
+
+  function activePage() {
+    return (
+      $('.page.active') ||
+      $$('.page').find(
+        page => getComputedStyle(page).display !== 'none'
+      )
+    );
+  }
+
+  function activeBoard() {
+    const tab =
+      $('.project-tab.active[data-board]') ||
+      $('.project-tab[data-board]');
+
+    return tab?.dataset.board
+      ? document.getElementById(
+          `board-${tab.dataset.board}`
+        )
+      : null;
+  }
+
+  function setEditable(enabled) {
+    $$(EDITABLE).forEach(element => {
+      if (enabled) {
+        element.setAttribute(
+          'contenteditable',
+          'true'
+        );
+
+        element.setAttribute(
+          'spellcheck',
+          'true'
+        );
+      } else {
+        element.removeAttribute(
+          'contenteditable'
+        );
+
+        element.removeAttribute(
+          'spellcheck'
+        );
+      }
+    });
+  }
+
+  function decorate() {
+    $$('[data-pl-editor]').forEach(element =>
+      element.remove()
+    );
+
+    if (!editing) {
+      return;
+    }
+
+    $$(ITEMS).forEach(item => {
+      const button = document.createElement('button');
+
+      button.type = 'button';
+      button.className = 'pl-delete';
+      button.dataset.plEditor = 'true';
+      button.textContent = '×';
+      button.title = 'Löschen';
+
+      button.onclick = event => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (
+          !confirm(
+            'Diesen Eintrag wirklich löschen?'
+          )
+        ) {
+          return;
+        }
+
+        item.remove();
+        updateCounters();
+        save();
+      };
+
+      item.appendChild(button);
+    });
+
+    $$('.project-tab[data-board]').forEach(tab => {
+      const button = document.createElement('button');
+
+      button.type = 'button';
+      button.className =
+        'pl-delete pl-project-delete';
+
+      button.dataset.plEditor = 'true';
+      button.textContent = '×';
+      button.title = 'Projekt löschen';
+
+      button.onclick = event => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (
+          $$('.project-tab[data-board]').length <= 1
+        ) {
+          alert(
+            'Mindestens ein Projekt muss bleiben.'
+          );
+
+          return;
+        }
+
+        if (
+          !confirm(
+            'Projekt und alle enthaltenen Aufgaben löschen?'
+          )
+        ) {
+          return;
+        }
+
+        document
+          .getElementById(
+            `board-${tab.dataset.board}`
+          )
+          ?.remove();
+
+        tab.remove();
+        save();
+      };
+
+      tab.appendChild(button);
+    });
+  }
+
+  function updateCounters() {
+    $$('.board-panel').forEach(board => {
+      const todos = $$('.todo-item', board);
+
+      const done = todos.filter(todo => {
+        return (
+          todo.classList.contains('done') ||
+          $('.todo-check.done', todo)
+        );
+      }).length;
+
+      const total = todos.length;
+
+      const percent = total
+        ? Math.round((done / total) * 100)
+        : 0;
+
+      const progressText = $('.prog-sub', board);
+      const progressNumber = $('.prog-num', board);
+
+      if (progressText) {
+        progressText.textContent =
+          `${done} von ${total} Aufgaben`;
+      }
+
+      if (progressNumber) {
+        progressNumber.textContent =
+          `${percent}%`;
+      }
+
+      const slug = board.id.replace(
+        /^board-/,
+        ''
+      );
+
+      const count = $(
+        `.project-tab[data-board="${CSS.escape(slug)}"] .tab-count`
+      );
+
+      if (count) {
+        count.textContent = total;
+      }
+    });
+  }
+
+  function clearText(root, selectors) {
+    selectors.forEach(selector => {
+      const element = $(selector, root);
+
+      if (element) {
+        element.textContent = '';
+      }
+    });
+  }
+
+  function addTodo() {
+    const board =
+      activeBoard() ||
+      $('#page-todos');
+
+    if (!board) {
+      return;
+    }
+
+    let list = $('.todo-card', board);
+
+    if (!list) {
+      list = document.createElement('div');
+      list.className = 'todo-card';
+      board.appendChild(list);
+    }
+
+    const template =
+      $('.todo-item', board) ||
+      $('.todo-item');
+
+    const item = template
+      ? cloneClean(template)
+      : document.createElement('div');
+
+    item.className = 'todo-item';
+    item.classList.remove('done');
+
+    if (!template) {
+      item.innerHTML = `
+        <span class="todo-check"></span>
+
+        <div class="todo-content">
+          <div class="todo-text"></div>
+          <span class="todo-tag"></span>
+          <span class="todo-time"></span>
+        </div>
+      `;
+    }
+
+    clearText(
+      item,
+      [
+        '.todo-text',
+        '.todo-tag',
+        '.todo-time'
+      ]
+    );
+
+    $('.todo-text', item).textContent =
+      'Neue Aufgabe';
+
+    list.appendChild(item);
+
+    setEditable(true);
+    decorate();
+
+    $('.todo-text', item)?.focus();
+
+    updateCounters();
+    save();
+  }
+
+  function addSupplement() {
+    const page = activePage();
+
+    const host =
+      $('.supp-grid', page) ||
+      $('.supplements-grid', page) ||
+      $('[data-list="supplements"]', page) ||
+      $('#page-supplements');
+
+    if (!host) {
+      return;
+    }
+
+    const template =
+      $('.supp-card', host) ||
+      $('.supp-card');
+
+    const card = template
+      ? cloneClean(template)
+      : document.createElement('article');
+
+    card.className = 'supp-card';
+
+    if (!template) {
+      card.innerHTML = `
+        <div class="supp-name"></div>
+        <div class="supp-brand"></div>
+        <div class="supp-remain"></div>
+        <div class="supp-days"></div>
+        <div class="supp-verbrauch"></div>
+
+        <div class="supp-stock-track">
+          <div
+            class="supp-stock-fill"
+            style="width: 100%"
+          ></div>
+        </div>
+      `;
+    }
+
+    clearText(
+      card,
+      [
+        '.supp-name',
+        '.supp-brand',
+        '.supp-remain',
+        '.supp-days',
+        '.supp-verbrauch',
+        '.supp-usage'
+      ]
+    );
+
+    $('.supp-name', card).textContent =
+      'Neues Produkt';
+
+    host.appendChild(card);
+
+    setEditable(true);
+    decorate();
+
+    $('.supp-name', card)?.focus();
+
+    save();
+  }
+
+  function addShopping() {
+    const page =
+      activePage() ||
+      $('#page-shopping');
+
+    const host =
+      $('.shopping-list', page) ||
+      $('.shop-list', page) ||
+      $('[data-list="shopping"]', page) ||
+      $('#page-shopping');
+
+    if (!host) {
+      return;
+    }
+
+    const template =
+      $('.shop-item', host) ||
+      $('.shop-item');
+
+    const item = template
+      ? cloneClean(template)
+      : document.createElement('div');
+
+    item.className = 'shop-item';
+    item.classList.remove('bought');
+
+    if (!template) {
+      item.innerHTML = `
+        <span class="shop-check"></span>
+
+        <div class="shop-content">
+          <div class="shop-name"></div>
+          <div class="shop-note"></div>
+        </div>
+
+        <div class="shop-price"></div>
+      `;
+    }
+
+    clearText(
+      item,
+      [
+        '.shop-name',
+        '.shop-note',
+        '.shop-price'
+      ]
+    );
+
+    $('.shop-name', item).textContent =
+      'Neuer Artikel';
+
+    host.appendChild(item);
+
+    setEditable(true);
+    decorate();
+
+    $('.shop-name', item)?.focus();
+
+    save();
+  }
+
+  function addBill() {
+    const page =
+      activePage() ||
+      $('#page-finance');
+
+    const host =
+      $('.bills-list', page) ||
+      $('.bill-list', page) ||
+      $('[data-list="bills"]', page) ||
+      $('#page-finance');
+
+    if (!host) {
+      return;
+    }
+
+    const template =
+      $('.bill-card', host) ||
+      $('.bill-card');
+
+    const card = template
+      ? cloneClean(template)
+      : document.createElement('article');
+
+    card.className = 'bill-card';
+
+    card.classList.remove(
+      'paid',
+      'overdue'
+    );
+
+    if (!template) {
+      card.innerHTML = `
+        <div class="bill-main">
+          <div class="bill-name"></div>
+          <div class="bill-sub"></div>
+          <div class="bill-due"></div>
+        </div>
+
+        <div class="bill-side">
+          <div class="bill-amount"></div>
+          <div class="bill-status"></div>
+        </div>
+      `;
+    }
+
+    clearText(
+      card,
+      [
+        '.bill-name',
+        '.bill-sub',
+        '.bill-due',
+        '.bill-amount',
+        '.bill-status'
+      ]
+    );
+
+    $('.bill-name', card).textContent =
+      'Neue Zahlung';
+
+    $('.bill-status', card).textContent =
+      'Offen';
+
+    host.appendChild(card);
+
+    setEditable(true);
+    decorate();
+
+    $('.bill-name', card)?.focus();
+
+    save();
+  }
+
+  function addProject() {
+    const name = prompt(
+      'Name des neuen Projekts:'
+    );
+
+    if (!name?.trim()) {
+      return;
+    }
+
+    const tabs =
+      $('#project-tabs') ||
+      $('.project-tabs');
+
+    if (!tabs) {
+      alert(
+        'Projektleiste nicht gefunden.'
+      );
+
+      return;
+    }
+
+    const base =
+      name
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(
+          /[\u0300-\u036f]/g,
+          ''
+        )
+        .replace(
+          /[^a-z0-9]+/g,
+          '-'
+        )
+        .replace(
+          /^-|-$/g,
+          ''
+        ) ||
+      'projekt';
+
+    let slug = base;
+    let suffix = 2;
+
+    while (
+      document.getElementById(
+        `board-${slug}`
+      )
+    ) {
+      slug = `${base}-${suffix++}`;
+    }
+
+    const tab =
+      document.createElement('button');
+
+    tab.type = 'button';
+    tab.className = 'project-tab';
+    tab.dataset.board = slug;
+
+    tab.innerHTML = `
+      ${name.trim()}
+      <span class="tab-count">0</span>
+    `;
+
+    const addTab = $('.add-tab-btn', tabs);
+
+    if (addTab) {
+      tabs.insertBefore(tab, addTab);
+    } else {
+      tabs.appendChild(tab);
+    }
+
+    const board =
+      document.createElement('section');
+
+    board.className = 'board-panel';
+    board.id = `board-${slug}`;
+    board.style.display = 'none';
+
+    board.innerHTML = `
+      <div class="progress-ring-wrap">
+        <div class="prog-num">0%</div>
+        <div class="prog-sub">
+          0 von 0 Aufgaben
+        </div>
+      </div>
+
+      <div class="todo-card"></div>
+
+      <button
+        class="add-todo-btn"
+        type="button"
+      >
+        + Aufgabe hinzufügen
+      </button>
+    `;
+
+    const boardHost =
+      $('#page-todos .boards-host') ||
+      $('#page-todos');
+
+    boardHost?.appendChild(board);
+
+    decorate();
+    save();
+  }
+
+  function addForCurrentPage() {
+    const id =
+      (activePage()?.id || '')
+        .toLowerCase();
+
+    if (id.includes('supp')) {
+      addSupplement();
+      return;
+    }
+
+    if (id.includes('shop')) {
+      addShopping();
+      return;
+    }
+
+    if (id.includes('finance')) {
+      addBill();
+      return;
+    }
+
+    addTodo();
+  }
+
+  function setMode(enabled) {
+    editing = enabled;
+
+    document.body.classList.toggle(
+      'pl-editing',
+      enabled
+    );
+
+    const button = $('#pl-edit-btn');
+
+    button.classList.toggle(
+      'is-active',
+      enabled
+    );
+
+    button.textContent =
+      enabled
+        ? 'Fertig'
+        : 'Bearbeiten';
+
+    setEditable(enabled);
+    decorate();
+
+    if (!enabled) {
+      save();
+    }
+  }
+
+  function controls() {
+    const edit =
+      document.createElement('button');
+
+    edit.id = 'pl-edit-btn';
+    edit.type = 'button';
+    edit.dataset.plEditor = 'true';
+    edit.textContent = 'Bearbeiten';
+
+    edit.onclick = () =>
+      setMode(!editing);
+
+    const bar =
+      document.createElement('div');
+
+    bar.id = 'pl-edit-bar';
+    bar.dataset.plEditor = 'true';
+
+    bar.innerHTML = `
+      <button type="button">
+        + Neu
+      </button>
+
+      <button type="button">
+        + Projekt
+      </button>
+
+      <button type="button">
+        Speichern
+      </button>
+
+      <button type="button">
+        Reset
+      </button>
+    `;
+
+    const [
+      add,
+      project,
+      saveButton,
+      reset
+    ] = $$('button', bar);
+
+    add.onclick = addForCurrentPage;
+    project.onclick = addProject;
+
+    saveButton.onclick = () => {
+      save();
+      setMode(false);
+    };
+
+    reset.onclick = () => {
+      if (
+        !confirm(
+          'Alle lokalen Dashboard-Änderungen verwerfen?'
+        )
+      ) {
+        return;
+      }
+
+      localStorage.removeItem(KEY);
+      location.reload();
+    };
+
+    document.body.append(
+      edit,
+      bar
+    );
+  }
+
+  document.addEventListener(
+    'input',
+    event => {
+      if (
+        editing &&
+        event.target instanceof Element &&
+        event.target.matches(EDITABLE)
+      ) {
+        save();
+      }
+    }
+  );
+
+  document.addEventListener(
+    'click',
+    event => {
+      const target = event.target;
+
+      if (
+        !(target instanceof Element) ||
+        target.closest('[data-pl-editor]')
+      ) {
+        return;
+      }
+
+      if (
+        target.closest('.add-todo-btn')
+      ) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        addTodo();
+      }
+
+      if (
+        target.closest('.add-tab-btn')
+      ) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        addProject();
+      }
+
+      if (
+        !editing &&
+        target.closest('.todo-item')
+      ) {
+        setTimeout(() => {
+          updateCounters();
+          save();
+        });
+      }
+    },
+    true
+  );
+
+  restore();
+  controls();
+  updateCounters();
+})();
+</script>
 </body>
 </html>
