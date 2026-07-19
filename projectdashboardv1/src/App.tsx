@@ -1022,6 +1022,7 @@ function PlanView({
   focusMinutes,
   onDateChange,
   onAddTask,
+  onAddSuggestion,
   onEditTask,
   onDeleteTask,
   onMoveTask,
