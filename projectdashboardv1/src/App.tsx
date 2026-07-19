@@ -1,20 +1,20 @@
 import { useState, useEffect } from 'react'
-import './App.css'
 import { useEntries } from './hooks/useEntries'
-import { DashboardView } from './views/DashboardView'
+import { TodayView } from './views/TodayView'
+import type { AppView } from './views/TodayView'
+import { PlanView } from './views/PlanView'
 import { StatsView } from './views/StatsView'
-import { SyncStatusBadge } from './components/ui/SyncStatusBadge'
+import { BottomNav } from './components/layout/BottomNav'
 import { AchievementToast } from './components/ui/AchievementToast'
-import { LandingView } from './views/LandingView'
+import { FocusMode } from './components/FocusMode'
 import { checkAchievements } from './lib/achievements'
 import type { Achievement } from './lib/achievements'
 
-type View = 'landing' | 'dashboard' | 'stats'
-
 export default function App() {
-  const [view, setView] = useState<View>('landing')
-  const { entries, syncStatus, saveEntry, reloadAll } = useEntries()
+  const [view, setView]                       = useState<AppView>('today')
+  const [focusTask, setFocusTask]             = useState<string | null>(null)
   const [newAchievements, setNewAchievements] = useState<Achievement[]>([])
+  const { entries, syncStatus, saveEntry, reloadAll } = useEntries()
 
   useEffect(() => {
     if (entries.length > 0) {
@@ -30,48 +30,44 @@ export default function App() {
     }
   }, [])
 
-  if (view === 'landing') {
-    return <LandingView onEnter={() => setView('dashboard')} onStats={() => setView('stats')} />
+  // App-level FocusMode overlay sits above bottom nav (z-index 200)
+  if (focusTask !== null) {
+    return (
+      <FocusMode
+        task={focusTask}
+        onDone={() => setFocusTask(null)}
+        onClose={() => setFocusTask(null)}
+      />
+    )
   }
 
   return (
     <div className="app">
-      <header className="topbar">
-        <div className="topbar-brand">
-          <span className="topbar-eyebrow">PROJECT LIFE</span>
-          <span className="topbar-title">Dashboard</span>
-        </div>
-        <nav className="topbar-nav">
-          <button
-            className={`nav-tab ${view === 'dashboard' ? 'active' : ''}`}
-            onClick={() => setView('dashboard')}
-          >
-            Today
-          </button>
-          <button
-            className={`nav-tab ${view === 'stats' ? 'active' : ''}`}
-            onClick={() => setView('stats')}
-          >
-            Stats
-          </button>
-        </nav>
-        <SyncStatusBadge status={syncStatus} />
-      </header>
-      <main className="main-content">
-        {view === 'dashboard' && (
-          <DashboardView
+      <main className="app-main" id="main-content">
+        {view === 'today' && (
+          <TodayView
             entries={entries}
             syncStatus={syncStatus}
             onSave={saveEntry}
           />
         )}
-        {view === 'stats' && (
+        {view === 'plan' && (
+          <PlanView
+            entries={entries}
+            onSave={saveEntry}
+            onOpenFocus={task => setFocusTask(task)}
+          />
+        )}
+        {view === 'verlauf' && (
           <StatsView
             entries={entries}
             onReload={reloadAll}
           />
         )}
       </main>
+
+      <BottomNav current={view} onChange={setView} />
+
       {newAchievements.length > 0 && (
         <AchievementToast
           achievements={newAchievements}

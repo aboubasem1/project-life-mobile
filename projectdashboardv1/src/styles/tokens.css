@@ -1,0 +1,50 @@
+:root {
+  /* ── Color palette ───────────────────────────────────────────────── */
+  --background:    #101411;
+  --surface:       #171c18;
+  --surface-raised:#1e2520;
+  --text-primary:  #f1f2ec;
+  --text-secondary:#a8b0a7;
+  --text-muted:    #747d75;
+  --accent:        #91ad98;
+  --accent-soft:   rgba(145, 173, 152, 0.14);
+  --success:       #8eb49a;
+  --warning:       #c9a96b;
+  --danger:        #c77c76;
+  --border:        rgba(241, 242, 236, 0.08);
+
+  /* ── Typography ──────────────────────────────────────────────────── */
+  --font-xs:   0.6875rem;  /* 11px */
+  --font-sm:   0.8125rem;  /* 13px */
+  --font-base: 1rem;       /* 16px */
+  --font-lg:   1.125rem;   /* 18px */
+  --font-xl:   1.25rem;    /* 20px */
+  --font-2xl:  1.5rem;     /* 24px */
+  --font-3xl:  2rem;       /* 32px */
+  --font-4xl:  2.75rem;    /* 44px */
+
+  /* ── Spacing ─────────────────────────────────────────────────────── */
+  --sp-1:  0.25rem;
+  --sp-2:  0.5rem;
+  --sp-3:  0.75rem;
+  --sp-4:  1rem;
+  --sp-5:  1.25rem;
+  --sp-6:  1.5rem;
+  --sp-8:  2rem;
+  --sp-10: 2.5rem;
+  --sp-12: 3rem;
+
+  /* ── Border radius ───────────────────────────────────────────────── */
+  --r-sm:   6px;
+  --r-md:   10px;
+  --r-lg:   16px;
+  --r-xl:   24px;
+  --r-full: 9999px;
+
+  /* ── Layout ──────────────────────────────────────────────────────── */
+  --header-h:    52px;
+  --nav-h:       64px;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --max-w:       600px;
+  --touch-min:   44px;
+}
