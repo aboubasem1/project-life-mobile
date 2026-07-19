@@ -3,6 +3,16 @@ import { Plus, Trash2, Zap } from 'lucide-react'
 import type { DashboardEntry } from '../types/DashboardEntry'
 import { createDefaultEntry } from '../types/DashboardEntry'
 
+const FOCUS_DURATIONS = [5, 10, 15, 25, 45, 60, 90]
+const FOCUS_DURATION_KEY = 'lifeos-focus-duration'
+
+function loadFocusDuration(): number {
+  return Number(localStorage.getItem(FOCUS_DURATION_KEY) ?? 25)
+}
+function saveFocusDuration(min: number) {
+  localStorage.setItem(FOCUS_DURATION_KEY, String(min))
+}
+
 function getToday(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -23,6 +33,12 @@ export function PlanView({ entries, onSave, onOpenFocus }: Props) {
 
   const anchors = entry.anchors ?? []
   const [draft, setDraft] = useState('')
+  const [focusDuration, setFocusDuration] = useState<number>(loadFocusDuration)
+
+  const updateDuration = (min: number) => {
+    setFocusDuration(min)
+    saveFocusDuration(min)
+  }
 
   const save = (patch: Partial<DashboardEntry>) =>
     void onSave({ ...entry, ...patch })
@@ -113,6 +129,25 @@ export function PlanView({ entries, onSave, onOpenFocus }: Props) {
             </button>
           </div>
         )}
+      </div>
+
+      {/* ── Fokus-Dauer ───────────────────────────────────────────── */}
+      <div className="card-sm">
+        <p style={{ fontSize: 'var(--font-xs)', color: 'var(--text-muted)', marginBottom: 'var(--sp-3)', fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase' }}>
+          Fokus-Dauer
+        </p>
+        <div style={{ display: 'flex', gap: 'var(--sp-2)', flexWrap: 'wrap' }}>
+          {FOCUS_DURATIONS.map(min => (
+            <button
+              key={min}
+              className={`focus-preset-btn ${focusDuration === min ? 'active' : ''}`}
+              onClick={() => updateDuration(min)}
+              aria-pressed={focusDuration === min}
+            >
+              {min} min
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* ── Tip ──────────────────────────────────────────────────────── */}
