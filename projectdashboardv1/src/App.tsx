@@ -19,6 +19,7 @@ export default function App() {
   useEffect(() => {
     if (entries.length > 0) {
       const unlocked = checkAchievements(entries)
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (unlocked.length > 0) setNewAchievements(unlocked)
     }
   }, [entries])

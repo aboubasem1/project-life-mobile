@@ -39,7 +39,7 @@ export function useEntries(): UseEntriesReturn {
 
     setEntries(updated)
     setSyncStatus('synced')
-    resetTimer.current && clearTimeout(resetTimer.current)
+    if (resetTimer.current !== null) clearTimeout(resetTimer.current)
     resetTimer.current = window.setTimeout(() => setSyncStatus('idle'), 2000)
   }, [])
 

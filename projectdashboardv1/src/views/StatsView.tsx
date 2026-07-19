@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import type { DashboardEntry } from '../types/DashboardEntry'
 import { HABITS } from '../types/DashboardEntry'
 import { WeeklyChart } from '../components/charts/WeeklyChart'
@@ -33,12 +33,17 @@ export function StatsView({ entries, onReload }: Props) {
   const [goal, setGoal] = useState<number>(loadGoal)
   const [editingGoal, setEditingGoal] = useState(false)
   const [goalInput, setGoalInput] = useState('')
-  const [achievements, setAchievements] = useState(() => loadAchievements())
+  const achievements = useMemo(() => loadAchievements(), [])
   const challenge = useMemo(() => getOrCreateChallenge(), [])
   const challengeProgress = useMemo(() => getChallengeProgress(entries, challenge), [entries, challenge])
   const correlations = useMemo(() => computeCorrelations(sorted), [sorted])
+  const [now] = useState(() => Date.now())
   const showBackup = useMemo(() => needsBackupReminder(entries), [entries])
-  useEffect(() => { setAchievements(loadAchievements()) }, [entries])
+  const daysSinceBackup = useMemo(() => {
+    const last = getLastExportDate()
+    if (!last) return null
+    return Math.floor((now - new Date(last).getTime()) / 86400000)
+  }, [now])
 
   const avgScore = useMemo(() => {
     const scored = sorted.filter(e => (e.dailyScore ?? 0) > 0)
@@ -61,9 +66,12 @@ export function StatsView({ entries, onReload }: Props) {
     if (!sorted.length) return 0
     const today = new Date().toISOString().split('T')[0]
     let streak = 0
-    let cursor = new Date(today)
+    const cursor = new Date(today + 'T00:00:00Z')
     const set = new Set(sorted.map(e => e.date))
-    while (set.has(cursor.toISOString().split('T')[0])) { streak++; cursor.setDate(cursor.getDate() - 1) }
+    while (set.has(cursor.toISOString().split('T')[0])) {
+      streak++
+      cursor.setUTCDate(cursor.getUTCDate() - 1)
+    }
     return streak
   }, [sorted])
 
@@ -102,9 +110,7 @@ export function StatsView({ entries, onReload }: Props) {
           <AlertTriangle size={14} />
           <span>
             Exportiere deine Daten — letzte Sicherung vor{' '}
-            {getLastExportDate()
-              ? Math.floor((Date.now() - new Date(getLastExportDate()!).getTime()) / 86400000) + ' Tagen'
-              : 'nie'}
+            {daysSinceBackup !== null ? daysSinceBackup + ' Tagen' : 'nie'}
           </span>
           <button className="backup-btn" onClick={handleExport}>Jetzt exportieren</button>
         </div>

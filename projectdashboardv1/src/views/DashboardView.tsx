@@ -37,6 +37,7 @@ export function DashboardView({ entries, syncStatus, onSave }: Props) {
   useEffect(() => {
     const found = entries.find(e => e.date === date)
     const loaded = found ?? createDefaultEntry(date)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setEntry(loaded)
     lastSaved.current = JSON.stringify(loaded)
   }, [date, entries])
@@ -45,22 +46,23 @@ export function DashboardView({ entries, syncStatus, onSave }: Props) {
   useEffect(() => {
     const cur = JSON.stringify(entry)
     if (cur === lastSaved.current) return
-    saveTimer.current && clearTimeout(saveTimer.current)
+    if (saveTimer.current !== null) clearTimeout(saveTimer.current)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSaving(true)
     saveTimer.current = window.setTimeout(async () => {
       await onSave(entry)
       lastSaved.current = cur
       setSaving(false)
     }, 600)
-    return () => { saveTimer.current && clearTimeout(saveTimer.current) }
+    return () => { if (saveTimer.current !== null) clearTimeout(saveTimer.current) }
   }, [entry, onSave])
 
   const update = (partial: Partial<DashboardEntry>) =>
     setEntry(prev => ({ ...prev, ...partial }))
 
   const navDate = (dir: -1 | 1) => {
-    const d = new Date(date + 'T00:00:00')
-    d.setDate(d.getDate() + dir)
+    const d = new Date(date + 'T00:00:00Z')
+    d.setUTCDate(d.getUTCDate() + dir)
     setDate(d.toISOString().split('T')[0])
   }
 
