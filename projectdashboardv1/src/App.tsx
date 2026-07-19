@@ -72,6 +72,44 @@ type ToastState = {
 
 const SETTINGS_KEY = 'life-os-v1-settings'
 
+// ── Data from projectbaby ────────────────────────────────────────────────────
+const QUOTES = [
+  'Kleine Aktionen heute = massive Ergebnisse morgen.',
+  'Du bist der Hauptcharakter. Handle dementsprechend.',
+  'Discipline is the ultimate superpower.',
+  'Dein zukünftiges Ich dankt dir.',
+  'Momentum entsteht durch Handlung — nicht Denken.',
+  'Ein Prozent besser jeden Tag. Das ist alles.',
+  'Der beste Zeitpunkt war gestern. Jetzt ist Platz 2.',
+  'Dein Gehirn liebt Dopamin. Gib ihm Checkmarks.',
+] as const
+
+const DEF_TASKS = [
+  'Morning Routine abschließen',
+  'Training · 45 Min Workout',
+  '2L Wasser trinken',
+  'Deep Work Block · 90 Min',
+  'Supplements einnehmen',
+  '3 Todos aus Projekt',
+  'Abend-Check-in · Reflektion',
+] as const
+
+const LVLS = ['Rookie', 'Starter', 'Focused', 'Grinder', 'Achiever', 'Warrior', 'Elite', 'Legend', 'Master', 'Godmode'] as const
+const XPT  = [0, 500, 1100, 1900, 3000, 4400, 6200, 8600, 11600, 15600] as const
+
+function getDailyQuote(): string {
+  const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86_400_000)
+  return QUOTES[dayOfYear % QUOTES.length]
+}
+
+function getLevelFromScore(totalScore: number): string {
+  let level = 0
+  for (let i = XPT.length - 1; i >= 0; i--) {
+    if (totalScore >= XPT[i]) { level = i; break }
+  }
+  return LVLS[level]
+}
+
 const DEFAULT_SETTINGS: AppSettings = {
   name: 'Elias',
   theme: 'system',
@@ -548,6 +586,7 @@ function App() {
               focusMinutes={settings.focusMinutes}
               onDateChange={setSelectedDate}
               onAddTask={() => setTaskEditor({ index: null, value: '' })}
+              onAddSuggestion={text => saveTask(text, null)}
               onEditTask={(index, value) => setTaskEditor({ index, value })}
               onDeleteTask={deleteTask}
               onMoveTask={moveTask}
@@ -780,7 +819,7 @@ function TodayView({
                 ? 'Nur diese eine Aufgabe. Der Rest darf kurz warten.'
                 : nextRoutine
                   ? 'Ein kleiner Anker bringt wieder Ruhe in den Tag.'
-                  : 'Alles Wichtige ist erledigt. Jetzt bewusst ausatmen.'}
+                  : getDailyQuote()}
             </p>
           </div>
           <div className="hero-card__actions">
@@ -997,6 +1036,7 @@ function PlanView({
   focusMinutes: number
   onDateChange: (date: string) => void
   onAddTask: () => void
+  onAddSuggestion: (text: string) => void
   onEditTask: (index: number, value: string) => void
   onDeleteTask: (index: number) => void
   onMoveTask: (index: number, direction: -1 | 1) => void
@@ -1005,6 +1045,7 @@ function PlanView({
   onFocusMinutesChange: (minutes: number) => void
 }) {
   const done = anchors.filter((_, index) => Boolean(anchorsDone[index])).length
+  const availableSuggestions = DEF_TASKS.filter(t => !anchors.includes(t))
   return (
     <div className="view-stack">
       <DateStrip selected={date} today={today} onChange={onDateChange} />
@@ -1030,7 +1071,19 @@ function PlanView({
             <EmptyState
               title="Der Plan ist noch leer"
               text="Beginne mit einer einzigen Aufgabe, die den Tag spürbar besser macht."
-              action={<button type="button" className="primary-button" onClick={onAddTask}><Plus size={16} /> Aufgabe hinzufügen</button>}
+              action={
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 400 }}>
+                  <button type="button" className="primary-button" onClick={onAddTask}><Plus size={16} /> Eigene Aufgabe</button>
+                  <p style={{ margin: '8px 0 6px', fontSize: 11, color: 'var(--text-muted)', textAlign: 'left' }}>Schnell hinzufügen:</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {availableSuggestions.slice(0, 5 - anchors.length).map(t => (
+                      <button key={t} type="button" className="small-button" onClick={() => onAddSuggestion(t)}>
+                        <Plus size={12} /> {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              }
             />
           ) : (
             <div className="editable-task-list">
@@ -1331,7 +1384,7 @@ function ProgressView({ entries, today }: { entries: DashboardEntry[]; today: st
       <div className="kpi-grid">
         <div className="kpi-card"><span>Wochenschnitt</span><strong>{average}%</strong><small>letzte 7 Tage</small></div>
         <div className="kpi-card"><span>Bester Tag</span><strong>{best}%</strong><small>diese Woche</small></div>
-        <div className="kpi-card"><span>Rhythmus</span><strong>{streak}</strong><small>{plural(streak, 'Tag', 'Tage')} in Folge</small></div>
+        <div className="kpi-card"><span>Rhythmus</span><strong>{streak}</strong><small>{plural(streak, 'Tag', 'Tage')} · {getLevelFromScore(lastSeven.reduce((s, i) => s + i.score, 0))}</small></div>
       </div>
 
       <div className="progress-layout">
