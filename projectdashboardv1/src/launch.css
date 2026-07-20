@@ -25,6 +25,11 @@
   --success: #6c927a;
   --warning: #b68c4c;
   --danger: #bd655e;
+  --accent2: var(--blue);
+  --orange: var(--warning);
+  --green: var(--success);
+  --red: var(--danger);
+  --teal: var(--sage);
   --track: rgba(56, 66, 60, 0.10);
   --shadow-sm: 0 1px 2px rgba(35, 40, 37, 0.05), 0 8px 26px rgba(53, 47, 43, 0.05);
   --shadow-lg: 0 24px 80px rgba(48, 42, 39, 0.14);
@@ -1406,6 +1411,251 @@ button:disabled {
   color: var(--accent);
 }
 
+/* Building blocks used by the Dashboard+ view: board tabs, progress summary,
+   shopping list, week chart, heatmap, project bars, bill list. */
+
+.project-tabs {
+  display: flex;
+  min-width: 0;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.project-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.project-tab {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-soft);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+.project-tab:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.project-tab.active {
+  border-color: transparent;
+  background: var(--text);
+  color: var(--surface-solid);
+}
+
+.tab-count {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(127, 127, 127, 0.18);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.project-tab.active .tab-count {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.progress-ring-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+
+.prog-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.prog-sub {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.prog-num {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.supp-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+
+.shopping-list {
+  display: grid;
+  gap: 10px;
+}
+
+.shop-item {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+  cursor: pointer;
+  transition: border-color 150ms ease, opacity 150ms ease;
+}
+
+.shop-item.is-done {
+  opacity: 0.55;
+}
+
+.shop-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 12px;
+  font-size: 18px;
+}
+
+.shop-body {
+  min-width: 0;
+}
+
+.shop-price {
+  color: var(--text-muted);
+}
+
+.shop-check {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface);
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.shop-item.is-done .shop-check {
+  border-color: transparent;
+  background: var(--text);
+}
+
+.week-bars {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  padding-top: 6px;
+}
+
+.week-bar-wrap {
+  display: grid;
+  grid-template-rows: auto 120px auto;
+  justify-items: center;
+  gap: 6px;
+}
+
+.week-bar {
+  min-height: 4px;
+  width: 100%;
+  max-width: 28px;
+  align-self: end;
+  border-radius: 8px 8px 3px 3px;
+}
+
+.week-day {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.heatmap-wrap {
+  margin-top: 18px;
+}
+
+.heatmap-title {
+  margin-bottom: 10px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.heatmap-grid {
+  display: grid;
+  grid-template-columns: repeat(14, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.heatmap-cell {
+  aspect-ratio: 1;
+  min-height: 16px;
+  border-radius: 5px;
+}
+
+.todo-card {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.todo-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.todo-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.fin-section-label {
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.bill-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+
+.bill-dot {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+.bill-body {
+  min-width: 0;
+}
+
+.bill-right {
+  flex-shrink: 0;
+}
+
 .dashboard-plus-view {
   gap: 18px;
 }
@@ -1520,6 +1770,11 @@ button:disabled {
   font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, monospace;
 }
 
+.dashboard-plus-input--percent {
+  width: 64px;
+  flex: none;
+}
+
 .dashboard-plus-editable-content {
   gap: 8px;
 }
@@ -1579,6 +1834,7 @@ button:disabled {
 
 .dashboard-plus-bar-input {
   width: 100%;
+  min-width: 0;
   height: 36px;
   margin-bottom: 8px;
   padding: 0 8px;
@@ -2118,6 +2374,20 @@ button:disabled {
   .editable-task { grid-template-columns: 36px minmax(0, 1fr); }
   .editable-task__actions { grid-column: 2; justify-content: flex-end; }
   .toast { right: 12px; bottom: calc(86px + env(safe-area-inset-bottom)); left: 12px; }
+  /* Dashboard+ task rows carry a title + two inline inputs, much taller than
+     a plain task label, so the app-wide 2-row stack above leaves a large
+     empty gap before the delete button. Keep them as a single aligned row. */
+  .dashboard-plus-view .editable-task {
+    grid-template-columns: 36px minmax(0, 1fr) 40px;
+    align-items: start;
+  }
+  .dashboard-plus-view .editable-task .task-check {
+    margin-top: 2px;
+  }
+  .dashboard-plus-view .editable-task__actions {
+    grid-column: 3;
+    justify-content: flex-end;
+  }
 }
 
 @media (max-width: 560px) {
@@ -2153,7 +2423,7 @@ button:disabled {
   .dashboard-plus-hero__stats,
   .dashboard-plus-supplements,
   .dashboard-plus-finance-columns,
-  .dashboard-plus-stats-grid { grid-template-columns: 1fr; }
+  .dashboard-plus-stats-grid { grid-template-columns: minmax(0, 1fr); }
   .dashboard-plus-card,
   .dashboard-plus-card--wide { grid-column: 1; }
   .dashboard-plus-hero__meta,
@@ -2161,6 +2431,11 @@ button:disabled {
   .dashboard-plus-footer { align-items: flex-start; flex-direction: column; }
   .dashboard-plus-bill-card { grid-template-columns: auto minmax(0, 1fr); }
   .dashboard-plus-bill-right { grid-column: 2; }
+  .shop-item { grid-template-columns: 34px minmax(0, 1fr) auto auto; gap: 8px; padding: 8px; }
+  .shop-icon { width: 34px; height: 34px; font-size: 15px; }
+  .dashboard-plus-shop-meta { min-width: 84px; }
+  .week-bar-wrap { grid-template-rows: auto 90px auto; }
+  .heatmap-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
