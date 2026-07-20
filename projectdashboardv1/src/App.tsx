@@ -848,7 +848,7 @@ function TodayView({
     setDragIdx(idx)
   }
 
-  const handleTouchMove = (_e: React.TouchEvent) => {
+  const handleTouchMove = (e: React.TouchEvent) => {
     if (!touchRef.current) return
     e.preventDefault()
     const touch = e.touches[0]
