@@ -50,6 +50,7 @@ import {
   Snowflake,
   Sparkles,
   Sun,
+  Target,
   Timer,
   Trash2,
   Users,
@@ -94,7 +95,21 @@ type ToastState = {
   onAction?: () => void
 } | null
 
-type DashboardPlusPriority = 'red' | 'orange' | 'blue'
+type DashboardPlusPriority = 'p1' | 'p2' | 'p3' | 'p4'
+
+const PRIORITY_ORDER: DashboardPlusPriority[] = ['p1', 'p2', 'p3', 'p4']
+
+const PRIORITY_META: Record<DashboardPlusPriority, { label: string; color: string }> = {
+  p1: { label: 'P1', color: 'var(--danger)' },
+  p2: { label: 'P2', color: 'var(--warning)' },
+  p3: { label: 'P3', color: 'var(--blue)' },
+  p4: { label: 'P4', color: 'var(--text-muted)' },
+}
+
+function nextPriority(current: DashboardPlusPriority): DashboardPlusPriority {
+  const index = PRIORITY_ORDER.indexOf(current)
+  return PRIORITY_ORDER[(index + 1) % PRIORITY_ORDER.length]
+}
 
 type DashboardPlusTask = {
   id: string
@@ -151,6 +166,29 @@ type DashboardPlusBill = {
   color: string
 }
 
+type DashboardPlusMedication = {
+  id: string
+  name: string
+  dosage: string
+  time: string
+  notes: string
+  effect: string
+  sideEffects: string
+  taken: boolean
+  color: string
+}
+
+type DashboardPlusGoalTimeframe = 'Jahr' | 'Quartal' | 'Monat' | 'Woche'
+
+type DashboardPlusGoal = {
+  id: string
+  title: string
+  timeframe: DashboardPlusGoalTimeframe
+  percent: number
+  dueDate: string
+  color: string
+}
+
 type DashboardPlusState = {
   overview: {
     dateLabel: string
@@ -163,6 +201,8 @@ type DashboardPlusState = {
   }
   focusTodos: DashboardPlusTask[]
   supplements: DashboardPlusSupplement[]
+  medications: DashboardPlusMedication[]
+  goals: DashboardPlusGoal[]
   boards: DashboardPlusBoard[]
   shopping: {
     total: number
@@ -190,6 +230,8 @@ const DASHBOARD_PLUS_TABS = [
   { id: 'overview', label: 'Übersicht', icon: LayoutGrid },
   { id: 'todos', label: 'Todos', icon: ListTodo },
   { id: 'stock', label: 'Bestände', icon: Package },
+  { id: 'medications', label: 'Medis', icon: Pill },
+  { id: 'goals', label: 'Ziele', icon: Target },
   { id: 'shopping', label: 'Kaufliste', icon: ShoppingCart },
   { id: 'stats', label: 'Stats', icon: BarChart3 },
   { id: 'finance', label: 'Finanzen', icon: CreditCard },
@@ -269,9 +311,9 @@ function createDashboardPlusSeed(): DashboardPlusState {
       projects: 3,
     },
     focusTodos: [
-      { id: 'focus-1', title: 'Creatine bestellen (Lager fast leer)', tag: 'DRINGEND', time: 'heute', done: false, priority: 'red' },
-      { id: 'focus-2', title: 'Morning Routine abschließen', tag: 'PERSONAL', time: '08:15', done: true, priority: 'orange' },
-      { id: 'focus-3', title: 'Landing Page copy finalisieren', tag: 'MONDAS', time: '14:00', done: false, priority: 'blue' },
+      { id: 'focus-1', title: 'Creatine bestellen (Lager fast leer)', tag: 'DRINGEND', time: 'heute', done: false, priority: 'p1' },
+      { id: 'focus-2', title: 'Morning Routine abschließen', tag: 'PERSONAL', time: '08:15', done: true, priority: 'p2' },
+      { id: 'focus-3', title: 'Landing Page copy finalisieren', tag: 'MONDAS', time: '14:00', done: false, priority: 'p3' },
     ],
     supplements: [
       { id: 'supp-1', name: 'Hüttenkäse', brand: '500g Becher', stock: 400, unit: 'g', dailyUse: 200, dailyUnit: 'g', color: '#0a84ff' },
@@ -280,16 +322,25 @@ function createDashboardPlusSeed(): DashboardPlusState {
       { id: 'supp-4', name: 'Omega-3', brand: 'Optimum · 180 Caps', stock: 63, unit: 'Caps', dailyUse: 2, dailyUnit: 'Caps', color: '#ff9f0a' },
       { id: 'supp-5', name: 'Vitamin D3 + K2', brand: 'Now Foods · 365 Caps', stock: 299, unit: 'Caps', dailyUse: 1, dailyUnit: 'Caps', color: '#5ac8fa' },
     ],
+    medications: [
+      { id: 'med-1', name: 'Magnesium Bisglycinate', dosage: '400 mg', time: '21:00', notes: 'Mit Abendessen', effect: 'Bessere Schlafqualität', sideEffects: '—', taken: false, color: 'var(--accent)' },
+      { id: 'med-2', name: 'Vitamin D3', dosage: '2000 IE', time: '08:00', notes: 'Zum Frühstück', effect: 'Stimmung, Immunsystem', sideEffects: '—', taken: true, color: 'var(--blue)' },
+    ],
+    goals: [
+      { id: 'goal-1', title: '80kg Zielgewicht erreichen', timeframe: 'Quartal', percent: 45, dueDate: '2026-09-30', color: 'var(--accent)' },
+      { id: 'goal-2', title: 'Mondas Relaunch abschließen', timeframe: 'Monat', percent: 70, dueDate: '2026-08-15', color: 'var(--blue)' },
+      { id: 'goal-3', title: '4x Training diese Woche', timeframe: 'Woche', percent: 50, dueDate: '2026-07-26', color: 'var(--sage)' },
+    ],
     boards: [
       {
         id: 'personal',
         label: 'Personal',
         count: 4,
         tasks: [
-          { id: 'personal-1', title: 'Morning Routine', tag: '', time: '08:15', done: true, priority: 'blue' },
-          { id: 'personal-2', title: 'Training absolviert', tag: '', time: '09:45', done: true, priority: 'orange' },
-          { id: 'personal-3', title: 'Creatine bestellen', tag: 'HEUTE', time: '', done: false, priority: 'red' },
-          { id: 'personal-4', title: 'Arzttermin vereinbaren', tag: 'DIESE WOCHE', time: '', done: false, priority: 'blue' },
+          { id: 'personal-1', title: 'Morning Routine', tag: '', time: '08:15', done: true, priority: 'p3' },
+          { id: 'personal-2', title: 'Training absolviert', tag: '', time: '09:45', done: true, priority: 'p2' },
+          { id: 'personal-3', title: 'Creatine bestellen', tag: 'HEUTE', time: '', done: false, priority: 'p1' },
+          { id: 'personal-4', title: 'Arzttermin vereinbaren', tag: 'DIESE WOCHE', time: '', done: false, priority: 'p3' },
         ],
       },
       {
@@ -297,10 +348,10 @@ function createDashboardPlusSeed(): DashboardPlusState {
         label: 'Mondas',
         count: 6,
         tasks: [
-          { id: 'mondas-1', title: 'Social Media Post geplant', tag: '', time: '10:30', done: true, priority: 'blue' },
-          { id: 'mondas-2', title: 'Landing Page copy finalisieren', tag: 'DEADLINE', time: '14:00', done: false, priority: 'red' },
-          { id: 'mondas-3', title: 'Speisekarte für Sommer aktualisieren', tag: 'DIESE WOCHE', time: '', done: false, priority: 'orange' },
-          { id: 'mondas-4', title: 'Dienstplan KW 24 erstellen', tag: '', time: '', done: false, priority: 'blue' },
+          { id: 'mondas-1', title: 'Social Media Post geplant', tag: '', time: '10:30', done: true, priority: 'p3' },
+          { id: 'mondas-2', title: 'Landing Page copy finalisieren', tag: 'DEADLINE', time: '14:00', done: false, priority: 'p1' },
+          { id: 'mondas-3', title: 'Speisekarte für Sommer aktualisieren', tag: 'DIESE WOCHE', time: '', done: false, priority: 'p2' },
+          { id: 'mondas-4', title: 'Dienstplan KW 24 erstellen', tag: '', time: '', done: false, priority: 'p3' },
         ],
       },
       {
@@ -308,9 +359,9 @@ function createDashboardPlusSeed(): DashboardPlusState {
         label: 'Health',
         count: 3,
         tasks: [
-          { id: 'health-1', title: 'Training — Brust/Trizeps', tag: '', time: '', done: true, priority: 'blue' },
-          { id: 'health-2', title: 'Creatine + Omega-3 nehmen', tag: 'TÄGLICH', time: '', done: false, priority: 'orange' },
-          { id: 'health-3', title: 'Protein-Ziel 180g erreichen', tag: '', time: '', done: false, priority: 'blue' },
+          { id: 'health-1', title: 'Training — Brust/Trizeps', tag: '', time: '', done: true, priority: 'p3' },
+          { id: 'health-2', title: 'Creatine + Omega-3 nehmen', tag: 'TÄGLICH', time: '', done: false, priority: 'p2' },
+          { id: 'health-3', title: 'Protein-Ziel 180g erreichen', tag: '', time: '', done: false, priority: 'p3' },
         ],
       },
       {
@@ -442,6 +493,36 @@ function addDays(key: string, amount: number): string {
   const date = fromDateKey(key)
   date.setDate(date.getDate() + amount)
   return dateKey(date)
+}
+
+function daysUntil(targetKey: string, todayKey: string): number {
+  const ms = fromDateKey(targetKey).getTime() - fromDateKey(todayKey).getTime()
+  return Math.round(ms / 86_400_000)
+}
+
+type QuickAddResult =
+  | { kind: 'weight'; value: number }
+  | { kind: 'calories'; value: number }
+  | { kind: 'water'; value: number }
+  | { kind: 'task'; title: string }
+
+/** Deliberately simple pattern matching, no NLP/AI — a handful of unit
+ * suffixes route straight into the matching daily metric, everything else
+ * becomes a new task. */
+function parseQuickAdd(raw: string): QuickAddResult {
+  const text = raw.trim()
+  const toNumber = (match: string) => Number(match.replace(',', '.'))
+
+  const weight = text.match(/(\d+(?:[.,]\d+)?)\s*kg\b/i)
+  if (weight) return { kind: 'weight', value: toNumber(weight[1]) }
+
+  const calories = text.match(/(\d+(?:[.,]\d+)?)\s*kcal\b/i)
+  if (calories) return { kind: 'calories', value: toNumber(calories[1]) }
+
+  const water = text.match(/(\d+(?:[.,]\d+)?)\s*(?:l|liter)\b/i)
+  if (water) return { kind: 'water', value: toNumber(water[1]) }
+
+  return { kind: 'task', title: text }
 }
 
 function formatLongDate(key: string): string {
@@ -583,6 +664,22 @@ function SectionTitle({
   )
 }
 
+function PriorityBadge({ priority, onCycle }: { priority: DashboardPlusPriority; onCycle: () => void }) {
+  const meta = PRIORITY_META[priority]
+  return (
+    <button
+      type="button"
+      className="priority-badge"
+      style={{ '--priority-color': meta.color } as CSSProperties}
+      onClick={onCycle}
+      aria-label={`Priorität ${meta.label} — klicken zum Ändern`}
+      title={`Priorität ${meta.label}`}
+    >
+      {meta.label}
+    </button>
+  )
+}
+
 function EmptyState({
   title,
   text,
@@ -612,6 +709,7 @@ function App() {
   const [dashboardPlus, setDashboardPlus] = useState<DashboardPlusState>(loadDashboardPlusState)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [taskEditor, setTaskEditor] = useState<{ index: number | null; value: string } | null>(null)
+  const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [focusSession, setFocusSession] = useState<FocusSession | null>(null)
   const [toast, setToast] = useState<ToastState>(null)
   const dashboardPlusRouteLock = useRef<string | null>(null)
@@ -755,6 +853,29 @@ function App() {
       showToast('Aufgabe aktualisiert.')
     }
     setTaskEditor(null)
+  }
+
+  const quickAddTask = (title: string) => {
+    saveTask(title, null)
+    setQuickAddOpen(false)
+  }
+
+  const quickAddWeight = (value: number) => {
+    updateEntry({ weightKg: value })
+    setQuickAddOpen(false)
+    showToast(`Gewicht gespeichert: ${value} kg`)
+  }
+
+  const quickAddCalories = (value: number) => {
+    updateEntry({ calories: value, caloriesReached: value >= settings.calorieGoal })
+    setQuickAddOpen(false)
+    showToast(`Kalorien gespeichert: ${value} kcal`)
+  }
+
+  const quickAddWater = (value: number) => {
+    updateEntry({ waterLiters: value })
+    setQuickAddOpen(false)
+    showToast(`Wasser gespeichert: ${value} L`)
   }
 
   const deleteTask = (index: number) => {
@@ -1010,6 +1131,12 @@ function App() {
             )
           })}
         </nav>
+
+        {view !== 'dashboardPlus' && (
+          <button type="button" className="fab" onClick={() => setQuickAddOpen(true)} aria-label="Schnell hinzufügen">
+            <Plus size={22} />
+          </button>
+        )}
       </div>
 
       {taskEditor && (
@@ -1018,6 +1145,16 @@ function App() {
           isEditing={taskEditor.index !== null}
           onClose={() => setTaskEditor(null)}
           onSave={value => saveTask(value, taskEditor.index)}
+        />
+      )}
+
+      {quickAddOpen && (
+        <QuickAddModal
+          onClose={() => setQuickAddOpen(false)}
+          onSubmitTask={quickAddTask}
+          onSubmitWeight={quickAddWeight}
+          onSubmitCalories={quickAddCalories}
+          onSubmitWater={quickAddWater}
         />
       )}
 
@@ -2078,7 +2215,7 @@ function DashboardPlusView({
   const addFocusTask = () => {
     onChange(current => ({
       ...current,
-      focusTodos: [...current.focusTodos, { id: crypto.randomUUID(), title: 'Neue Aufgabe', tag: '', time: '', done: false, priority: 'blue' }],
+      focusTodos: [...current.focusTodos, { id: crypto.randomUUID(), title: 'Neue Aufgabe', tag: '', time: '', done: false, priority: 'p3' }],
     }))
   }
 
@@ -2110,6 +2247,48 @@ function DashboardPlusView({
     }))
   }
 
+  const updateMedication = (index: number, patch: Partial<DashboardPlusMedication>) => {
+    onChange(current => ({
+      ...current,
+      medications: current.medications.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
+    }))
+  }
+
+  const addMedication = () => {
+    onChange(current => ({
+      ...current,
+      medications: [...current.medications, { id: crypto.randomUUID(), name: 'Neues Medikament', dosage: '', time: '', notes: '', effect: '', sideEffects: '', taken: false, color: 'var(--accent)' }],
+    }))
+  }
+
+  const removeMedication = (index: number) => {
+    onChange(current => ({
+      ...current,
+      medications: current.medications.filter((_, itemIndex) => itemIndex !== index),
+    }))
+  }
+
+  const updateGoal = (index: number, patch: Partial<DashboardPlusGoal>) => {
+    onChange(current => ({
+      ...current,
+      goals: current.goals.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
+    }))
+  }
+
+  const addGoal = () => {
+    onChange(current => ({
+      ...current,
+      goals: [...current.goals, { id: crypto.randomUUID(), title: 'Neues Ziel', timeframe: 'Monat', percent: 0, dueDate: today, color: 'var(--accent)' }],
+    }))
+  }
+
+  const removeGoal = (index: number) => {
+    onChange(current => ({
+      ...current,
+      goals: current.goals.filter((_, itemIndex) => itemIndex !== index),
+    }))
+  }
+
   const updateBoardTask = (boardId: string, taskIndex: number, patch: Partial<DashboardPlusTask>) => {
     onChange(current => ({
       ...current,
@@ -2126,7 +2305,7 @@ function DashboardPlusView({
       ...current,
       boards: current.boards.map(board => (
         board.id === boardId
-          ? { ...board, tasks: [...board.tasks, { id: crypto.randomUUID(), title: 'Neue Board-Aufgabe', tag: '', time: '', done: false, priority: 'blue' }] }
+          ? { ...board, tasks: [...board.tasks, { id: crypto.randomUUID(), title: 'Neue Board-Aufgabe', tag: '', time: '', done: false, priority: 'p3' }] }
           : board
       )),
     }))
@@ -2282,6 +2461,7 @@ function DashboardPlusView({
                   </div>
                 </div>
                 <div className="editable-task__actions">
+                  <PriorityBadge priority={task.priority} onCycle={() => updateFocusTask(index, { priority: nextPriority(task.priority) })} />
                   <button type="button" className="icon-button" onClick={() => removeFocusTask(index)} aria-label="Löschen">
                     <Trash2 size={15} />
                   </button>
@@ -2335,6 +2515,7 @@ function DashboardPlusView({
                       </div>
                     </div>
                     <div className="editable-task__actions">
+                      <PriorityBadge priority={task.priority} onCycle={() => updateBoardTask(activeBoard.id, index, { priority: nextPriority(task.priority) })} />
                       <button type="button" className="icon-button" onClick={() => removeBoardTask(activeBoard.id, index)} aria-label="Löschen">
                         <Trash2 size={15} />
                       </button>
@@ -2375,6 +2556,87 @@ function DashboardPlusView({
                 </button>
               </div>
             ))}
+          </div>
+        </section>
+      </div>
+      )}
+
+      {activeSection === 'medications' && (
+      <div className="dashboard-plus-grid">
+        <section className="card dashboard-plus-card dashboard-plus-card--wide">
+          <SectionTitle eyebrow="Gesundheit" title="Medikamente" action={<button type="button" className="small-button" onClick={addMedication}><Plus size={14} /> Medikament</button>} />
+          <div className="dashboard-plus-supplements">
+            {dashboard.medications.map((item, index) => (
+              <div className="supp-card dashboard-plus-supp-card" style={{ borderTopColor: item.color }} key={item.id}>
+                <div className="dashboard-plus-med-head">
+                  <input className="dashboard-plus-input dashboard-plus-input--title" value={item.name} onChange={event => updateMedication(index, { name: event.target.value })} />
+                  <button
+                    type="button"
+                    className={item.taken ? 'status-chip status-chip--good' : 'status-chip'}
+                    onClick={() => updateMedication(index, { taken: !item.taken })}
+                    aria-pressed={item.taken}
+                  >
+                    <span className="status-chip__dot" />{item.taken ? 'Genommen' : 'Ausstehend'}
+                  </button>
+                </div>
+                <div className="dashboard-plus-inline-row">
+                  <input className="dashboard-plus-input" value={item.dosage} onChange={event => updateMedication(index, { dosage: event.target.value })} placeholder="Dosierung" aria-label="Dosierung" />
+                  <input className="dashboard-plus-input" value={item.time} onChange={event => updateMedication(index, { time: event.target.value })} placeholder="Uhrzeit" aria-label="Uhrzeit" />
+                </div>
+                <input className="dashboard-plus-input" value={item.notes} onChange={event => updateMedication(index, { notes: event.target.value })} placeholder="Notizen" aria-label="Notizen" />
+                <input className="dashboard-plus-input" value={item.effect} onChange={event => updateMedication(index, { effect: event.target.value })} placeholder="Wirkung" aria-label="Wirkung" />
+                <input className="dashboard-plus-input" value={item.sideEffects} onChange={event => updateMedication(index, { sideEffects: event.target.value })} placeholder="Nebenwirkungen" aria-label="Nebenwirkungen" />
+                <button type="button" className="secondary-button secondary-button--full" onClick={() => removeMedication(index)}>
+                  <Trash2 size={15} /> Entfernen
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+      )}
+
+      {activeSection === 'goals' && (
+      <div className="dashboard-plus-grid">
+        <section className="card dashboard-plus-card dashboard-plus-card--wide">
+          <SectionTitle eyebrow="Planung" title="Ziele" action={<button type="button" className="small-button" onClick={addGoal}><Plus size={14} /> Ziel</button>} />
+          <div className="dashboard-plus-supplements">
+            {dashboard.goals.map((goal, index) => {
+              const eta = daysUntil(goal.dueDate, today)
+              const etaLabel = eta > 0
+                ? `Noch ${eta} ${plural(eta, 'Tag', 'Tage')}`
+                : eta === 0
+                  ? 'Heute fällig'
+                  : `${Math.abs(eta)} ${plural(Math.abs(eta), 'Tag', 'Tage')} überfällig`
+              return (
+                <div className="supp-card dashboard-plus-supp-card" style={{ borderTopColor: goal.color }} key={goal.id}>
+                  <div className="dashboard-plus-goal-head">
+                    <input className="dashboard-plus-input dashboard-plus-input--title" value={goal.title} onChange={event => updateGoal(index, { title: event.target.value })} aria-label="Ziel" />
+                    <button
+                      type="button"
+                      className="dashboard-plus-goal-timeframe"
+                      onClick={() => {
+                        const order: DashboardPlusGoalTimeframe[] = ['Woche', 'Monat', 'Quartal', 'Jahr']
+                        updateGoal(index, { timeframe: order[(order.indexOf(goal.timeframe) + 1) % order.length] })
+                      }}
+                    >
+                      {goal.timeframe}
+                    </button>
+                  </div>
+                  <div className="dashboard-plus-inline-row">
+                    <input className="dashboard-plus-input" type="number" min="0" max="100" value={goal.percent} onChange={event => updateGoal(index, { percent: clampNumber(Number(event.target.value) || 0, 0, 100) })} aria-label="Prozent" />
+                    <input className="dashboard-plus-input" type="date" value={goal.dueDate} onChange={event => updateGoal(index, { dueDate: event.target.value })} aria-label="Fällig am" />
+                  </div>
+                  <div className="mini-progress" aria-hidden="true">
+                    <span style={{ width: `${goal.percent}%` }} />
+                  </div>
+                  <div className="dashboard-plus-goal-eta">{etaLabel} · {goal.percent}%</div>
+                  <button type="button" className="secondary-button secondary-button--full" onClick={() => removeGoal(index)}>
+                    <Trash2 size={15} /> Entfernen
+                  </button>
+                </div>
+              )
+            })}
           </div>
         </section>
       </div>
@@ -2631,6 +2893,63 @@ function TaskEditor({
         <div className="modal-actions">
           <button type="button" className="secondary-button" onClick={onClose}>Abbrechen</button>
           <button type="submit" className="primary-button" disabled={!value.trim()}><Check size={17} /> Speichern</button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+function QuickAddModal({
+  onClose,
+  onSubmitTask,
+  onSubmitWeight,
+  onSubmitCalories,
+  onSubmitWater,
+}: {
+  onClose: () => void
+  onSubmitTask: (title: string) => void
+  onSubmitWeight: (value: number) => void
+  onSubmitCalories: (value: number) => void
+  onSubmitWater: (value: number) => void
+}) {
+  const [value, setValue] = useState('')
+  useModalBehavior(onClose)
+
+  const parsed = parseQuickAdd(value)
+  const preview = value.trim() === ''
+    ? 'Erkennt automatisch: „74.2kg“ → Gewicht, „3000kcal“ → Kalorien, „2.5l“ → Wasser — sonst wird eine Aufgabe daraus.'
+    : parsed.kind === 'weight' ? `→ Gewicht: ${parsed.value} kg`
+      : parsed.kind === 'calories' ? `→ Kalorien: ${parsed.value} kcal`
+        : parsed.kind === 'water' ? `→ Wasser: ${parsed.value} L`
+          : `→ Neue Aufgabe: „${parsed.title}“`
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    if (!value.trim()) return
+    if (parsed.kind === 'weight') onSubmitWeight(parsed.value)
+    else if (parsed.kind === 'calories') onSubmitCalories(parsed.value)
+    else if (parsed.kind === 'water') onSubmitWater(parsed.value)
+    else onSubmitTask(parsed.title)
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}>
+      <form className="modal modal--small" onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="quick-add-title">
+        <div className="modal-header">
+          <div>
+            <span className="eyebrow">Quick Add</span>
+            <h2 id="quick-add-title">Was gibt's?</h2>
+          </div>
+          <IconButton label="Schließen" onClick={onClose}><X size={18} /></IconButton>
+        </div>
+        <label className="text-field">
+          <span>Eintrag</span>
+          <input autoFocus value={value} onChange={event => setValue(event.target.value)} maxLength={120} placeholder="z. B. „74.2kg“ oder „Zahnarzt anrufen“" />
+        </label>
+        <p className="field-hint">{preview}</p>
+        <div className="modal-actions">
+          <button type="button" className="secondary-button" onClick={onClose}>Abbrechen</button>
+          <button type="submit" className="primary-button" disabled={!value.trim()}><Check size={17} /> Hinzufügen</button>
         </div>
       </form>
     </div>

@@ -30,26 +30,29 @@ Aufwand — wir arbeiten sie nacheinander ab und haken hier ab, was fertig ist.
 
 **Aufwand: S · kein neuer Code, nur bestehende Logik verbinden. Kein Risiko.**
 
-- [ ] Echtes XP/Level aus `xp-store.ts` anzeigen (Level, Fortschrittsbalken zum
+- [x] Echtes XP/Level aus `xp-store.ts` anzeigen (Level, Fortschrittsbalken zum
       nächsten Level, Gesamt-XP)
-- [ ] Score-Breakdown (Morgen/Training/Mindset/Abend) im Verlauf sichtbar machen
-- [ ] Echte Streaks & Erfolgsquote pro Gewohnheit statt der bisherigen
+- [x] Score-Breakdown (Morgen/Training/Mindset/Abend) im Verlauf sichtbar machen
+- [x] Echte Streaks & Erfolgsquote pro Gewohnheit statt der bisherigen
       Wochen-Zählung per Hand
-- [ ] Die zwei parallelen Level-Systeme vereinheitlichen (ein Source of Truth:
+- [x] Die zwei parallelen Level-Systeme vereinheitlichen (ein Source of Truth:
       `xp-store.ts`, `LVLS`-Namen als Anzeige-Layer obendrauf)
 
 ## Phase 2 — Fundament: neue Datentypen mit echtem Alltagswert
 
 **Aufwand: M · pro Feature ca. 2–4 Std.**
 
-- [ ] Medikamente als eigener Typ (Dosierung, Einnahme, Erinnerung, Wirkung) —
-      aktuell 0 % vorhanden
-- [ ] Ziele (Jahr/Quartal/Monat/Woche mit Prozent & Milestones) — komplett neu
-- [ ] Prioritäten P1–P4 für Aufgaben (Feld existiert in Dashboard+ schon, nur
-      nicht editierbar)
-- [ ] Universeller Quick-Add mit einfachem Pattern-Matching (Zahl+„kg“ →
-      Gewicht, „HH:MM“ → Zeit) — bewusst ohne KI
-- [ ] Floating Action Button für Aufgabe/Notiz/Gewicht
+- [x] Medikamente als eigener Typ (Dosierung, Einnahme, Erinnerung, Wirkung) —
+      neuer Dashboard+ Reiter „Medis“
+- [x] Ziele (Jahr/Quartal/Monat/Woche mit Prozent & Countdown/ETA) — neuer
+      Dashboard+ Reiter „Ziele“
+- [x] Prioritäten P1–P4 für Aufgaben (klickbares Badge, zyklisch, auf allen
+      Dashboard+ Task-Listen)
+- [x] Floating Action Button (unten rechts, ausgeblendet auf Dashboard+, das
+      bereits eigene Add-Buttons je Reiter hat)
+- [x] Universeller Quick-Add mit einfachem Pattern-Matching („74.2kg“ →
+      Gewicht, „3000kcal“ → Kalorien, „2.5l“ → Wasser, sonst → neue Aufgabe) —
+      bewusst ohne KI, ein Eingabefeld hinter dem FAB
 
 ## Phase 3 — Health-Tracking vertiefen
 

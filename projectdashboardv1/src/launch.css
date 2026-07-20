@@ -1178,6 +1178,29 @@ button:disabled {
   background: transparent;
 }
 
+.priority-badge {
+  display: inline-flex;
+  width: 30px;
+  min-width: 30px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--priority-color) 45%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--priority-color) 12%, transparent);
+  color: var(--priority-color);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  touch-action: manipulation;
+  transition: transform 150ms ease;
+}
+
+.priority-badge:active {
+  transform: scale(0.94);
+}
+
 .settings-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1515,6 +1538,20 @@ button:disabled {
   background: currentColor;
 }
 
+button.status-chip {
+  border: none;
+  background: color-mix(in srgb, var(--text-muted) 16%, transparent);
+  color: var(--text-muted);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+button.status-chip.status-chip--good {
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+  color: var(--success);
+}
+
 .status-chip--good {
   background: color-mix(in srgb, var(--success) 16%, transparent);
   color: var(--success);
@@ -1736,7 +1773,7 @@ button:disabled {
 
 .dashboard-plus-tabbar {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -1920,6 +1957,51 @@ button:disabled {
   padding: 14px;
   border-top-width: 2px;
   border-top-style: solid;
+}
+
+.dashboard-plus-med-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboard-plus-med-head .dashboard-plus-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.dashboard-plus-med-head .status-chip {
+  flex-shrink: 0;
+}
+
+.dashboard-plus-goal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.dashboard-plus-goal-timeframe {
+  flex-shrink: 0;
+  padding: 3px 9px;
+  border: none;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--text-muted);
+  cursor: pointer;
+  touch-action: manipulation;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.dashboard-plus-goal-eta {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
 }
 
 .dashboard-plus-tabs {
@@ -2355,6 +2437,43 @@ button:disabled {
   box-shadow: 0 16px 36px rgba(45, 39, 41, 0.22);
 }
 
+.fab {
+  position: fixed;
+  right: 24px;
+  bottom: 28px;
+  z-index: 120;
+  display: grid;
+  width: 56px;
+  height: 56px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--text);
+  color: var(--surface-solid);
+  cursor: pointer;
+  touch-action: manipulation;
+  box-shadow: 0 14px 32px rgba(35, 40, 37, 0.22);
+  transition: transform 150ms ease;
+}
+
+:root[data-theme='dark'] .fab {
+  background: #f1f0ec;
+  color: #1a1e1b;
+}
+
+.fab:active {
+  transform: scale(0.94);
+}
+
+@media (max-width: 860px) {
+  .fab {
+    right: 18px;
+    bottom: calc(max(10px, env(safe-area-inset-bottom)) + 78px);
+    width: 52px;
+    height: 52px;
+  }
+}
+
 .toast {
   position: fixed;
   right: 22px;
@@ -2507,7 +2626,7 @@ button:disabled {
      a plain task label, so the app-wide 2-row stack above leaves a large
      empty gap before the delete button. Keep them as a single aligned row. */
   .dashboard-plus-view .editable-task {
-    grid-template-columns: 36px minmax(0, 1fr) 40px;
+    grid-template-columns: 36px minmax(0, 1fr) 76px;
     align-items: start;
   }
   .dashboard-plus-view .editable-task .task-check {
@@ -2570,6 +2689,7 @@ button:disabled {
   .shop-icon svg { width: 15px; height: 15px; }
   .week-bar-wrap { grid-template-rows: auto 90px auto; }
   .heatmap-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .dashboard-plus-tabbar { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
