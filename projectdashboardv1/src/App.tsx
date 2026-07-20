@@ -1316,74 +1316,147 @@ function CheckinView({
 
         <section className="card checkin-card">
           <SectionTitle eyebrow="Erholung" title="Schlaf" />
-          <label className="select-field">
-            <span>Qualität</span>
-            <select value={entry.sleepQuality} onChange={event => onUpdate({ sleepQuality: event.target.value })}>
-              <option value="">Nicht eingetragen</option>
-              {SLEEP_QUALITY.map(option => <option key={option} value={option}>{option}</option>)}
-            </select>
-          </label>
-          <label className="select-field">
-            <span>Dauer</span>
-            <select value={entry.sleepDuration} onChange={event => onUpdate({ sleepDuration: event.target.value })}>
-              <option value="">Nicht eingetragen</option>
-              {SLEEP_DURATION.map(option => <option key={option} value={option}>{option}</option>)}
-            </select>
-          </label>
-          <NumberField
-            label="Meditation"
-            value={entry.meditationMinutes}
-            unit="Min."
-            step={5}
-            max={180}
-            onChange={meditationMinutes => onUpdate({ meditationMinutes })}
-          />
+
+          {/* Sleep quality */}
+          <p className="field-hint" style={{ marginBottom: 8 }}>Qualität</p>
+          <div className="choice-grid" style={{ marginBottom: 16 }}>
+            {SLEEP_QUALITY.map(opt => (
+              <button
+                type="button"
+                key={opt}
+                className={entry.sleepQuality === opt ? 'choice-button is-active' : 'choice-button'}
+                onClick={() => onUpdate({ sleepQuality: entry.sleepQuality === opt ? '' : opt })}
+                aria-pressed={entry.sleepQuality === opt}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+
+          {/* Sleep duration */}
+          <p className="field-hint" style={{ marginBottom: 8 }}>Dauer</p>
+          <div className="choice-grid" style={{ marginBottom: 16 }}>
+            {SLEEP_DURATION.map(opt => (
+              <button
+                type="button"
+                key={opt}
+                className={entry.sleepDuration === opt ? 'choice-button is-active' : 'choice-button'}
+                onClick={() => onUpdate({ sleepDuration: entry.sleepDuration === opt ? '' : opt })}
+                aria-pressed={entry.sleepDuration === opt}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+
+          {/* Dreamed */}
+          <p className="field-hint" style={{ marginBottom: 8 }}>Geträumt?</p>
+          <div className="choice-grid" style={{ marginBottom: entry.dreamed ? 12 : 0 }}>
+            {(['Ja', 'Nein'] as const).map(opt => {
+              const active = opt === 'Ja' ? entry.dreamed === true : entry.dreamed === false
+              return (
+                <button
+                  type="button"
+                  key={opt}
+                  className={active ? 'choice-button is-active' : 'choice-button'}
+                  onClick={() => onUpdate({
+                    dreamed: opt === 'Ja',
+                    dreamQuality: opt === 'Nein' ? undefined : entry.dreamQuality,
+                  })}
+                  aria-pressed={active}
+                >
+                  {opt}
+                </button>
+              )
+            })}
+          </div>
+          {entry.dreamed === true && (
+            <div className="choice-grid">
+              {(['Gut', 'Schlecht'] as const).map(opt => {
+                const val = opt.toLowerCase() as 'gut' | 'schlecht'
+                return (
+                  <button
+                    type="button"
+                    key={opt}
+                    className={entry.dreamQuality === val ? 'choice-button is-active' : 'choice-button'}
+                    onClick={() => onUpdate({ dreamQuality: entry.dreamQuality === val ? undefined : val })}
+                    aria-pressed={entry.dreamQuality === val}
+                  >
+                    {opt}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </section>
 
         <section className="card checkin-card checkin-card--wide">
-          <SectionTitle eyebrow="Ernährung" title="Körper versorgen" />
-          <div className="form-grid">
-            <NumberField
-              label={`Protein · Ziel ${settings.proteinGoal} g`}
-              value={entry.proteinGrams}
-              unit="g"
-              step={5}
-              max={500}
-              onChange={proteinGrams => onUpdate({
-                proteinGrams,
-                proteinReached: proteinGrams >= settings.proteinGoal,
-              })}
-            />
-            <NumberField
-              label={`Kalorien · Ziel ${settings.calorieGoal.toLocaleString('de-DE')}`}
-              value={entry.calories}
-              unit="kcal"
-              step={50}
-              max={10000}
-              onChange={calories => onUpdate({
-                calories,
-                caloriesReached: calories >= settings.calorieGoal,
-              })}
-            />
-            <NumberField
-              label="Gewicht"
-              value={entry.weightKg}
-              unit="kg"
-              step={0.1}
-              min={35}
-              max={200}
-              placeholder="65.0"
-              onChange={weightKg => onUpdate({ weightKg })}
-            />
-            <NumberField
-              label="Deep Work"
-              value={entry.deepWorkHours}
-              unit="Std."
-              step={0.25}
-              max={16}
-              onChange={deepWorkHours => onUpdate({ deepWorkHours })}
-            />
-          </div>
+          {(() => {
+            const isMorning = date === today && new Date().getHours() < 12
+            return (
+              <>
+                <SectionTitle
+                  eyebrow="Ernährung"
+                  title={isMorning ? 'Morgen-Protokoll' : 'Körper versorgen'}
+                />
+                {isMorning ? (
+                  <NumberField
+                    label="Gewicht"
+                    value={entry.weightKg}
+                    unit="kg"
+                    step={0.1}
+                    min={35}
+                    max={200}
+                    placeholder="65.0"
+                    onChange={weightKg => onUpdate({ weightKg })}
+                  />
+                ) : (
+                  <div className="form-grid">
+                    <NumberField
+                      label={`Protein · Ziel ${settings.proteinGoal} g`}
+                      value={entry.proteinGrams}
+                      unit="g"
+                      step={5}
+                      max={500}
+                      onChange={proteinGrams => onUpdate({
+                        proteinGrams,
+                        proteinReached: proteinGrams >= settings.proteinGoal,
+                      })}
+                    />
+                    <NumberField
+                      label={`Kalorien · Ziel ${settings.calorieGoal.toLocaleString('de-DE')}`}
+                      value={entry.calories}
+                      unit="kcal"
+                      step={50}
+                      max={10000}
+                      onChange={calories => onUpdate({
+                        calories,
+                        caloriesReached: calories >= settings.calorieGoal,
+                      })}
+                    />
+                    <NumberField
+                      label="Gewicht"
+                      value={entry.weightKg}
+                      unit="kg"
+                      step={0.1}
+                      min={35}
+                      max={200}
+                      placeholder="65.0"
+                      onChange={weightKg => onUpdate({ weightKg })}
+                    />
+                    <NumberField
+                      label="Deep Work"
+                      value={entry.deepWorkHours}
+                      unit="Std."
+                      step={0.25}
+                      max={16}
+                      onChange={deepWorkHours => onUpdate({ deepWorkHours })}
+                    />
+                  </div>
+                )}
+              </>
+            )
+          })()}
         </section>
 
         <section className="card checkin-card checkin-card--wide">

@@ -47,10 +47,14 @@ export interface DashboardEntry {
   dailyScore: number
 
   // ADHD-optimised fields
-  energyLevel?:  'low' | 'okay' | 'high'
+  energyLevel?:   'low' | 'okay' | 'high'
   breathingDone?: boolean
-  anchors?:       string[]
-  anchorsDone?:   boolean[]
+  anchors?:        string[]
+  anchorsDone?:    boolean[]
+
+  // Sleep detail
+  dreamed?:       boolean
+  dreamQuality?:  'gut' | 'schlecht'
 }
 
 export const createDefaultEntry = (date: string): DashboardEntry => ({
