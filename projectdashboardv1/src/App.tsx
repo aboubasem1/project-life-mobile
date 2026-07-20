@@ -24,21 +24,29 @@ import {
   Circle,
   Cloud,
   Coffee,
+  CreditCard,
   Crown,
+  Droplet,
   Dumbbell,
+  FlaskConical,
   Focus,
   GripVertical,
   Heart,
   Home,
+  LayoutGrid,
   Leaf,
   ListTodo,
   Moon,
+  Package,
   Pause,
   Pencil,
+  Pill,
   Play,
   Plus,
+  Receipt,
   RotateCcw,
   Settings,
+  ShoppingCart,
   Snowflake,
   Sparkles,
   Sun,
@@ -114,13 +122,22 @@ type DashboardPlusBoard = {
   tasks: DashboardPlusTask[]
 }
 
+type DashboardPlusShoppingIcon = 'flask' | 'droplet' | 'pill'
+
 type DashboardPlusShoppingItem = {
   id: string
-  icon: string
+  icon: DashboardPlusShoppingIcon
   name: string
   note: string
   price: number
   done: boolean
+  lowStock?: boolean
+}
+
+const SHOPPING_ICONS: Record<DashboardPlusShoppingIcon, { icon: typeof FlaskConical; tint: string; ink: string }> = {
+  flask: { icon: FlaskConical, tint: 'var(--accent-soft)', ink: 'var(--accent-strong)' },
+  droplet: { icon: Droplet, tint: 'color-mix(in srgb, var(--blue) 16%, transparent)', ink: 'var(--blue)' },
+  pill: { icon: Pill, tint: 'var(--sage-soft)', ink: 'var(--sage)' },
 }
 
 type DashboardPlusBill = {
@@ -168,6 +185,17 @@ type DashboardPlusState = {
   }
 }
 
+const DASHBOARD_PLUS_TABS = [
+  { id: 'overview', label: 'Übersicht', icon: LayoutGrid },
+  { id: 'todos', label: 'Todos', icon: ListTodo },
+  { id: 'stock', label: 'Bestände', icon: Package },
+  { id: 'shopping', label: 'Kaufliste', icon: ShoppingCart },
+  { id: 'stats', label: 'Stats', icon: BarChart3 },
+  { id: 'finance', label: 'Finanzen', icon: CreditCard },
+] as const
+
+type DashboardPlusSection = (typeof DASHBOARD_PLUS_TABS)[number]['id']
+
 const SETTINGS_KEY = 'life-os-v1-settings'
 const DASHBOARD_PLUS_KEY = 'life-os-v1-dashboard-plus'
 
@@ -193,7 +221,7 @@ const DEF_TASKS = [
   'Abend-Check-in · Reflektion',
 ] as const
 
-const LVLS = ['Rookie', 'Starter', 'Focused', 'Grinder', 'Achiever', 'Warrior', 'Elite', 'Legend', 'Master', 'Godmode'] as const
+const LVLS = ['Einstieg', 'Aufbau', 'Übung', 'Rhythmus', 'Konstanz', 'Gefestigt', 'Vertieft', 'Verankert', 'Meisterschaft', 'Souverän'] as const
 const XPT  = [0, 500, 1100, 1900, 3000, 4400, 6200, 8600, 11600, 15600] as const
 
 type HabitDef = {
@@ -298,9 +326,9 @@ function createDashboardPlusSeed(): DashboardPlusState {
     shopping: {
       total: 89.90,
       items: [
-        { id: 'shop-1', icon: '🧪', name: 'Creatine Monohydrate 1kg', note: 'BulkPowders · Bestand kritisch ⚠️', price: 24.99, done: false },
-        { id: 'shop-2', icon: '🐟', name: 'Omega-3 Nachfüllpack', note: 'Optimum · 300 Caps', price: 34.90, done: false },
-        { id: 'shop-3', icon: '💊', name: 'Magnesium Bisglycinate', note: 'Bioptimizers · 240 Caps', price: 34.00, done: false },
+        { id: 'shop-1', icon: 'flask', name: 'Creatine Monohydrate 1kg', note: 'BulkPowders', price: 24.99, done: false, lowStock: true },
+        { id: 'shop-2', icon: 'droplet', name: 'Omega-3 Nachfüllpack', note: 'Optimum · 300 Caps', price: 34.90, done: false },
+        { id: 'shop-3', icon: 'pill', name: 'Magnesium Bisglycinate', note: 'Bioptimizers · 240 Caps', price: 34.00, done: false },
       ],
     },
     stats: {
@@ -332,7 +360,7 @@ function createDashboardPlusSeed(): DashboardPlusState {
         { id: 'bill-tax', name: 'Steuerberater', subtitle: 'Fällig: 15.05.2026', amount: 89, due: '16 Tage überfällig', status: 'overdue', color: 'var(--red)' },
         { id: 'bill-design', name: 'Lieferant Design-Assets', subtitle: 'Fällig: 05.06.2026', amount: 149, due: 'in 5 Tagen', status: 'open', color: 'var(--orange)' },
         { id: 'bill-figma', name: 'Software-Lizenz Figma', subtitle: 'Fällig: 15.06.2026', amount: 102, due: 'in 15 Tagen', status: 'open', color: 'var(--orange)' },
-        { id: 'bill-vercel', name: 'Hosting · Vercel Pro', subtitle: 'Bezahlt am 01.05.2026', amount: 20, due: '✓ erledigt', status: 'paid', color: 'var(--green)' },
+        { id: 'bill-vercel', name: 'Hosting · Vercel Pro', subtitle: 'Bezahlt am 01.05.2026', amount: 20, due: 'Bezahlt', status: 'paid', color: 'var(--green)' },
       ],
     },
   }
@@ -497,15 +525,17 @@ function BadgeButton({
   label,
   children,
   onClick,
+  className = '',
 }: {
   label: string
   children: ReactNode
   onClick: () => void
+  className?: string
 }) {
   return (
     <button
       type="button"
-      className="badge-button"
+      className={`badge-button ${className}`.trim()}
       aria-label={label}
       title={label}
       onClick={onClick}
@@ -868,9 +898,8 @@ function App() {
             <strong>Life OS</strong>
           </div>
           <div className="mobile-header__actions">
-            <BadgeButton label="Dashboard+ öffnen" onClick={() => navigateTo('dashboardPlus')}>
+            <BadgeButton label="Dashboard+ öffnen" onClick={() => navigateTo('dashboardPlus')} className="badge-button--icon">
               <Crown size={16} />
-              <span>Dashboard+</span>
             </BadgeButton>
             <IconButton label="Theme wechseln" onClick={quickToggleTheme}>
               {resolvedTheme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
@@ -892,9 +921,8 @@ function App() {
                 <Cloud size={14} />
                 {isOnline ? (syncStatus === 'syncing' ? 'Speichert …' : 'Bereit') : 'Offline'}
               </span>
-              <BadgeButton label="Dashboard+ öffnen" onClick={() => navigateTo('dashboardPlus')}>
+              <BadgeButton label="Dashboard+ öffnen" onClick={() => navigateTo('dashboardPlus')} className="badge-button--icon">
                 <Crown size={16} />
-                <span>Dashboard+</span>
               </BadgeButton>
               <IconButton label="Einstellungen öffnen" onClick={() => setSettingsOpen(true)}>
                 <Settings size={18} />
@@ -1984,6 +2012,7 @@ function DashboardPlusView({
   onBackToToday: () => void
   today: string
 }) {
+  const [activeSection, setActiveSection] = useState<DashboardPlusSection>('overview')
   const [activeBoardId, setActiveBoardId] = useState(dashboard.boards[0]?.id ?? 'personal')
 
   useEffect(() => {
@@ -2123,33 +2152,52 @@ function DashboardPlusView({
         </div>
       </section>
 
-      <section className="card dashboard-plus-hero">
-        <div className="dashboard-plus-hero__meta">
-          <div>
-            <span className="eyebrow">{dashboard.overview.dateLabel}</span>
-            <h2>Preview</h2>
-          </div>
-          <ProgressRing value={dashboard.overview.score} size={86} />
-        </div>
-        <div className="dashboard-plus-hero__stats">
-          <label className="kpi-card dashboard-plus-metric">
-            <span>Habits</span>
-            <input type="number" min="0" value={dashboard.overview.habits} onChange={event => updateOverview({ habits: Number(event.target.value) || 0 })} />
-            <small>aktiv</small>
-          </label>
-          <label className="kpi-card dashboard-plus-metric">
-            <span>Todos</span>
-            <input type="number" min="0" value={dashboard.overview.todos} onChange={event => updateOverview({ todos: Number(event.target.value) || 0 })} />
-            <small>heute</small>
-          </label>
-          <label className="kpi-card dashboard-plus-metric">
-            <span>Projekte</span>
-            <input type="number" min="0" value={dashboard.overview.projects} onChange={event => updateOverview({ projects: Number(event.target.value) || 0 })} />
-            <small>Boards</small>
-          </label>
-        </div>
-      </section>
+      <nav className="dashboard-plus-tabbar" role="tablist" aria-label="Dashboard+ Bereiche">
+        {DASHBOARD_PLUS_TABS.map(tab => (
+          <button
+            type="button"
+            key={tab.id}
+            role="tab"
+            aria-selected={activeSection === tab.id}
+            className={activeSection === tab.id ? 'dashboard-plus-tab active' : 'dashboard-plus-tab'}
+            onClick={() => setActiveSection(tab.id)}
+          >
+            <tab.icon size={18} />
+            <span>{tab.label}</span>
+          </button>
+        ))}
+      </nav>
 
+      {activeSection === 'overview' && (
+        <section className="card dashboard-plus-hero">
+          <div className="dashboard-plus-hero__meta">
+            <div>
+              <span className="eyebrow">{dashboard.overview.dateLabel}</span>
+              <h2>Preview</h2>
+            </div>
+            <ProgressRing value={dashboard.overview.score} size={86} />
+          </div>
+          <div className="dashboard-plus-hero__stats">
+            <label className="kpi-card dashboard-plus-metric">
+              <span>Habits</span>
+              <input type="number" min="0" value={dashboard.overview.habits} onChange={event => updateOverview({ habits: Number(event.target.value) || 0 })} />
+              <small>aktiv</small>
+            </label>
+            <label className="kpi-card dashboard-plus-metric">
+              <span>Todos</span>
+              <input type="number" min="0" value={dashboard.overview.todos} onChange={event => updateOverview({ todos: Number(event.target.value) || 0 })} />
+              <small>heute</small>
+            </label>
+            <label className="kpi-card dashboard-plus-metric">
+              <span>Projekte</span>
+              <input type="number" min="0" value={dashboard.overview.projects} onChange={event => updateOverview({ projects: Number(event.target.value) || 0 })} />
+              <small>Boards</small>
+            </label>
+          </div>
+        </section>
+      )}
+
+      {activeSection === 'todos' && (
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle
@@ -2202,30 +2250,6 @@ function DashboardPlusView({
           </div>
         </section>
 
-        <section className="card dashboard-plus-card">
-          <SectionTitle eyebrow="Supplements" title="Bestände" action={<button type="button" className="small-button" onClick={addSupplement}><Plus size={14} /> Produkt</button>} />
-          <div className="dashboard-plus-supplements">
-            {dashboard.supplements.map((item, index) => (
-              <div className="supp-card dashboard-plus-supp-card" style={{ borderTopColor: item.color }} key={item.id}>
-                <input className="dashboard-plus-input dashboard-plus-input--title" value={item.name} onChange={event => updateSupplement(index, { name: event.target.value })} />
-                <input className="dashboard-plus-input" value={item.brand} onChange={event => updateSupplement(index, { brand: event.target.value })} placeholder="Marke / Info" />
-                <div className="dashboard-plus-inline-row">
-                  <input className="dashboard-plus-input" type="number" min="0" value={item.stock} onChange={event => updateSupplement(index, { stock: Number(event.target.value) || 0 })} />
-                  <input className="dashboard-plus-input" value={item.unit} onChange={event => updateSupplement(index, { unit: event.target.value })} />
-                </div>
-                <div className="dashboard-plus-inline-row">
-                  <input className="dashboard-plus-input" type="number" min="0" value={item.dailyUse} onChange={event => updateSupplement(index, { dailyUse: Number(event.target.value) || 0 })} />
-                  <input className="dashboard-plus-input" value={item.dailyUnit} onChange={event => updateSupplement(index, { dailyUnit: event.target.value })} />
-                </div>
-                <input className="dashboard-plus-input dashboard-plus-input--color" value={item.color} onChange={event => updateSupplement(index, { color: event.target.value })} />
-                <button type="button" className="secondary-button secondary-button--full" onClick={() => removeSupplement(index)}>
-                  <Trash2 size={15} /> Entfernen
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
-
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Projekte" title="Boards" />
           <div className="project-tabs dashboard-plus-tabs">
@@ -2240,14 +2264,21 @@ function DashboardPlusView({
               </button>
             ))}
           </div>
-          {activeBoard && (
+          {activeBoard && (() => {
+            const doneCount = activeBoard.tasks.filter(task => task.done).length
+            const totalCount = activeBoard.tasks.length
+            const percent = totalCount ? Math.round((doneCount / totalCount) * 100) : 0
+            return (
             <>
               <div className="progress-ring-wrap dashboard-plus-board-summary">
                 <div>
                   <div className="prog-label">Heute erledigt</div>
-                  <div className="prog-sub">{activeBoard.tasks.filter(task => task.done).length} von {activeBoard.tasks.length} Aufgaben</div>
+                  <div className="prog-sub">{doneCount} von {totalCount} Aufgaben</div>
+                  {percent >= 80 && totalCount > 0 && (
+                    <span className="status-chip status-chip--good"><span className="status-chip__dot" />Fast geschafft</span>
+                  )}
                 </div>
-                <div className="prog-num">{activeBoard.tasks.length ? Math.round((activeBoard.tasks.filter(task => task.done).length / activeBoard.tasks.length) * 100) : 0}%</div>
+                <div className="prog-num">{percent}%</div>
               </div>
               <div className="editable-task-list">
                 {activeBoard.tasks.map((task, index) => (
@@ -2274,18 +2305,58 @@ function DashboardPlusView({
                 <Plus size={15} /> Aufgabe hinzufügen
               </button>
             </>
-          )}
+            )
+          })()}
         </section>
+      </div>
+      )}
 
-        <section className="card dashboard-plus-card">
+      {activeSection === 'stock' && (
+      <div className="dashboard-plus-grid">
+        <section className="card dashboard-plus-card dashboard-plus-card--wide">
+          <SectionTitle eyebrow="Supplements" title="Bestände" action={<button type="button" className="small-button" onClick={addSupplement}><Plus size={14} /> Produkt</button>} />
+          <div className="dashboard-plus-supplements">
+            {dashboard.supplements.map((item, index) => (
+              <div className="supp-card dashboard-plus-supp-card" style={{ borderTopColor: item.color }} key={item.id}>
+                <input className="dashboard-plus-input dashboard-plus-input--title" value={item.name} onChange={event => updateSupplement(index, { name: event.target.value })} />
+                <input className="dashboard-plus-input" value={item.brand} onChange={event => updateSupplement(index, { brand: event.target.value })} placeholder="Marke / Info" />
+                <div className="dashboard-plus-inline-row">
+                  <input className="dashboard-plus-input" type="number" min="0" value={item.stock} onChange={event => updateSupplement(index, { stock: Number(event.target.value) || 0 })} />
+                  <input className="dashboard-plus-input" value={item.unit} onChange={event => updateSupplement(index, { unit: event.target.value })} />
+                </div>
+                <div className="dashboard-plus-inline-row">
+                  <input className="dashboard-plus-input" type="number" min="0" value={item.dailyUse} onChange={event => updateSupplement(index, { dailyUse: Number(event.target.value) || 0 })} />
+                  <input className="dashboard-plus-input" value={item.dailyUnit} onChange={event => updateSupplement(index, { dailyUnit: event.target.value })} />
+                </div>
+                <input className="dashboard-plus-input dashboard-plus-input--color" value={item.color} onChange={event => updateSupplement(index, { color: event.target.value })} />
+                <button type="button" className="secondary-button secondary-button--full" onClick={() => removeSupplement(index)}>
+                  <Trash2 size={15} /> Entfernen
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+      )}
+
+      {activeSection === 'shopping' && (
+      <div className="dashboard-plus-grid">
+        <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Kaufliste" title="Offen" />
           <div className="shopping-list dashboard-plus-shopping-list">
-            {dashboard.shopping.items.map((item, index) => (
+            {dashboard.shopping.items.map((item, index) => {
+              const shopIcon = SHOPPING_ICONS[item.icon]
+              return (
               <label className={item.done ? 'shop-item is-done' : 'shop-item'} key={item.id}>
-                <div className="shop-icon" style={{ background: 'rgba(124,123,255,0.1)' }}>{item.icon}</div>
+                <div className="shop-icon" style={{ background: shopIcon.tint, color: shopIcon.ink }}>
+                  <shopIcon.icon size={17} />
+                </div>
                 <div className="shop-body dashboard-plus-shop-body">
                   <input className="dashboard-plus-input dashboard-plus-input--title" value={item.name} onChange={event => updateShoppingItem(index, { name: event.target.value })} />
                   <input className="dashboard-plus-input" value={item.note} onChange={event => updateShoppingItem(index, { note: event.target.value })} />
+                  {item.lowStock && (
+                    <span className="status-chip status-chip--warn"><span className="status-chip__dot" />Bestand kritisch</span>
+                  )}
                 </div>
                 <div className="dashboard-plus-shop-meta">
                   <input className="dashboard-plus-input dashboard-plus-input--money" type="number" min="0" step="0.01" value={item.price} onChange={event => updateShoppingItem(index, { price: Number(event.target.value) || 0 })} />
@@ -2293,11 +2364,16 @@ function DashboardPlusView({
                 </div>
                 <button type="button" className="shop-check" onClick={() => updateShoppingItem(index, { done: !item.done })} aria-pressed={item.done} />
               </label>
-            ))}
+              )
+            })}
           </div>
         </section>
+      </div>
+      )}
 
-        <section className="card dashboard-plus-card">
+      {activeSection === 'stats' && (
+      <div className="dashboard-plus-grid">
+        <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Stats" title="Verlauf" />
           <div className="kpi-grid dashboard-plus-stats-grid">
             <label className="kpi-card dashboard-plus-metric">
@@ -2394,7 +2470,11 @@ function DashboardPlusView({
             ))}
           </div>
         </section>
+      </div>
+      )}
 
+      {activeSection === 'finance' && (
+      <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Finanzen" title="Rechnungen" />
           <div className="kpi-grid dashboard-plus-stats-grid">
@@ -2417,10 +2497,10 @@ function DashboardPlusView({
 
           <div className="dashboard-plus-finance-columns">
             <div>
-              <div className="fin-section-label">💳 Wiederkehrend</div>
+              <div className="fin-section-label"><CreditCard size={13} /> Wiederkehrend</div>
               <div className="dashboard-plus-bill-list">
                 {dashboard.finances.recurring.map((bill, index) => (
-                  <div className="bill-card dashboard-plus-bill-card" key={bill.id} style={{ borderColor: bill.status === 'overdue' ? 'rgba(255,69,58,0.3)' : undefined }}>
+                  <div className="bill-card dashboard-plus-bill-card" key={bill.id} style={{ borderColor: bill.status === 'overdue' ? 'color-mix(in srgb, var(--danger) 30%, transparent)' : undefined }}>
                     <div className="bill-dot" style={{ background: bill.color }} />
                     <div className="bill-body dashboard-plus-bill-body">
                       <input className="dashboard-plus-input dashboard-plus-input--title" value={bill.name} onChange={event => updateRecurringBill(index, { name: event.target.value })} />
@@ -2428,7 +2508,11 @@ function DashboardPlusView({
                     </div>
                     <div className="bill-right dashboard-plus-bill-right">
                       <input className="dashboard-plus-input dashboard-plus-input--money" type="number" min="0" value={bill.amount} onChange={event => updateRecurringBill(index, { amount: Number(event.target.value) || 0 })} />
-                      <input className="dashboard-plus-input" value={bill.due} onChange={event => updateRecurringBill(index, { due: event.target.value })} />
+                      {bill.status === 'paid' ? (
+                        <span className="status-chip status-chip--good"><span className="status-chip__dot" />Bezahlt</span>
+                      ) : (
+                        <input className="dashboard-plus-input" value={bill.due} onChange={event => updateRecurringBill(index, { due: event.target.value })} />
+                      )}
                     </div>
                   </div>
                 ))}
@@ -2436,10 +2520,10 @@ function DashboardPlusView({
             </div>
 
             <div>
-              <div className="fin-section-label">🧾 Offene Rechnungen</div>
+              <div className="fin-section-label"><Receipt size={13} /> Offene Rechnungen</div>
               <div className="dashboard-plus-bill-list">
                 {dashboard.finances.openBills.map((bill, index) => (
-                  <div className="bill-card dashboard-plus-bill-card" key={bill.id} style={{ borderColor: bill.status === 'overdue' ? 'rgba(255,69,58,0.3)' : undefined }}>
+                  <div className="bill-card dashboard-plus-bill-card" key={bill.id} style={{ borderColor: bill.status === 'overdue' ? 'color-mix(in srgb, var(--danger) 30%, transparent)' : undefined }}>
                     <div className="bill-dot" style={{ background: bill.color }} />
                     <div className="bill-body dashboard-plus-bill-body">
                       <input className="dashboard-plus-input dashboard-plus-input--title" value={bill.name} onChange={event => updateOpenBill(index, { name: event.target.value })} />
@@ -2447,7 +2531,11 @@ function DashboardPlusView({
                     </div>
                     <div className="bill-right dashboard-plus-bill-right">
                       <input className="dashboard-plus-input dashboard-plus-input--money" type="number" min="0" value={bill.amount} onChange={event => updateOpenBill(index, { amount: Number(event.target.value) || 0 })} />
-                      <input className="dashboard-plus-input" value={bill.due} onChange={event => updateOpenBill(index, { due: event.target.value })} />
+                      {bill.status === 'paid' ? (
+                        <span className="status-chip status-chip--good"><span className="status-chip__dot" />Bezahlt</span>
+                      ) : (
+                        <input className="dashboard-plus-input" value={bill.due} onChange={event => updateOpenBill(index, { due: event.target.value })} />
+                      )}
                     </div>
                   </div>
                 ))}
@@ -2456,6 +2544,7 @@ function DashboardPlusView({
           </div>
         </section>
       </div>
+      )}
 
       <div className="dashboard-plus-footer">
         <span>Snapshot: {today}</span>
