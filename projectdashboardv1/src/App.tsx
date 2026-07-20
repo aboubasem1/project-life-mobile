@@ -11,6 +11,7 @@ import {
   BarChart3,
   BatteryLow,
   Bell,
+  BookOpen,
   Brain,
   Check,
   ChevronDown,
@@ -20,6 +21,7 @@ import {
   Circle,
   Cloud,
   Coffee,
+  Crown,
   Dumbbell,
   Focus,
   Heart,
@@ -33,9 +35,12 @@ import {
   Plus,
   RotateCcw,
   Settings,
+  Snowflake,
   Sparkles,
   Sun,
+  Timer,
   Trash2,
+  Users,
   X,
 } from 'lucide-react'
 import { useEntries } from './hooks/useEntries'
@@ -47,7 +52,11 @@ import './launch.css'
 type View = 'today' | 'plan' | 'checkin' | 'progress'
 type ThemePreference = 'light' | 'dark' | 'system'
 type EnergyLevel = NonNullable<DashboardEntry['energyLevel']>
-type RoutineKey = 'breathingDone' | 'proteinShake' | 'gratitudeDone' | 'pushupsDone'
+type RoutineKey =
+  | 'breathingDone' | 'coldShower' | 'proteinShake'
+  | 'pushupsDone' | 'squatsDone' | 'wallsitDone' | 'plankDone'
+  | 'gratitudeDone' | 'focusDone' | 'winnerModeDone'
+  | 'journalDone' | 'familyTimeDone'
 
 type AppSettings = {
   name: string
@@ -55,6 +64,7 @@ type AppSettings = {
   focusMinutes: number
   proteinGoal: number
   calorieGoal: number
+  activeHabits: string[]
 }
 
 type FocusSession = {
@@ -97,6 +107,28 @@ const DEF_TASKS = [
 const LVLS = ['Rookie', 'Starter', 'Focused', 'Grinder', 'Achiever', 'Warrior', 'Elite', 'Legend', 'Master', 'Godmode'] as const
 const XPT  = [0, 500, 1100, 1900, 3000, 4400, 6200, 8600, 11600, 15600] as const
 
+type HabitDef = {
+  id: RoutineKey
+  label: string
+  category: string
+  icon: React.ComponentType<{ size?: number }>
+}
+
+const DAILY_HABITS: HabitDef[] = [
+  { id: 'breathingDone',   label: '11 Min. Atmung',    category: 'Mind', icon: Brain    },
+  { id: 'coldShower',      label: 'Cold Shower',       category: 'Body', icon: Snowflake },
+  { id: 'proteinShake',    label: 'Protein Shake',     category: 'Body', icon: Coffee   },
+  { id: 'pushupsDone',     label: '50 Pushups',        category: 'Body', icon: Dumbbell },
+  { id: 'squatsDone',      label: '50 Squats',         category: 'Body', icon: Dumbbell },
+  { id: 'wallsitDone',     label: '50s Wallsit',       category: 'Body', icon: Timer    },
+  { id: 'plankDone',       label: '50s Plank',         category: 'Body', icon: Timer    },
+  { id: 'gratitudeDone',   label: 'Dankbarkeit',       category: 'Mind', icon: Sparkles },
+  { id: 'focusDone',       label: 'Deep Focus',        category: 'Mind', icon: Focus    },
+  { id: 'winnerModeDone',  label: 'Winner Mode',       category: 'Mind', icon: Crown    },
+  { id: 'journalDone',     label: 'Journal schreiben', category: 'Mind', icon: BookOpen },
+  { id: 'familyTimeDone',  label: 'Familienzeit',      category: 'Main', icon: Users    },
+]
+
 function getDailyQuote(): string {
   const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86_400_000)
   return QUOTES[dayOfYear % QUOTES.length]
@@ -110,12 +142,15 @@ function getLevelFromScore(totalScore: number): string {
   return LVLS[level]
 }
 
+const DEFAULT_ACTIVE_HABITS = ['breathingDone', 'coldShower', 'proteinShake', 'pushupsDone', 'gratitudeDone']
+
 const DEFAULT_SETTINGS: AppSettings = {
   name: 'Elias',
   theme: 'system',
   focusMinutes: 25,
   proteinGoal: 150,
   calorieGoal: 3500,
+  activeHabits: DEFAULT_ACTIVE_HABITS,
 }
 
 const NAV_ITEMS: Array<{ id: View; label: string; icon: typeof Home }> = [
@@ -152,6 +187,7 @@ function loadSettings(): AppSettings {
       focusMinutes: clampNumber(Number(stored.focusMinutes) || DEFAULT_SETTINGS.focusMinutes, 5, 120),
       proteinGoal: clampNumber(Number(stored.proteinGoal) || DEFAULT_SETTINGS.proteinGoal, 50, 400),
       calorieGoal: clampNumber(Number(stored.calorieGoal) || DEFAULT_SETTINGS.calorieGoal, 1000, 8000),
+      activeHabits: Array.isArray(stored.activeHabits) ? stored.activeHabits : DEFAULT_ACTIVE_HABITS,
     }
   } catch {
     return DEFAULT_SETTINGS
@@ -765,12 +801,14 @@ function TodayView({
 }) {
   const [capture, setCapture] = useState('')
   const energy = entry.energyLevel
-  const routineItems = [
-    { key: 'breathingDone', label: '11 Min. Atmung', icon: Brain, done: Boolean(entry.breathingDone) },
-    { key: 'proteinShake', label: 'Proteinshake', icon: Coffee, done: entry.proteinShake },
-    { key: 'gratitudeDone', label: 'Dankbarkeit', icon: Sparkles, done: entry.gratitudeDone },
-    { key: 'pushupsDone', label: 'Bewegung', icon: Dumbbell, done: entry.pushupsDone },
-  ] as const
+  const routineItems = DAILY_HABITS
+    .filter(h => settings.activeHabits.includes(h.id))
+    .map(h => ({
+      key: h.id,
+      label: h.label,
+      icon: h.icon,
+      done: Boolean(entry[h.id as keyof DashboardEntry]),
+    }))
 
   const routineDone = routineItems.filter(item => item.done).length
   const nextTaskIndex = anchors.findIndex((_, index) => !anchorsDone[index])
@@ -1575,6 +1613,34 @@ function SettingsModal({
         <div className="modal-header">
           <div><span className="eyebrow">Life OS</span><h2 id="settings-title">Einstellungen</h2></div>
           <IconButton label="Schließen" onClick={onClose}><X size={18} /></IconButton>
+        </div>
+
+        <div className="settings-section">
+          <h3>Tägliche Gewohnheiten</h3>
+          <p style={{ margin: '-6px 0 12px', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+            Aktive Habits erscheinen täglich in der Routine-Karte.
+          </p>
+          <div className="choice-grid">
+            {DAILY_HABITS.map(h => {
+              const active = settings.activeHabits.includes(h.id)
+              return (
+                <button
+                  type="button"
+                  key={h.id}
+                  className={active ? 'choice-button is-active' : 'choice-button'}
+                  onClick={() => onChange({
+                    ...settings,
+                    activeHabits: active
+                      ? settings.activeHabits.filter(id => id !== h.id)
+                      : [...settings.activeHabits, h.id],
+                  })}
+                  aria-pressed={active}
+                >
+                  {h.label}
+                </button>
+              )
+            })}
+          </div>
         </div>
 
         <div className="settings-section">
