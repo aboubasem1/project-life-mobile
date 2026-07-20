@@ -422,13 +422,55 @@ function createDashboardPlusSeed(): DashboardPlusState {
   }
 }
 
+// Every array below is rendered with a direct .map() in DashboardPlusView, so
+// persisted state that predates a field (or was hand-edited into a bad shape)
+// must never reach render as anything but a same-shaped array — otherwise a
+// single stale/missing field crashes the whole view (e.g. an unknown
+// shopping-item icon, or a field from before it existed in the schema).
+function normalizeDashboardPlusState(parsed: Partial<DashboardPlusState> | null | undefined): DashboardPlusState {
+  const seed = createDashboardPlusSeed()
+  if (!parsed || typeof parsed !== 'object' || !parsed.overview) return seed
+
+  return {
+    overview: { ...seed.overview, ...parsed.overview },
+    focusTodos: Array.isArray(parsed.focusTodos) ? parsed.focusTodos : seed.focusTodos,
+    supplements: Array.isArray(parsed.supplements) ? parsed.supplements : seed.supplements,
+    medications: Array.isArray(parsed.medications) ? parsed.medications : seed.medications,
+    goals: Array.isArray(parsed.goals) ? parsed.goals : seed.goals,
+    boards: Array.isArray(parsed.boards)
+      ? parsed.boards.map(board => ({ ...board, tasks: Array.isArray(board.tasks) ? board.tasks : [] }))
+      : seed.boards,
+    shopping: {
+      total: typeof parsed.shopping?.total === 'number' ? parsed.shopping.total : seed.shopping.total,
+      items: Array.isArray(parsed.shopping?.items)
+        ? parsed.shopping.items.map(item => ({
+          ...item,
+          icon: item.icon in SHOPPING_ICONS ? item.icon : 'flask',
+        }))
+        : seed.shopping.items,
+    },
+    stats: {
+      ...seed.stats,
+      ...parsed.stats,
+      weeklyBars: Array.isArray(parsed.stats?.weeklyBars) ? parsed.stats.weeklyBars : seed.stats.weeklyBars,
+      heatmap: Array.isArray(parsed.stats?.heatmap) ? parsed.stats.heatmap : seed.stats.heatmap,
+      projects: Array.isArray(parsed.stats?.projects) ? parsed.stats.projects : seed.stats.projects,
+    },
+    finances: {
+      ...seed.finances,
+      ...parsed.finances,
+      recurring: Array.isArray(parsed.finances?.recurring) ? parsed.finances.recurring : seed.finances.recurring,
+      openBills: Array.isArray(parsed.finances?.openBills) ? parsed.finances.openBills : seed.finances.openBills,
+    },
+  }
+}
+
 function loadDashboardPlusState(): DashboardPlusState {
   try {
     const stored = localStorage.getItem(DASHBOARD_PLUS_KEY)
     if (!stored) return createDashboardPlusSeed()
-    const parsed = JSON.parse(stored) as DashboardPlusState
-    if (!parsed || !parsed.overview || !Array.isArray(parsed.focusTodos)) return createDashboardPlusSeed()
-    return parsed
+    const parsed = JSON.parse(stored) as Partial<DashboardPlusState>
+    return normalizeDashboardPlusState(parsed)
   } catch {
     return createDashboardPlusSeed()
   }
@@ -480,9 +522,9 @@ const ENERGY_OPTIONS: Array<{
   label: string
   description: string
 }> = [
-  { value: 'low', label: 'Niedrig', description: 'Nur das Nötigste' },
-  { value: 'okay', label: 'Okay', description: 'Ruhiger Standardtag' },
-  { value: 'high', label: 'Gut', description: 'Mehr Fokus möglich' },
+  { value: 'low', label: 'Niedrig', description: 'Wir reduzieren heute aufs Wichtigste' },
+  { value: 'okay', label: 'Okay', description: 'Ein ruhiger, machbarer Tag' },
+  { value: 'high', label: 'Gut', description: 'Platz für tieferen Fokus' },
 ]
 
 const MOODS = ['Ruhig', 'Gut', 'Neutral', 'Müde', 'Gestresst']
@@ -1475,7 +1517,7 @@ function TodayView({
 
       {!energy && (
         <section className="card energy-card">
-          <SectionTitle eyebrow="Kurz einchecken" title="Wie viel Energie ist heute da?" />
+          <SectionTitle eyebrow="Kurz einchecken" title="Wie ist deine Energie heute?" />
           <div className="energy-grid">
             {ENERGY_OPTIONS.map(option => (
               <button
@@ -2701,7 +2743,7 @@ function DashboardPlusView({
           <SectionTitle eyebrow="Kaufliste" title="Offen" />
           <div className="shopping-list dashboard-plus-shopping-list">
             {dashboard.shopping.items.map((item, index) => {
-              const shopIcon = SHOPPING_ICONS[item.icon]
+              const shopIcon = SHOPPING_ICONS[item.icon] ?? SHOPPING_ICONS.flask
               return (
               <label className={item.done ? 'shop-item is-done' : 'shop-item'} key={item.id}>
                 <div className="shop-icon" style={{ background: shopIcon.tint, color: shopIcon.ink }}>

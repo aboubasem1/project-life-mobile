@@ -773,17 +773,19 @@ button:disabled {
 
 .energy-option {
   display: grid;
-  min-height: 110px;
+  min-height: 128px;
   align-content: center;
   justify-items: start;
-  gap: 7px;
-  padding: 17px;
+  gap: 8px;
+  padding: 22px;
   border: 1px solid var(--border);
   border-radius: 18px;
   background: var(--surface-soft);
   color: var(--text);
   cursor: pointer;
   text-align: left;
+  touch-action: manipulation;
+  transition: border-color 150ms ease, background 150ms ease, transform 120ms ease;
 }
 
 .energy-option:hover {
@@ -791,18 +793,25 @@ button:disabled {
   background: var(--surface-solid);
 }
 
+.energy-option:active {
+  transform: scale(0.96);
+  border-color: var(--border-strong);
+  background: var(--surface-solid);
+}
+
 .energy-option strong {
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .energy-option small {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .energy-dot {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background: var(--sage);
 }
@@ -810,10 +819,22 @@ button:disabled {
 .energy-dot--low { background: var(--lilac); }
 .energy-dot--high { background: var(--accent); }
 
+@keyframes energyPillPop {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
 .status-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  animation: energyPillPop 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.status-row .energy-pill {
+  min-height: 40px;
+  font-size: 12px;
+  padding: 0 14px;
 }
 
 .energy-pill--low { color: var(--lilac); }
@@ -2720,7 +2741,7 @@ button.status-chip.status-chip--good {
   .form-grid,
   .settings-grid,
   .plan-side { grid-template-columns: 1fr; }
-  .energy-option { min-height: 78px; grid-template-columns: 14px 1fr; align-items: center; }
+  .energy-option { min-height: 92px; grid-template-columns: 16px 1fr; align-items: center; gap: 10px; padding: 20px; }
   .energy-option small { grid-column: 2; }
   .card { padding: 19px; border-radius: 24px; }
   .metric-summary-grid { grid-template-columns: 1fr; }
