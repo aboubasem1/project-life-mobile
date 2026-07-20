@@ -24,21 +24,25 @@ import {
   Circle,
   Cloud,
   Coffee,
+  CreditCard,
   Crown,
   Dumbbell,
   Focus,
   GripVertical,
   Heart,
   Home,
+  LayoutGrid,
   Leaf,
   ListTodo,
   Moon,
+  Package,
   Pause,
   Pencil,
   Play,
   Plus,
   RotateCcw,
   Settings,
+  ShoppingCart,
   Snowflake,
   Sparkles,
   Sun,
@@ -167,6 +171,17 @@ type DashboardPlusState = {
     openBills: DashboardPlusBill[]
   }
 }
+
+const DASHBOARD_PLUS_TABS = [
+  { id: 'overview', label: 'Übersicht', icon: LayoutGrid },
+  { id: 'todos', label: 'Todos', icon: ListTodo },
+  { id: 'stock', label: 'Bestände', icon: Package },
+  { id: 'shopping', label: 'Kaufliste', icon: ShoppingCart },
+  { id: 'stats', label: 'Stats', icon: BarChart3 },
+  { id: 'finance', label: 'Finanzen', icon: CreditCard },
+] as const
+
+type DashboardPlusSection = (typeof DASHBOARD_PLUS_TABS)[number]['id']
 
 const SETTINGS_KEY = 'life-os-v1-settings'
 const DASHBOARD_PLUS_KEY = 'life-os-v1-dashboard-plus'
@@ -497,15 +512,17 @@ function BadgeButton({
   label,
   children,
   onClick,
+  className = '',
 }: {
   label: string
   children: ReactNode
   onClick: () => void
+  className?: string
 }) {
   return (
     <button
       type="button"
-      className="badge-button"
+      className={`badge-button ${className}`.trim()}
       aria-label={label}
       title={label}
       onClick={onClick}
@@ -868,9 +885,8 @@ function App() {
             <strong>Life OS</strong>
           </div>
           <div className="mobile-header__actions">
-            <BadgeButton label="Dashboard+ öffnen" onClick={() => navigateTo('dashboardPlus')}>
+            <BadgeButton label="Dashboard+ öffnen" onClick={() => navigateTo('dashboardPlus')} className="badge-button--icon">
               <Crown size={16} />
-              <span>Dashboard+</span>
             </BadgeButton>
             <IconButton label="Theme wechseln" onClick={quickToggleTheme}>
               {resolvedTheme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
@@ -892,9 +908,8 @@ function App() {
                 <Cloud size={14} />
                 {isOnline ? (syncStatus === 'syncing' ? 'Speichert …' : 'Bereit') : 'Offline'}
               </span>
-              <BadgeButton label="Dashboard+ öffnen" onClick={() => navigateTo('dashboardPlus')}>
+              <BadgeButton label="Dashboard+ öffnen" onClick={() => navigateTo('dashboardPlus')} className="badge-button--icon">
                 <Crown size={16} />
-                <span>Dashboard+</span>
               </BadgeButton>
               <IconButton label="Einstellungen öffnen" onClick={() => setSettingsOpen(true)}>
                 <Settings size={18} />
@@ -1984,6 +1999,7 @@ function DashboardPlusView({
   onBackToToday: () => void
   today: string
 }) {
+  const [activeSection, setActiveSection] = useState<DashboardPlusSection>('overview')
   const [activeBoardId, setActiveBoardId] = useState(dashboard.boards[0]?.id ?? 'personal')
 
   useEffect(() => {
@@ -2123,33 +2139,52 @@ function DashboardPlusView({
         </div>
       </section>
 
-      <section className="card dashboard-plus-hero">
-        <div className="dashboard-plus-hero__meta">
-          <div>
-            <span className="eyebrow">{dashboard.overview.dateLabel}</span>
-            <h2>Preview</h2>
-          </div>
-          <ProgressRing value={dashboard.overview.score} size={86} />
-        </div>
-        <div className="dashboard-plus-hero__stats">
-          <label className="kpi-card dashboard-plus-metric">
-            <span>Habits</span>
-            <input type="number" min="0" value={dashboard.overview.habits} onChange={event => updateOverview({ habits: Number(event.target.value) || 0 })} />
-            <small>aktiv</small>
-          </label>
-          <label className="kpi-card dashboard-plus-metric">
-            <span>Todos</span>
-            <input type="number" min="0" value={dashboard.overview.todos} onChange={event => updateOverview({ todos: Number(event.target.value) || 0 })} />
-            <small>heute</small>
-          </label>
-          <label className="kpi-card dashboard-plus-metric">
-            <span>Projekte</span>
-            <input type="number" min="0" value={dashboard.overview.projects} onChange={event => updateOverview({ projects: Number(event.target.value) || 0 })} />
-            <small>Boards</small>
-          </label>
-        </div>
-      </section>
+      <nav className="dashboard-plus-tabbar" role="tablist" aria-label="Dashboard+ Bereiche">
+        {DASHBOARD_PLUS_TABS.map(tab => (
+          <button
+            type="button"
+            key={tab.id}
+            role="tab"
+            aria-selected={activeSection === tab.id}
+            className={activeSection === tab.id ? 'dashboard-plus-tab active' : 'dashboard-plus-tab'}
+            onClick={() => setActiveSection(tab.id)}
+          >
+            <tab.icon size={18} />
+            <span>{tab.label}</span>
+          </button>
+        ))}
+      </nav>
 
+      {activeSection === 'overview' && (
+        <section className="card dashboard-plus-hero">
+          <div className="dashboard-plus-hero__meta">
+            <div>
+              <span className="eyebrow">{dashboard.overview.dateLabel}</span>
+              <h2>Preview</h2>
+            </div>
+            <ProgressRing value={dashboard.overview.score} size={86} />
+          </div>
+          <div className="dashboard-plus-hero__stats">
+            <label className="kpi-card dashboard-plus-metric">
+              <span>Habits</span>
+              <input type="number" min="0" value={dashboard.overview.habits} onChange={event => updateOverview({ habits: Number(event.target.value) || 0 })} />
+              <small>aktiv</small>
+            </label>
+            <label className="kpi-card dashboard-plus-metric">
+              <span>Todos</span>
+              <input type="number" min="0" value={dashboard.overview.todos} onChange={event => updateOverview({ todos: Number(event.target.value) || 0 })} />
+              <small>heute</small>
+            </label>
+            <label className="kpi-card dashboard-plus-metric">
+              <span>Projekte</span>
+              <input type="number" min="0" value={dashboard.overview.projects} onChange={event => updateOverview({ projects: Number(event.target.value) || 0 })} />
+              <small>Boards</small>
+            </label>
+          </div>
+        </section>
+      )}
+
+      {activeSection === 'todos' && (
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle
@@ -2197,30 +2232,6 @@ function DashboardPlusView({
                     <Trash2 size={15} />
                   </button>
                 </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="card dashboard-plus-card">
-          <SectionTitle eyebrow="Supplements" title="Bestände" action={<button type="button" className="small-button" onClick={addSupplement}><Plus size={14} /> Produkt</button>} />
-          <div className="dashboard-plus-supplements">
-            {dashboard.supplements.map((item, index) => (
-              <div className="supp-card dashboard-plus-supp-card" style={{ borderTopColor: item.color }} key={item.id}>
-                <input className="dashboard-plus-input dashboard-plus-input--title" value={item.name} onChange={event => updateSupplement(index, { name: event.target.value })} />
-                <input className="dashboard-plus-input" value={item.brand} onChange={event => updateSupplement(index, { brand: event.target.value })} placeholder="Marke / Info" />
-                <div className="dashboard-plus-inline-row">
-                  <input className="dashboard-plus-input" type="number" min="0" value={item.stock} onChange={event => updateSupplement(index, { stock: Number(event.target.value) || 0 })} />
-                  <input className="dashboard-plus-input" value={item.unit} onChange={event => updateSupplement(index, { unit: event.target.value })} />
-                </div>
-                <div className="dashboard-plus-inline-row">
-                  <input className="dashboard-plus-input" type="number" min="0" value={item.dailyUse} onChange={event => updateSupplement(index, { dailyUse: Number(event.target.value) || 0 })} />
-                  <input className="dashboard-plus-input" value={item.dailyUnit} onChange={event => updateSupplement(index, { dailyUnit: event.target.value })} />
-                </div>
-                <input className="dashboard-plus-input dashboard-plus-input--color" value={item.color} onChange={event => updateSupplement(index, { color: event.target.value })} />
-                <button type="button" className="secondary-button secondary-button--full" onClick={() => removeSupplement(index)}>
-                  <Trash2 size={15} /> Entfernen
-                </button>
               </div>
             ))}
           </div>
@@ -2276,8 +2287,40 @@ function DashboardPlusView({
             </>
           )}
         </section>
+      </div>
+      )}
 
-        <section className="card dashboard-plus-card">
+      {activeSection === 'stock' && (
+      <div className="dashboard-plus-grid">
+        <section className="card dashboard-plus-card dashboard-plus-card--wide">
+          <SectionTitle eyebrow="Supplements" title="Bestände" action={<button type="button" className="small-button" onClick={addSupplement}><Plus size={14} /> Produkt</button>} />
+          <div className="dashboard-plus-supplements">
+            {dashboard.supplements.map((item, index) => (
+              <div className="supp-card dashboard-plus-supp-card" style={{ borderTopColor: item.color }} key={item.id}>
+                <input className="dashboard-plus-input dashboard-plus-input--title" value={item.name} onChange={event => updateSupplement(index, { name: event.target.value })} />
+                <input className="dashboard-plus-input" value={item.brand} onChange={event => updateSupplement(index, { brand: event.target.value })} placeholder="Marke / Info" />
+                <div className="dashboard-plus-inline-row">
+                  <input className="dashboard-plus-input" type="number" min="0" value={item.stock} onChange={event => updateSupplement(index, { stock: Number(event.target.value) || 0 })} />
+                  <input className="dashboard-plus-input" value={item.unit} onChange={event => updateSupplement(index, { unit: event.target.value })} />
+                </div>
+                <div className="dashboard-plus-inline-row">
+                  <input className="dashboard-plus-input" type="number" min="0" value={item.dailyUse} onChange={event => updateSupplement(index, { dailyUse: Number(event.target.value) || 0 })} />
+                  <input className="dashboard-plus-input" value={item.dailyUnit} onChange={event => updateSupplement(index, { dailyUnit: event.target.value })} />
+                </div>
+                <input className="dashboard-plus-input dashboard-plus-input--color" value={item.color} onChange={event => updateSupplement(index, { color: event.target.value })} />
+                <button type="button" className="secondary-button secondary-button--full" onClick={() => removeSupplement(index)}>
+                  <Trash2 size={15} /> Entfernen
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+      )}
+
+      {activeSection === 'shopping' && (
+      <div className="dashboard-plus-grid">
+        <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Kaufliste" title="Offen" />
           <div className="shopping-list dashboard-plus-shopping-list">
             {dashboard.shopping.items.map((item, index) => (
@@ -2296,8 +2339,12 @@ function DashboardPlusView({
             ))}
           </div>
         </section>
+      </div>
+      )}
 
-        <section className="card dashboard-plus-card">
+      {activeSection === 'stats' && (
+      <div className="dashboard-plus-grid">
+        <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Stats" title="Verlauf" />
           <div className="kpi-grid dashboard-plus-stats-grid">
             <label className="kpi-card dashboard-plus-metric">
@@ -2394,7 +2441,11 @@ function DashboardPlusView({
             ))}
           </div>
         </section>
+      </div>
+      )}
 
+      {activeSection === 'finance' && (
+      <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Finanzen" title="Rechnungen" />
           <div className="kpi-grid dashboard-plus-stats-grid">
@@ -2456,6 +2507,7 @@ function DashboardPlusView({
           </div>
         </section>
       </div>
+      )}
 
       <div className="dashboard-plus-footer">
         <span>Snapshot: {today}</span>
