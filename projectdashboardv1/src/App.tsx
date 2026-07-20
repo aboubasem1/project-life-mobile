@@ -236,7 +236,7 @@ function createDashboardPlusSeed(): DashboardPlusState {
   return {
     overview: {
       dateLabel: 'Sonntag, 1. Jun 2026',
-      syncStatus: 'Lokal gespeichert',
+      syncStatus: 'Bereit',
       syncTime: 'gerade eben',
       score: 76,
       habits: 8,
@@ -890,7 +890,7 @@ function App() {
             <div className="topbar-actions">
               <span className={`sync-pill sync-pill--${syncStatus}`}>
                 <Cloud size={14} />
-                {isOnline ? (syncStatus === 'syncing' ? 'Speichert …' : 'Lokal gespeichert') : 'Offline'}
+                {isOnline ? (syncStatus === 'syncing' ? 'Speichert …' : 'Bereit') : 'Offline'}
               </span>
               <BadgeButton label="Dashboard+ öffnen" onClick={() => navigateTo('dashboardPlus')}>
                 <Crown size={16} />
@@ -2459,7 +2459,7 @@ function DashboardPlusView({
 
       <div className="dashboard-plus-footer">
         <span>Snapshot: {today}</span>
-        <span>Alles ist lokal editierbar und wird in diesem Browser gespeichert.</span>
+        <span>Alles ist direkt editierbar und wird in deinem Browser gesichert.</span>
       </div>
     </div>
   )
@@ -2692,7 +2692,7 @@ function SettingsModal({
 
         <div className="settings-note">
           <Bell size={18} />
-          <p>Benachrichtigungen werden nie ungefragt angefordert. Ein Timer-Hinweis erscheint nur, wenn du die Berechtigung bereits erteilt hast.</p>
+          <p>Benachrichtigungen werden nie ungefragt angefordert. Ein Timer-Hinweis erscheint nur, wenn du die Berechtigung bereits erteilt hast. Daten werden lokal gespeichert.</p>
         </div>
         <div className="modal-actions"><button type="button" className="primary-button" onClick={onClose}><Check size={17} /> Fertig</button></div>
       </div>
