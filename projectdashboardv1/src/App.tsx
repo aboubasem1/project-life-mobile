@@ -28,6 +28,8 @@ import {
   Crown,
   Droplet,
   Dumbbell,
+  Eye,
+  EyeOff,
   FlaskConical,
   Focus,
   GripVertical,
@@ -80,6 +82,12 @@ type AppSettings = {
   proteinGoal: number
   calorieGoal: number
   activeHabits: string[]
+  dashboardPlusLayout: DashboardPlusLayout
+}
+
+type DashboardPlusLayout = {
+  order: DashboardPlusSection[]
+  hidden: DashboardPlusSection[]
 }
 
 type FocusSession = {
@@ -428,6 +436,13 @@ function loadDashboardPlusState(): DashboardPlusState {
 
 const DEFAULT_ACTIVE_HABITS = ['breathingDone', 'coldShower', 'proteinShake', 'pushupsDone', 'gratitudeDone']
 
+const DASHBOARD_PLUS_SECTION_IDS = DASHBOARD_PLUS_TABS.map(tab => tab.id)
+
+const DEFAULT_DASHBOARD_PLUS_LAYOUT: DashboardPlusLayout = {
+  order: [...DASHBOARD_PLUS_SECTION_IDS],
+  hidden: [],
+}
+
 const DEFAULT_SETTINGS: AppSettings = {
   name: '',
   theme: 'system',
@@ -435,6 +450,22 @@ const DEFAULT_SETTINGS: AppSettings = {
   proteinGoal: 150,
   calorieGoal: 3500,
   activeHabits: DEFAULT_ACTIVE_HABITS,
+  dashboardPlusLayout: DEFAULT_DASHBOARD_PLUS_LAYOUT,
+}
+
+function normalizeDashboardPlusLayout(raw: unknown): DashboardPlusLayout {
+  const candidate = (raw ?? {}) as Partial<DashboardPlusLayout>
+  const isSection = (id: unknown): id is DashboardPlusSection =>
+    typeof id === 'string' && (DASHBOARD_PLUS_SECTION_IDS as string[]).includes(id)
+
+  const storedOrder = Array.isArray(candidate.order) ? candidate.order.filter(isSection) : []
+  const order = [...storedOrder, ...DASHBOARD_PLUS_SECTION_IDS.filter(id => !storedOrder.includes(id))]
+
+  const storedHidden = Array.isArray(candidate.hidden) ? candidate.hidden.filter(isSection) : []
+  // Never let every tab be hidden — fall back to "all visible" rather than an unusable Dashboard+.
+  const hidden = storedHidden.length >= DASHBOARD_PLUS_SECTION_IDS.length ? [] : storedHidden
+
+  return { order, hidden }
 }
 
 const NAV_ITEMS: Array<{ id: View; label: string; icon: typeof Home }> = [
@@ -472,6 +503,7 @@ function loadSettings(): AppSettings {
       proteinGoal: clampNumber(Number(stored.proteinGoal) || DEFAULT_SETTINGS.proteinGoal, 50, 400),
       calorieGoal: clampNumber(Number(stored.calorieGoal) || DEFAULT_SETTINGS.calorieGoal, 1000, 8000),
       activeHabits: Array.isArray(stored.activeHabits) ? stored.activeHabits : DEFAULT_ACTIVE_HABITS,
+      dashboardPlusLayout: normalizeDashboardPlusLayout(stored.dashboardPlusLayout),
     }
   } catch {
     return DEFAULT_SETTINGS
@@ -1111,6 +1143,8 @@ function App() {
               onChange={setDashboardPlus}
               onBackToToday={() => navigateTo('today')}
               today={today}
+              layout={settings.dashboardPlusLayout}
+              onOpenSettings={() => setSettingsOpen(true)}
             />
           )}
         </main>
@@ -2184,13 +2218,29 @@ function DashboardPlusView({
   onChange,
   onBackToToday,
   today,
+  layout,
+  onOpenSettings,
 }: {
   dashboard: DashboardPlusState
   onChange: Dispatch<SetStateAction<DashboardPlusState>>
   onBackToToday: () => void
   today: string
+  layout: DashboardPlusLayout
+  onOpenSettings: () => void
 }) {
   const [activeSection, setActiveSection] = useState<DashboardPlusSection>('overview')
+
+  const tabsToRender = useMemo(() => {
+    const visible = layout.order
+      .filter(id => !layout.hidden.includes(id))
+      .map(id => DASHBOARD_PLUS_TABS.find(tab => tab.id === id))
+      .filter((tab): tab is (typeof DASHBOARD_PLUS_TABS)[number] => Boolean(tab))
+    return visible.length > 0 ? visible : DASHBOARD_PLUS_TABS
+  }, [layout])
+
+  const currentSection = tabsToRender.some(tab => tab.id === activeSection)
+    ? activeSection
+    : tabsToRender[0].id
   const [activeBoardId, setActiveBoardId] = useState(dashboard.boards[0]?.id ?? 'personal')
 
   useEffect(() => {
@@ -2366,6 +2416,9 @@ function DashboardPlusView({
           <button type="button" className="secondary-button" onClick={onBackToToday}>
             <ChevronLeft size={16} /> Heute
           </button>
+          <button type="button" className="secondary-button" onClick={onOpenSettings}>
+            <LayoutGrid size={16} /> Reiter anpassen
+          </button>
           <span className="sync-pill sync-pill--synced">
             <Cloud size={14} /> {dashboard.overview.syncStatus}
           </span>
@@ -2373,13 +2426,13 @@ function DashboardPlusView({
       </section>
 
       <nav className="dashboard-plus-tabbar" role="tablist" aria-label="Dashboard+ Bereiche">
-        {DASHBOARD_PLUS_TABS.map(tab => (
+        {tabsToRender.map(tab => (
           <button
             type="button"
             key={tab.id}
             role="tab"
-            aria-selected={activeSection === tab.id}
-            className={activeSection === tab.id ? 'dashboard-plus-tab active' : 'dashboard-plus-tab'}
+            aria-selected={currentSection === tab.id}
+            className={currentSection === tab.id ? 'dashboard-plus-tab active' : 'dashboard-plus-tab'}
             onClick={() => setActiveSection(tab.id)}
           >
             <tab.icon size={18} />
@@ -2388,7 +2441,7 @@ function DashboardPlusView({
         ))}
       </nav>
 
-      {activeSection === 'overview' && (
+      {currentSection === 'overview' && (
         <section className="card dashboard-plus-hero">
           <div className="dashboard-plus-hero__meta">
             <div>
@@ -2417,7 +2470,7 @@ function DashboardPlusView({
         </section>
       )}
 
-      {activeSection === 'todos' && (
+      {currentSection === 'todos' && (
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle
@@ -2533,7 +2586,7 @@ function DashboardPlusView({
       </div>
       )}
 
-      {activeSection === 'stock' && (
+      {currentSection === 'stock' && (
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Supplements" title="Bestände" action={<button type="button" className="small-button" onClick={addSupplement}><Plus size={14} /> Produkt</button>} />
@@ -2561,7 +2614,7 @@ function DashboardPlusView({
       </div>
       )}
 
-      {activeSection === 'medications' && (
+      {currentSection === 'medications' && (
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Gesundheit" title="Medikamente" action={<button type="button" className="small-button" onClick={addMedication}><Plus size={14} /> Medikament</button>} />
@@ -2596,7 +2649,7 @@ function DashboardPlusView({
       </div>
       )}
 
-      {activeSection === 'goals' && (
+      {currentSection === 'goals' && (
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Planung" title="Ziele" action={<button type="button" className="small-button" onClick={addGoal}><Plus size={14} /> Ziel</button>} />
@@ -2642,7 +2695,7 @@ function DashboardPlusView({
       </div>
       )}
 
-      {activeSection === 'shopping' && (
+      {currentSection === 'shopping' && (
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Kaufliste" title="Offen" />
@@ -2674,7 +2727,7 @@ function DashboardPlusView({
       </div>
       )}
 
-      {activeSection === 'stats' && (
+      {currentSection === 'stats' && (
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Stats" title="Verlauf" />
@@ -2776,7 +2829,7 @@ function DashboardPlusView({
       </div>
       )}
 
-      {activeSection === 'finance' && (
+      {currentSection === 'finance' && (
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Finanzen" title="Rechnungen" />
@@ -3057,6 +3110,23 @@ function SettingsModal({
 }) {
   useModalBehavior(onClose)
   const importInputRef = useRef<HTMLInputElement | null>(null)
+  const layout = settings.dashboardPlusLayout
+
+  const moveDashboardTab = (index: number, direction: -1 | 1) => {
+    const target = index + direction
+    if (target < 0 || target >= layout.order.length) return
+    const nextOrder = [...layout.order]
+    const [moved] = nextOrder.splice(index, 1)
+    nextOrder.splice(target, 0, moved)
+    onChange({ ...settings, dashboardPlusLayout: { ...layout, order: nextOrder } })
+  }
+
+  const toggleDashboardTabHidden = (id: DashboardPlusSection) => {
+    const isHidden = layout.hidden.includes(id)
+    if (!isHidden && layout.hidden.length >= DASHBOARD_PLUS_SECTION_IDS.length - 1) return
+    const nextHidden = isHidden ? layout.hidden.filter(hiddenId => hiddenId !== id) : [...layout.hidden, id]
+    onChange({ ...settings, dashboardPlusLayout: { ...layout, hidden: nextHidden } })
+  }
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}>
@@ -3092,6 +3162,49 @@ function SettingsModal({
               )
             })}
           </div>
+        </div>
+
+        <div className="settings-section">
+          <h3>Dashboard+ Reiter</h3>
+          <p style={{ margin: '-6px 0 12px', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+            Reihenfolge und Sichtbarkeit der Dashboard+ Bereiche anpassen. Mindestens ein Reiter bleibt sichtbar.
+          </p>
+          <ul className="reorder-list">
+            {layout.order.map((id, index) => {
+              const tab = DASHBOARD_PLUS_TABS.find(t => t.id === id)
+              if (!tab) return null
+              const hidden = layout.hidden.includes(id)
+              return (
+                <li key={id} className={hidden ? 'reorder-row is-hidden' : 'reorder-row'}>
+                  <tab.icon size={16} />
+                  <span className="reorder-row__label">{tab.label}</span>
+                  <div className="reorder-row__actions">
+                    <IconButton
+                      label={`${tab.label} nach oben verschieben`}
+                      onClick={() => moveDashboardTab(index, -1)}
+                      disabled={index === 0}
+                    >
+                      <ChevronUp size={15} />
+                    </IconButton>
+                    <IconButton
+                      label={`${tab.label} nach unten verschieben`}
+                      onClick={() => moveDashboardTab(index, 1)}
+                      disabled={index === layout.order.length - 1}
+                    >
+                      <ChevronDown size={15} />
+                    </IconButton>
+                    <IconButton
+                      label={hidden ? `${tab.label} einblenden` : `${tab.label} ausblenden`}
+                      onClick={() => toggleDashboardTabHidden(id)}
+                      className={hidden ? '' : 'is-active'}
+                    >
+                      {hidden ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </IconButton>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
         </div>
 
         <div className="settings-section">

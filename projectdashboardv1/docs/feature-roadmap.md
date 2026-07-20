@@ -95,8 +95,15 @@ Im Konflikt mit dem eigenen Minimalismus-Prinzip, daher zurückgestellt statt
 eingeplant:
 
 - **Wetter-Widget** — externe API-Abhängigkeit ohne direkten Life-OS-Bezug
-- **Personalisierbare Drag-and-Drop-Dashboard-Kacheln** — hoher Aufwand, kein
-  konkret beschriebenes Problem dahinter
 - **AMOLED-Theme als vierte Variante** — Light/Dark/System deckt den Bedarf
 - **Confetti/Haptik als flächendeckendes System** — punktuell ja (z. B. Ziel
   erreicht), nicht überall
+
+**Nachträglich umgesetzt (auf expliziten Wunsch):** Die Dashboard+ Reiter
+(Übersicht/Todos/Bestände/Medis/Ziele/Kaufliste/Stats/Finanzen) lassen sich
+jetzt in den Einstellungen per Auf/Ab-Pfeilen umsortieren und einzeln
+aus-/einblenden (mindestens ein Reiter bleibt immer sichtbar). Bewusst als
+Einstellungsseite mit Pfeilen statt Drag-and-Drop-Kacheln direkt in der
+Ansicht — robuster auf Touch und ohne Risiko für versehentliches Verschieben
+im Alltag. Heute/Plan/Check-in/Verlauf bleiben unverändert fix, damit die
+Startseite schlank bleibt.
