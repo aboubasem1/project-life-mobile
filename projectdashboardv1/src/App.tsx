@@ -788,6 +788,7 @@ function TodayView({
   onEditTask,
   onAddTask,
   onOpenFocus,
+  onReorderHabits,
   onOpenPlan,
   onOpenCheckin,
   showToast,
@@ -847,7 +848,7 @@ function TodayView({
     setDragIdx(idx)
   }
 
-  const handleTouchMove = (e: React.TouchEvent) => {
+  const handleTouchMove = (_e: React.TouchEvent) => {
     if (!touchRef.current) return
     e.preventDefault()
     const touch = e.touches[0]
