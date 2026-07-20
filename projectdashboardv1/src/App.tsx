@@ -51,6 +51,7 @@ import { useEntries } from './hooks/useEntries'
 import type { DashboardEntry } from './types/DashboardEntry'
 import { createDefaultEntry } from './types/DashboardEntry'
 import { calculateScore } from './lib/score'
+import { exportJSON, importJSON, saveAllEntries } from './lib/storage'
 import './launch.css'
 
 type View = 'today' | 'plan' | 'checkin' | 'progress' | 'dashboardPlus'
@@ -352,7 +353,7 @@ function loadDashboardPlusState(): DashboardPlusState {
 const DEFAULT_ACTIVE_HABITS = ['breathingDone', 'coldShower', 'proteinShake', 'pushupsDone', 'gratitudeDone']
 
 const DEFAULT_SETTINGS: AppSettings = {
-  name: 'Elias',
+  name: '',
   theme: 'system',
   focusMinutes: 25,
   proteinGoal: 150,
@@ -577,7 +578,7 @@ function EmptyState({
 }
 
 function App() {
-  const { entries, syncStatus, saveEntry } = useEntries()
+  const { entries, syncStatus, isOnline, saveEntry, reloadAll } = useEntries()
   const [view, setView] = useState<View>('today')
   const [selectedDate, setSelectedDate] = useState(() => dateKey(new Date()))
   const [settings, setSettings] = useState<AppSettings>(loadSettings)
@@ -631,11 +632,11 @@ function App() {
   }
 
   useEffect(() => {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
+    safeLocalStorageSetItem(SETTINGS_KEY, JSON.stringify(settings))
   }, [settings])
 
   useEffect(() => {
-    localStorage.setItem(DASHBOARD_PLUS_KEY, JSON.stringify(dashboardPlus))
+    safeLocalStorageSetItem(DASHBOARD_PLUS_KEY, JSON.stringify(dashboardPlus))
   }, [dashboardPlus])
 
   useEffect(() => {
@@ -675,6 +676,23 @@ function App() {
 
   const showToast = (message: string, actionLabel?: string, onAction?: () => void) => {
     setToast({ message, actionLabel, onAction })
+  }
+
+  const handleExport = () => {
+    exportJSON(entries)
+    showToast('Backup exportiert.')
+  }
+
+  const handleImport = async (file: File) => {
+    try {
+      const imported = await importJSON(file)
+      const normalized = imported.map(entry => ({ ...entry, dailyScore: calculateScore(entry) }))
+      if (!saveAllEntries(normalized)) throw new Error('localStorage unavailable')
+      await reloadAll()
+      showToast('Backup importiert.')
+    } catch {
+      showToast('Import fehlgeschlagen.')
+    }
   }
 
   const setAnchors = (nextAnchors: string[], nextDone: boolean[]) => {
@@ -867,12 +885,12 @@ function App() {
           <div className="desktop-topbar">
             <div>
               <span className="eyebrow">{currentViewLabel}</span>
-              <h1>{greeting()}, {settings.name.trim() || 'Elias'}.</h1>
+              <h1>{greeting()}{settings.name.trim() ? `, ${settings.name.trim()}` : ''}.</h1>
             </div>
             <div className="topbar-actions">
               <span className={`sync-pill sync-pill--${syncStatus}`}>
                 <Cloud size={14} />
-                {syncStatus === 'syncing' ? 'Speichert …' : 'Lokal gespeichert'}
+                {isOnline ? (syncStatus === 'syncing' ? 'Speichert …' : 'Lokal gespeichert') : 'Offline'}
               </span>
               <BadgeButton label="Dashboard+ öffnen" onClick={() => navigateTo('dashboardPlus')}>
                 <Crown size={16} />
@@ -991,6 +1009,8 @@ function App() {
         <SettingsModal
           settings={settings}
           onChange={setSettings}
+          onExport={handleExport}
+          onImport={handleImport}
           onClose={() => setSettingsOpen(false)}
         />
       )}
@@ -1365,18 +1385,39 @@ function TodayView({
                   onDragLeave={() => setDragOverIdx(null)}
                   onDrop={() => handleDrop(index)}
                   onDragEnd={() => { setDragIdx(null); setDragOverIdx(null) }}
-                  onTouchStart={e => handleTouchStart(e, index)}
-                  onTouchMove={handleTouchMove}
-                  onTouchEnd={handleTouchEnd}
                 >
-                  <span
+                  <button
+                    type="button"
                     className="drag-handle"
                     draggable
+                    aria-label={`Reihenfolge von ${item.label} ändern`}
+                    aria-grabbed={dragIdx === index}
                     onDragStart={e => { e.stopPropagation(); setDragIdx(index) }}
-                    aria-hidden="true"
+                    onDragEnd={() => { setDragIdx(null); setDragOverIdx(null) }}
+                    onTouchStart={e => handleTouchStart(e, index)}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
+                    onKeyDown={event => {
+                      if (event.key === 'ArrowUp') {
+                        event.preventDefault()
+                        applyReorder(index, Math.max(0, index - 1))
+                      }
+                      if (event.key === 'ArrowDown') {
+                        event.preventDefault()
+                        applyReorder(index, Math.min(routineItems.length - 1, index + 1))
+                      }
+                      if (event.key === 'Home') {
+                        event.preventDefault()
+                        applyReorder(index, 0)
+                      }
+                      if (event.key === 'End') {
+                        event.preventDefault()
+                        applyReorder(index, routineItems.length - 1)
+                      }
+                    }}
                   >
                     <GripVertical size={13} />
-                  </span>
+                  </button>
                   <span className="routine-item__icon"><Icon size={18} /></span>
                   <button
                     type="button"
@@ -2555,13 +2596,18 @@ function FocusModal({
 function SettingsModal({
   settings,
   onChange,
+  onExport,
+  onImport,
   onClose,
 }: {
   settings: AppSettings
   onChange: (settings: AppSettings) => void
+  onExport: () => void
+  onImport: (file: File) => Promise<void>
   onClose: () => void
 }) {
   useModalBehavior(onClose)
+  const importInputRef = useRef<HTMLInputElement | null>(null)
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}>
@@ -2618,10 +2664,30 @@ function SettingsModal({
         </div>
 
         <div className="settings-section settings-grid">
-          <label className="text-field"><span>Name</span><input value={settings.name} onChange={event => onChange({ ...settings, name: event.target.value })} /></label>
+          <label className="text-field"><span>Name</span><input value={settings.name} placeholder="Dein Name" onChange={event => onChange({ ...settings, name: event.target.value })} /></label>
           <label className="text-field"><span>Standard-Fokus</span><input type="number" min="5" max="120" step="5" value={settings.focusMinutes} onChange={event => onChange({ ...settings, focusMinutes: clampNumber(Number(event.target.value) || 25, 5, 120) })} /></label>
           <label className="text-field"><span>Proteinziel in g</span><input type="number" min="50" max="400" step="5" value={settings.proteinGoal} onChange={event => onChange({ ...settings, proteinGoal: clampNumber(Number(event.target.value) || 150, 50, 400) })} /></label>
           <label className="text-field"><span>Kalorienziel</span><input type="number" min="1000" max="8000" step="50" value={settings.calorieGoal} onChange={event => onChange({ ...settings, calorieGoal: clampNumber(Number(event.target.value) || 3500, 1000, 8000) })} /></label>
+        </div>
+
+        <div className="settings-section settings-actions">
+          <button type="button" className="secondary-button" onClick={onExport}>
+            <ChevronDown size={16} /> Export JSON
+          </button>
+          <button type="button" className="secondary-button" onClick={() => importInputRef.current?.click()}>
+            <ChevronUp size={16} /> Import JSON
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={async event => {
+              const file = event.target.files?.[0]
+              event.target.value = ''
+              if (file) await onImport(file)
+            }}
+          />
         </div>
 
         <div className="settings-note">
@@ -2632,6 +2698,15 @@ function SettingsModal({
       </div>
     </div>
   )
+}
+
+function safeLocalStorageSetItem(key: string, value: string): boolean {
+  try {
+    localStorage.setItem(key, value)
+    return true
+  } catch {
+    return false
+  }
 }
 
 export default App

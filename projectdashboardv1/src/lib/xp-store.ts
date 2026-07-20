@@ -19,11 +19,11 @@ const XP_PER_LEVEL = 500
 
 export function loadXP(): XPStore {
   try {
-    const raw = localStorage.getItem(XP_KEY)
+    const raw = safeGetItem(XP_KEY)
     if (!raw) return defaultXP()
     const parsed = { ...defaultXP(), ...JSON.parse(raw) }
     // Also check dashboard-bridge state — take whichever has more totalXP
-    const bridgeRaw = localStorage.getItem('lifeos-sv4')
+    const bridgeRaw = safeGetItem('lifeos-sv4')
     if (bridgeRaw) {
       const bridge = JSON.parse(bridgeRaw)
       if ((bridge.xp ?? 0) > parsed.totalXP) {
@@ -45,12 +45,13 @@ export function loadXP(): XPStore {
 }
 
 export function saveXP(store: XPStore): void {
-  localStorage.setItem(XP_KEY, JSON.stringify(store))
-  // Notify other tabs / HTML pages instantly
-  window.dispatchEvent(new StorageEvent('storage', {
-    key: XP_KEY,
-    newValue: JSON.stringify(store),
-  }))
+  if (safeSetItem(XP_KEY, JSON.stringify(store))) {
+    // Notify other tabs / HTML pages instantly
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: XP_KEY,
+      newValue: JSON.stringify(store),
+    }))
+  }
 }
 
 /** Award XP for a daily score. Idempotent per date — safe to call on every save. */
@@ -63,16 +64,16 @@ export function awardDailyXP(score: number, date: string): XPStore {
     const newXP = scoreToXP(score)
     // To handle same-day updates: store per-day XP awarded
     const perDayKey = `lifeos-xp-day-${date}`
-    const prevAwarded = Number(localStorage.getItem(perDayKey) ?? '0')
+    const prevAwarded = Number(safeGetItem(perDayKey) ?? '0')
     const diff = newXP - prevAwarded
     if (diff <= 0) return store
-    localStorage.setItem(perDayKey, String(newXP))
+    safeSetItem(perDayKey, String(newXP))
     return applyXP(store, diff, date)
   }
 
   // New day
   const earned = scoreToXP(score)
-  localStorage.setItem(`lifeos-xp-day-${date}`, String(earned))
+  safeSetItem(`lifeos-xp-day-${date}`, String(earned))
 
   // Streak: consecutive days with score >= 50
   const yesterday = offsetDate(date, -1)
@@ -137,4 +138,21 @@ function offsetDate(date: string, days: number): string {
   const d = new Date(date + 'T00:00:00')
   d.setDate(d.getDate() + days)
   return d.toISOString().split('T')[0]
+}
+
+function safeGetItem(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function safeSetItem(key: string, value: string): boolean {
+  try {
+    localStorage.setItem(key, value)
+    return true
+  } catch {
+    return false
+  }
 }

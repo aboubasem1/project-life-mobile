@@ -6,10 +6,10 @@ const USER_ID_KEY  = 'project-life-user-id'
 
 // ─── User identity (UUID stored in localStorage) ──────────────────────────────
 export function getUserId(): string {
-  let id = localStorage.getItem(USER_ID_KEY)
+  let id = safeGetItem(USER_ID_KEY)
   if (!id) {
     id = crypto.randomUUID()
-    localStorage.setItem(USER_ID_KEY, id)
+    safeSetItem(USER_ID_KEY, id)
   }
   return id
 }
@@ -17,7 +17,7 @@ export function getUserId(): string {
 // ─── Local CRUD ───────────────────────────────────────────────────────────────
 export function loadAllEntries(): DashboardEntry[] {
   try {
-    const raw = localStorage.getItem(ENTRIES_KEY)
+    const raw = safeGetItem(ENTRIES_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
@@ -27,8 +27,8 @@ export function loadAllEntries(): DashboardEntry[] {
   }
 }
 
-export function saveAllEntries(entries: DashboardEntry[]): void {
-  localStorage.setItem(ENTRIES_KEY, JSON.stringify(entries))
+export function saveAllEntries(entries: DashboardEntry[]): boolean {
+  return safeSetItem(ENTRIES_KEY, JSON.stringify(entries))
 }
 
 export function upsertEntry(entry: DashboardEntry): DashboardEntry[] {
@@ -100,5 +100,22 @@ function migrateLegacy(raw: Record<string, unknown>): DashboardEntry {
     waterLiters:        Number(raw.waterLiters)        || 0,
     deepWorkHours:      Number(raw.deepWorkHours)      || 0,
     dailyScore:         Number(raw.dailyScore)         || 0,
+  }
+}
+
+function safeGetItem(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function safeSetItem(key: string, value: string): boolean {
+  try {
+    localStorage.setItem(key, value)
+    return true
+  } catch {
+    return false
   }
 }

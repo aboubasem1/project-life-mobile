@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import type { DashboardEntry } from '../types/DashboardEntry'
 import { loadAllEntries, upsertEntry } from '../lib/storage'
 import { calculateScore } from '../lib/score'
@@ -18,7 +18,27 @@ export function useEntries(): UseEntriesReturn {
   // Synchronous init — instant render, no loading state needed
   const [entries, setEntries]       = useState<DashboardEntry[]>(() => loadAllEntries())
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine)
   const resetTimer = useRef<number | null>(null)
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true)
+      setSyncStatus('idle')
+    }
+
+    const handleOffline = () => {
+      setIsOnline(false)
+      setSyncStatus('offline')
+    }
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
 
   // Reload from localStorage (no network call)
   const reloadAll = useCallback(async () => {
@@ -38,10 +58,10 @@ export function useEntries(): UseEntriesReturn {
     } catch { /* storage quota — ignore */ }
 
     setEntries(updated)
-    setSyncStatus('synced')
+    setSyncStatus(isOnline ? 'synced' : 'offline')
     if (resetTimer.current !== null) clearTimeout(resetTimer.current)
-    resetTimer.current = window.setTimeout(() => setSyncStatus('idle'), 2000)
-  }, [])
+    resetTimer.current = window.setTimeout(() => setSyncStatus(current => (current === 'offline' ? 'offline' : 'idle')), 2000)
+  }, [isOnline])
 
-  return { entries, syncStatus, isOnline: true, saveEntry, reloadAll }
+  return { entries, syncStatus, isOnline, saveEntry, reloadAll }
 }

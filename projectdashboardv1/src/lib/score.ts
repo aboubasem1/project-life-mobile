@@ -25,22 +25,21 @@ const NUMERIC_SCORES: { key: keyof DashboardEntry; threshold: number; points: nu
   { key: 'tasksDone',         threshold: 3,   points: 4, label: 'Tasks ≥3'           },
 ]
 
-// Mood bonus (5 pts max) — previously tracked but never scored
+// Mood bonus (5 pts max) — aligned with the UI options
 const MOOD_SCORES: Record<string, number> = {
-  'MOTIVIERT': 5,
-  'GUT':       3,
-  'NEUTRAL':   1,
-  'MÜDE':      0,
-  'GESTRESST': 0,
+  Ruhig: 5,
+  Gut: 3,
+  Neutral: 1,
+  Müde: 0,
+  Gestresst: 0,
 }
 
-// Sleep quality bonus (5 pts max) — previously tracked but never scored
+// Sleep quality bonus (5 pts max) — aligned with the UI options
 const SLEEP_SCORES: Record<string, number> = {
-  'SEHR GUT':      5,
-  'GUT':           3,
-  'OKAY':          1,
-  'SCHLECHT':      0,
-  'SEHR SCHLECHT': 0,
+  Schlecht: 0,
+  Okay: 1,
+  Gut: 3,
+  'Sehr gut': 5,
 }
 
 // ─── Score calc ───────────────────────────────────────────────────────────────
@@ -69,6 +68,7 @@ export function getScoreBreakdown(entry: DashboardEntry): ScoreBreakdown[] {
     label: string,
     habitKeys: (keyof DashboardEntry)[],
     numericKeys: (keyof DashboardEntry)[] = [],
+    extraItems: { label: string; achieved: boolean; points: number }[] = [],
   ): ScoreBreakdown => {
     const items = [
       ...HABIT_SCORES.filter(h => habitKeys.includes(h.key)).map(h => ({
@@ -81,6 +81,7 @@ export function getScoreBreakdown(entry: DashboardEntry): ScoreBreakdown[] {
         achieved: (entry[n.key] as number) >= n.threshold,
         points: n.points,
       })),
+      ...extraItems,
     ]
     return {
       category: label,
@@ -91,10 +92,13 @@ export function getScoreBreakdown(entry: DashboardEntry): ScoreBreakdown[] {
   }
 
   return [
-    section('Morgen',   ['coldShower', 'proteinShake'],                      ['meditationMinutes']),
+    section('Morgen', ['coldShower', 'proteinShake'], ['meditationMinutes'], [
+      { label: `Stimmung: ${entry.mood || '—'}`, achieved: Boolean(entry.mood), points: MOOD_SCORES[entry.mood] ?? 0 },
+      { label: `Schlafqualität: ${entry.sleepQuality || '—'}`, achieved: Boolean(entry.sleepQuality), points: SLEEP_SCORES[entry.sleepQuality] ?? 0 },
+    ]),
     section('Training', ['pushupsDone', 'squatsDone', 'wallsitDone', 'plankDone']),
-    section('Mindset',  ['gratitudeDone', 'focusDone', 'winnerModeDone']),
-    section('Abend',    ['journalDone', 'familyTimeDone'],                   ['proteinGrams', 'waterLiters', 'deepWorkHours', 'tasksDone']),
+    section('Mindset', ['gratitudeDone', 'focusDone', 'winnerModeDone']),
+    section('Abend', ['journalDone', 'familyTimeDone'], ['proteinGrams', 'waterLiters', 'deepWorkHours', 'tasksDone']),
   ]
 }
 
