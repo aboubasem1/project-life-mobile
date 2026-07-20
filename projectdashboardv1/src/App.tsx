@@ -111,11 +111,12 @@ type HabitDef = {
   id: RoutineKey
   label: string
   category: string
+  minutes?: number
   icon: React.ComponentType<{ size?: number }>
 }
 
 const DAILY_HABITS: HabitDef[] = [
-  { id: 'breathingDone',   label: '11 Min. Atmung',    category: 'Mind', icon: Brain    },
+  { id: 'breathingDone',   label: '11 Min. Atmung',    category: 'Mind', minutes: 11, icon: Brain    },
   { id: 'coldShower',      label: 'Cold Shower',       category: 'Body', icon: Snowflake },
   { id: 'proteinShake',    label: 'Protein Shake',     category: 'Body', icon: Coffee   },
   { id: 'pushupsDone',     label: '50 Pushups',        category: 'Body', icon: Dumbbell },
@@ -461,10 +462,10 @@ function App() {
     setAnchors(nextAnchors, nextDone)
   }
 
-  const openFocus = (title: string, taskIndex?: number, routineKey?: RoutineKey) => {
+  const openFocus = (title: string, taskIndex?: number, routineKey?: RoutineKey, overrideMinutes?: number) => {
     setFocusSession({
       title,
-      minutes: clampNumber(settings.focusMinutes, 5, 120),
+      minutes: clampNumber(overrideMinutes ?? settings.focusMinutes, 5, 120),
       taskIndex,
       routineKey,
     })
@@ -478,11 +479,17 @@ function App() {
         itemIndex === index ? true : Boolean(anchorsDone[itemIndex]),
       )
       setAnchors(anchors, nextDone)
+      // task focus block always counts as a focus session
+      updateEntry({ focusDone: true } as Partial<DashboardEntry>)
+    } else if (focusSession.routineKey) {
+      // only mark the specific routine key; only set focusDone if that IS the focus habit
+      updateEntry({
+        [focusSession.routineKey]: true,
+        ...(focusSession.routineKey === 'focusDone' ? {} : {}),
+      } as Partial<DashboardEntry>)
+    } else {
+      updateEntry({ focusDone: true } as Partial<DashboardEntry>)
     }
-    updateEntry({
-      focusDone: true,
-      ...(focusSession.routineKey ? { [focusSession.routineKey]: true } : {}),
-    } as Partial<DashboardEntry>)
     setFocusSession(null)
     showToast('Fokusblock abgeschlossen.')
   }
@@ -794,7 +801,7 @@ function TodayView({
   onToggleAnchor: (index: number) => void
   onEditTask: (index: number, value: string) => void
   onAddTask: () => void
-  onOpenFocus: (title: string, taskIndex?: number, routineKey?: RoutineKey) => void
+  onOpenFocus: (title: string, taskIndex?: number, routineKey?: RoutineKey, overrideMinutes?: number) => void
   onOpenPlan: () => void
   onOpenCheckin: () => void
   showToast: (message: string) => void
@@ -807,6 +814,7 @@ function TodayView({
       key: h.id,
       label: h.label,
       icon: h.icon,
+      minutes: h.minutes,
       done: Boolean(entry[h.id as keyof DashboardEntry]),
     }))
 
@@ -861,21 +869,26 @@ function TodayView({
             </p>
           </div>
           <div className="hero-card__actions">
-            {(nextTaskIndex >= 0 || nextRoutine) && (
-              <button
-                type="button"
-                className="primary-button"
-                onClick={() => onOpenFocus(
-                  focusTitle,
-                  nextTaskIndex >= 0 ? nextTaskIndex : undefined,
-                  nextTaskIndex < 0 ? nextRoutine?.key : undefined,
-                )}
-              >
-                <Play size={17} fill="currentColor" />
-                Fokus starten
-                <span>{settings.focusMinutes} Min.</span>
-              </button>
-            )}
+            {(nextTaskIndex >= 0 || nextRoutine) && (() => {
+              const routineMinutes = nextTaskIndex < 0 ? nextRoutine?.minutes : undefined
+              const displayMinutes = routineMinutes ?? settings.focusMinutes
+              return (
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={() => onOpenFocus(
+                    focusTitle,
+                    nextTaskIndex >= 0 ? nextTaskIndex : undefined,
+                    nextTaskIndex < 0 ? nextRoutine?.key : undefined,
+                    routineMinutes,
+                  )}
+                >
+                  <Play size={17} fill="currentColor" />
+                  Fokus starten
+                  <span>{displayMinutes} Min.</span>
+                </button>
+              )
+            })()}
             {(nextTaskIndex >= 0 || nextRoutine) && (
               <button type="button" className="secondary-button" onClick={completeNext}>
                 <Check size={17} />
@@ -998,7 +1011,13 @@ function TodayView({
                   type="button"
                   key={item.key}
                   className={item.done ? 'routine-item is-done' : 'routine-item'}
-                  onClick={() => onUpdate({ [item.key]: !item.done } as Partial<DashboardEntry>)}
+                  onClick={() => {
+                    if (!item.done) {
+                      onOpenFocus(item.label, undefined, item.key as RoutineKey, item.minutes)
+                    } else {
+                      onUpdate({ [item.key]: false } as Partial<DashboardEntry>)
+                    }
+                  }}
                   aria-pressed={item.done}
                 >
                   <span className="routine-item__icon"><Icon size={18} /></span>
