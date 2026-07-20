@@ -1,6 +1,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type FormEvent,
@@ -24,6 +25,7 @@ import {
   Crown,
   Dumbbell,
   Focus,
+  GripVertical,
   Heart,
   Home,
   Leaf,
@@ -614,6 +616,7 @@ function App() {
               onEditTask={(index, value) => setTaskEditor({ index, value })}
               onAddTask={() => setTaskEditor({ index: null, value: '' })}
               onOpenFocus={openFocus}
+              onReorderHabits={ids => setSettings(current => ({ ...current, activeHabits: ids }))}
               onOpenPlan={() => navigateTo('plan')}
               onOpenCheckin={() => navigateTo('checkin')}
               showToast={showToast}
@@ -802,14 +805,21 @@ function TodayView({
   onEditTask: (index: number, value: string) => void
   onAddTask: () => void
   onOpenFocus: (title: string, taskIndex?: number, routineKey?: RoutineKey, overrideMinutes?: number) => void
+  onReorderHabits: (ids: string[]) => void
   onOpenPlan: () => void
   onOpenCheckin: () => void
   showToast: (message: string) => void
 }) {
   const [capture, setCapture] = useState('')
+  const [dragIdx,     setDragIdx]     = useState<number | null>(null)
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
+  const touchRef = useRef<{ sourceIdx: number } | null>(null)
+
   const energy = entry.energyLevel
-  const routineItems = DAILY_HABITS
-    .filter(h => settings.activeHabits.includes(h.id))
+  // Preserve the order from settings.activeHabits
+  const routineItems = settings.activeHabits
+    .map(id => DAILY_HABITS.find(h => h.id === id))
+    .filter((h): h is HabitDef => h !== undefined)
     .map(h => ({
       key: h.id,
       label: h.label,
@@ -817,6 +827,46 @@ function TodayView({
       minutes: h.minutes,
       done: Boolean(entry[h.id as keyof DashboardEntry]),
     }))
+
+  const applyReorder = (fromIdx: number, toIdx: number) => {
+    if (fromIdx === toIdx) return
+    const next = [...settings.activeHabits]
+    const [moved] = next.splice(fromIdx, 1)
+    next.splice(toIdx, 0, moved)
+    onReorderHabits(next)
+  }
+
+  const handleDrop = (toIdx: number) => {
+    if (dragIdx !== null) applyReorder(dragIdx, toIdx)
+    setDragIdx(null)
+    setDragOverIdx(null)
+  }
+
+  const handleTouchStart = (e: React.TouchEvent, idx: number) => {
+    touchRef.current = { sourceIdx: idx }
+    setDragIdx(idx)
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!touchRef.current) return
+    e.preventDefault()
+    const touch = e.touches[0]
+    const el = document.elementFromPoint(touch.clientX, touch.clientY)
+    const item = el?.closest('[data-rindex]')
+    if (item) {
+      const idx = parseInt(item.getAttribute('data-rindex') ?? '-1', 10)
+      if (idx >= 0) setDragOverIdx(idx)
+    }
+  }
+
+  const handleTouchEnd = () => {
+    if (touchRef.current !== null && dragOverIdx !== null) {
+      applyReorder(touchRef.current.sourceIdx, dragOverIdx)
+    }
+    touchRef.current = null
+    setDragIdx(null)
+    setDragOverIdx(null)
+  }
 
   const routineDone = routineItems.filter(item => item.done).length
   const nextTaskIndex = anchors.findIndex((_, index) => !anchorsDone[index])
@@ -1004,26 +1054,55 @@ function TodayView({
             action={<span className="counter-pill">{routineDone}/{routineItems.length}</span>}
           />
           <div className="routine-list">
-            {routineItems.map(item => {
+            {routineItems.map((item, index) => {
               const Icon = item.icon
+              const isDragging = dragIdx === index
+              const isOver     = dragOverIdx === index && dragIdx !== index
               return (
-                <button
-                  type="button"
+                <div
                   key={item.key}
-                  className={item.done ? 'routine-item is-done' : 'routine-item'}
-                  onClick={() => {
-                    if (!item.done) {
-                      onOpenFocus(item.label, undefined, item.key as RoutineKey, item.minutes)
-                    } else {
-                      onUpdate({ [item.key]: false } as Partial<DashboardEntry>)
-                    }
-                  }}
-                  aria-pressed={item.done}
+                  data-rindex={String(index)}
+                  className={[
+                    'routine-item',
+                    item.done  ? 'is-done'     : '',
+                    isDragging ? 'is-dragging'  : '',
+                    isOver     ? 'is-drag-over' : '',
+                  ].filter(Boolean).join(' ')}
+                  onDragOver={e => { e.preventDefault(); setDragOverIdx(index) }}
+                  onDragLeave={() => setDragOverIdx(null)}
+                  onDrop={() => handleDrop(index)}
+                  onDragEnd={() => { setDragIdx(null); setDragOverIdx(null) }}
+                  onTouchStart={e => handleTouchStart(e, index)}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
                 >
+                  <span
+                    className="drag-handle"
+                    draggable
+                    onDragStart={e => { e.stopPropagation(); setDragIdx(index) }}
+                    aria-hidden="true"
+                  >
+                    <GripVertical size={13} />
+                  </span>
                   <span className="routine-item__icon"><Icon size={18} /></span>
-                  <span>{item.label}</span>
-                  <span className="routine-item__state">{item.done ? <Check size={16} /> : <ChevronRight size={16} />}</span>
-                </button>
+                  <button
+                    type="button"
+                    className="routine-item__main"
+                    onClick={() => {
+                      if (!item.done) {
+                        onOpenFocus(item.label, undefined, item.key as RoutineKey, item.minutes)
+                      } else {
+                        onUpdate({ [item.key]: false } as Partial<DashboardEntry>)
+                      }
+                    }}
+                    aria-pressed={item.done}
+                  >
+                    {item.label}
+                  </button>
+                  <span className="routine-item__state">
+                    {item.done ? <Check size={16} /> : <ChevronRight size={16} />}
+                  </span>
+                </div>
               )
             })}
           </div>

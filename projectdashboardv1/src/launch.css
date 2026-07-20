@@ -879,15 +879,14 @@ button:disabled {
 .routine-item {
   display: grid;
   min-height: 58px;
-  grid-template-columns: 38px minmax(0, 1fr) 28px;
+  grid-template-columns: 18px 38px minmax(0, 1fr) 28px;
   align-items: center;
-  gap: 11px;
-  padding: 8px 11px;
+  gap: 8px;
+  padding: 8px 11px 8px 8px;
   border: 1px solid transparent;
   border-radius: 16px;
   background: transparent;
   color: var(--text-soft);
-  cursor: pointer;
   text-align: left;
 }
 
@@ -897,6 +896,48 @@ button:disabled {
 
 .routine-item.is-done {
   color: var(--text);
+}
+
+/* Drag states */
+.routine-item.is-dragging {
+  opacity: 0.38;
+}
+
+.routine-item.is-drag-over {
+  border-color: var(--border-strong);
+  background: var(--surface-soft);
+}
+
+/* Drag handle */
+.drag-handle {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 32px;
+  color: var(--text-muted);
+  cursor: grab;
+  touch-action: none;
+  opacity: 0.38;
+  border-radius: 5px;
+  transition: opacity 0.12s;
+}
+
+.routine-item:hover .drag-handle { opacity: 0.72; }
+.drag-handle:active { cursor: grabbing; opacity: 1; }
+
+/* Main button inside routine item */
+.routine-item__main {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  padding: 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
 }
 
 .routine-item__icon,
