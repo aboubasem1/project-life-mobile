@@ -1,11 +1,13 @@
 import {
   useEffect,
-  useMemo,
   useRef,
+  useMemo,
   useState,
   type CSSProperties,
+  type Dispatch,
   type FormEvent,
   type ReactNode,
+  type SetStateAction,
 } from 'react'
 import {
   Activity,
@@ -51,7 +53,7 @@ import { createDefaultEntry } from './types/DashboardEntry'
 import { calculateScore } from './lib/score'
 import './launch.css'
 
-type View = 'today' | 'plan' | 'checkin' | 'progress'
+type View = 'today' | 'plan' | 'checkin' | 'progress' | 'dashboardPlus'
 type ThemePreference = 'light' | 'dark' | 'system'
 type EnergyLevel = NonNullable<DashboardEntry['energyLevel']>
 type RoutineKey =
@@ -82,7 +84,91 @@ type ToastState = {
   onAction?: () => void
 } | null
 
+type DashboardPlusPriority = 'red' | 'orange' | 'blue'
+
+type DashboardPlusTask = {
+  id: string
+  title: string
+  tag: string
+  time: string
+  done: boolean
+  priority: DashboardPlusPriority
+}
+
+type DashboardPlusSupplement = {
+  id: string
+  name: string
+  brand: string
+  stock: number
+  unit: string
+  dailyUse: number
+  dailyUnit: string
+  color: string
+}
+
+type DashboardPlusBoard = {
+  id: string
+  label: string
+  count: number
+  tasks: DashboardPlusTask[]
+}
+
+type DashboardPlusShoppingItem = {
+  id: string
+  icon: string
+  name: string
+  note: string
+  price: number
+  done: boolean
+}
+
+type DashboardPlusBill = {
+  id: string
+  name: string
+  subtitle: string
+  amount: number
+  due: string
+  status: 'paid' | 'open' | 'overdue'
+  color: string
+}
+
+type DashboardPlusState = {
+  overview: {
+    dateLabel: string
+    syncStatus: string
+    syncTime: string
+    score: number
+    habits: number
+    todos: number
+    projects: number
+  }
+  focusTodos: DashboardPlusTask[]
+  supplements: DashboardPlusSupplement[]
+  boards: DashboardPlusBoard[]
+  shopping: {
+    total: number
+    items: DashboardPlusShoppingItem[]
+  }
+  stats: {
+    average: number
+    best: number
+    rhythm: number
+    weight: number
+    weeklyBars: number[]
+    heatmap: number[]
+    projects: Array<{ id: string; name: string; percent: number; color: string }>
+  }
+  finances: {
+    monthlyFixed: number
+    open: number
+    overdue: number
+    recurring: DashboardPlusBill[]
+    openBills: DashboardPlusBill[]
+  }
+}
+
 const SETTINGS_KEY = 'life-os-v1-settings'
+const DASHBOARD_PLUS_KEY = 'life-os-v1-dashboard-plus'
 
 // ── Data from projectbaby ────────────────────────────────────────────────────
 const QUOTES = [
@@ -143,6 +229,124 @@ function getLevelFromScore(totalScore: number): string {
     if (totalScore >= XPT[i]) { level = i; break }
   }
   return LVLS[level]
+}
+
+function createDashboardPlusSeed(): DashboardPlusState {
+  return {
+    overview: {
+      dateLabel: 'Sonntag, 1. Jun 2026',
+      syncStatus: 'Lokal gespeichert',
+      syncTime: 'gerade eben',
+      score: 76,
+      habits: 8,
+      todos: 5,
+      projects: 3,
+    },
+    focusTodos: [
+      { id: 'focus-1', title: 'Creatine bestellen (Lager fast leer)', tag: 'DRINGEND', time: 'heute', done: false, priority: 'red' },
+      { id: 'focus-2', title: 'Morning Routine abschließen', tag: 'PERSONAL', time: '08:15', done: true, priority: 'orange' },
+      { id: 'focus-3', title: 'Landing Page copy finalisieren', tag: 'MONDAS', time: '14:00', done: false, priority: 'blue' },
+    ],
+    supplements: [
+      { id: 'supp-1', name: 'Hüttenkäse', brand: '500g Becher', stock: 400, unit: 'g', dailyUse: 200, dailyUnit: 'g', color: '#0a84ff' },
+      { id: 'supp-2', name: 'Creatine Monohydrate', brand: 'BulkPowders · 500g', stock: 60, unit: 'g', dailyUse: 10, dailyUnit: 'g', color: '#ff3b30' },
+      { id: 'supp-3', name: 'Haferflocken', brand: 'Naturgut · 1kg', stock: 600, unit: 'g', dailyUse: 80, dailyUnit: 'g', color: '#7c7bff' },
+      { id: 'supp-4', name: 'Omega-3', brand: 'Optimum · 180 Caps', stock: 63, unit: 'Caps', dailyUse: 2, dailyUnit: 'Caps', color: '#ff9f0a' },
+      { id: 'supp-5', name: 'Vitamin D3 + K2', brand: 'Now Foods · 365 Caps', stock: 299, unit: 'Caps', dailyUse: 1, dailyUnit: 'Caps', color: '#5ac8fa' },
+    ],
+    boards: [
+      {
+        id: 'personal',
+        label: 'Personal',
+        count: 4,
+        tasks: [
+          { id: 'personal-1', title: 'Morning Routine', tag: '', time: '08:15', done: true, priority: 'blue' },
+          { id: 'personal-2', title: 'Training absolviert', tag: '', time: '09:45', done: true, priority: 'orange' },
+          { id: 'personal-3', title: 'Creatine bestellen', tag: 'HEUTE', time: '', done: false, priority: 'red' },
+          { id: 'personal-4', title: 'Arzttermin vereinbaren', tag: 'DIESE WOCHE', time: '', done: false, priority: 'blue' },
+        ],
+      },
+      {
+        id: 'mondas',
+        label: 'Mondas',
+        count: 6,
+        tasks: [
+          { id: 'mondas-1', title: 'Social Media Post geplant', tag: '', time: '10:30', done: true, priority: 'blue' },
+          { id: 'mondas-2', title: 'Landing Page copy finalisieren', tag: 'DEADLINE', time: '14:00', done: false, priority: 'red' },
+          { id: 'mondas-3', title: 'Speisekarte für Sommer aktualisieren', tag: 'DIESE WOCHE', time: '', done: false, priority: 'orange' },
+          { id: 'mondas-4', title: 'Dienstplan KW 24 erstellen', tag: '', time: '', done: false, priority: 'blue' },
+        ],
+      },
+      {
+        id: 'health',
+        label: 'Health',
+        count: 3,
+        tasks: [
+          { id: 'health-1', title: 'Training — Brust/Trizeps', tag: '', time: '', done: true, priority: 'blue' },
+          { id: 'health-2', title: 'Creatine + Omega-3 nehmen', tag: 'TÄGLICH', time: '', done: false, priority: 'orange' },
+          { id: 'health-3', title: 'Protein-Ziel 180g erreichen', tag: '', time: '', done: false, priority: 'blue' },
+        ],
+      },
+      {
+        id: 'coding',
+        label: 'Coding',
+        count: 5,
+        tasks: [],
+      },
+    ],
+    shopping: {
+      total: 89.90,
+      items: [
+        { id: 'shop-1', icon: '🧪', name: 'Creatine Monohydrate 1kg', note: 'BulkPowders · Bestand kritisch ⚠️', price: 24.99, done: false },
+        { id: 'shop-2', icon: '🐟', name: 'Omega-3 Nachfüllpack', note: 'Optimum · 300 Caps', price: 34.90, done: false },
+        { id: 'shop-3', icon: '💊', name: 'Magnesium Bisglycinate', note: 'Bioptimizers · 240 Caps', price: 34.00, done: false },
+      ],
+    },
+    stats: {
+      average: 74,
+      best: 12,
+      rhythm: 9,
+      weight: 76.2,
+      weeklyBars: [55, 72, 48, 85, 91, 63, 76],
+      heatmap: [1, 2, 3, 4, 3, 2, 1, 0, 2, 3, 4, 4, 3, 2, 2, 3, 1, 0, 1, 3, 4, 3, 2, 1, 0, 2, 3, 4],
+      projects: [
+        { id: 'proj-personal', name: 'Personal', percent: 50, color: 'var(--accent)' },
+        { id: 'proj-mondas', name: 'Mondas', percent: 17, color: 'var(--orange)' },
+        { id: 'proj-health', name: 'Health', percent: 33, color: 'var(--green)' },
+      ],
+    },
+    finances: {
+      monthlyFixed: 847,
+      open: 340,
+      overdue: 89,
+      recurring: [
+        { id: 'bill-rent', name: 'Miete', subtitle: 'Monatlich · 1. jeden Monat', amount: 520, due: 'nächste: 01.06', status: 'open', color: 'var(--accent)' },
+        { id: 'bill-power', name: 'Strom · Vattenfall', subtitle: 'Monatlich · 15. jeden Monat', amount: 89, due: 'nächste: 15.06', status: 'open', color: 'var(--teal)' },
+        { id: 'bill-internet', name: 'Internet · Telekom', subtitle: 'Monatlich · 20. jeden Monat', amount: 44, due: 'nächste: 20.06', status: 'open', color: 'var(--green)' },
+        { id: 'bill-streaming', name: 'Spotify + Netflix', subtitle: 'Monatlich · 5. jeden Monat', amount: 28, due: 'nächste: 05.06', status: 'open', color: '#bf5af2' },
+        { id: 'bill-gym', name: 'Gym · McFit', subtitle: 'Monatlich · 1. jeden Monat', amount: 24, due: 'nächste: 01.06', status: 'open', color: 'var(--orange)' },
+        { id: 'bill-icloud', name: 'iCloud 200GB', subtitle: 'Monatlich · 12. jeden Monat', amount: 3, due: 'nächste: 12.06', status: 'open', color: 'var(--accent2)' },
+      ],
+      openBills: [
+        { id: 'bill-tax', name: 'Steuerberater', subtitle: 'Fällig: 15.05.2026', amount: 89, due: '16 Tage überfällig', status: 'overdue', color: 'var(--red)' },
+        { id: 'bill-design', name: 'Lieferant Design-Assets', subtitle: 'Fällig: 05.06.2026', amount: 149, due: 'in 5 Tagen', status: 'open', color: 'var(--orange)' },
+        { id: 'bill-figma', name: 'Software-Lizenz Figma', subtitle: 'Fällig: 15.06.2026', amount: 102, due: 'in 15 Tagen', status: 'open', color: 'var(--orange)' },
+        { id: 'bill-vercel', name: 'Hosting · Vercel Pro', subtitle: 'Bezahlt am 01.05.2026', amount: 20, due: '✓ erledigt', status: 'paid', color: 'var(--green)' },
+      ],
+    },
+  }
+}
+
+function loadDashboardPlusState(): DashboardPlusState {
+  try {
+    const stored = localStorage.getItem(DASHBOARD_PLUS_KEY)
+    if (!stored) return createDashboardPlusSeed()
+    const parsed = JSON.parse(stored) as DashboardPlusState
+    if (!parsed || !parsed.overview || !Array.isArray(parsed.focusTodos)) return createDashboardPlusSeed()
+    return parsed
+  } catch {
+    return createDashboardPlusSeed()
+  }
 }
 
 const DEFAULT_ACTIVE_HABITS = ['breathingDone', 'coldShower', 'proteinShake', 'pushupsDone', 'gratitudeDone']
@@ -288,6 +492,28 @@ function IconButton({
   )
 }
 
+function BadgeButton({
+  label,
+  children,
+  onClick,
+}: {
+  label: string
+  children: ReactNode
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      className="badge-button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  )
+}
+
 function ProgressRing({ value, size = 72 }: { value: number; size?: number }) {
   const safeValue = clampNumber(Math.round(value), 0, 100)
   return (
@@ -355,10 +581,12 @@ function App() {
   const [view, setView] = useState<View>('today')
   const [selectedDate, setSelectedDate] = useState(() => dateKey(new Date()))
   const [settings, setSettings] = useState<AppSettings>(loadSettings)
+  const [dashboardPlus, setDashboardPlus] = useState<DashboardPlusState>(loadDashboardPlusState)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [taskEditor, setTaskEditor] = useState<{ index: number | null; value: string } | null>(null)
   const [focusSession, setFocusSession] = useState<FocusSession | null>(null)
   const [toast, setToast] = useState<ToastState>(null)
+  const dashboardPlusRouteLock = useRef<string | null>(null)
 
   const today = dateKey(new Date())
   const entry = useMemo(
@@ -370,6 +598,33 @@ function App() {
   const anchors = entry.anchors ?? []
   const anchorsDone = entry.anchorsDone ?? []
   const completedAnchors = anchors.filter((_, index) => Boolean(anchorsDone[index])).length
+  const activeRoutineDefinitions = useMemo(
+    () => settings.activeHabits
+      .map(id => DAILY_HABITS.find(item => item.id === id))
+      .filter((item): item is HabitDef => item !== undefined),
+    [settings.activeHabits],
+  )
+  const dashboardPlusReady = useMemo(() => {
+    const routinesComplete = activeRoutineDefinitions.length === 0
+      || activeRoutineDefinitions.every(item => Boolean(entry[item.id as keyof DashboardEntry]))
+    const anchorsComplete = anchors.length === 0 || anchors.every((_, index) => Boolean(anchorsDone[index]))
+    const dreamComplete = entry.dreamed === undefined
+      ? false
+      : entry.dreamed === false
+        ? true
+        : Boolean(entry.dreamQuality)
+    const needsMorningWeight = selectedDate === today && new Date().getHours() < 12
+    const weightComplete = !needsMorningWeight || entry.weightKg > 0
+
+    return Boolean(entry.mood)
+      && Boolean(entry.sleepQuality)
+      && Boolean(entry.sleepDuration)
+      && Boolean(entry.energyLevel)
+      && routinesComplete
+      && anchorsComplete
+      && dreamComplete
+      && weightComplete
+  }, [activeRoutineDefinitions, anchors, anchorsDone, entry, selectedDate, today])
 
   const updateEntry = (patch: Partial<DashboardEntry>) => {
     void saveEntry({ ...entry, ...patch })
@@ -378,6 +633,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
   }, [settings])
+
+  useEffect(() => {
+    localStorage.setItem(DASHBOARD_PLUS_KEY, JSON.stringify(dashboardPlus))
+  }, [dashboardPlus])
 
   useEffect(() => {
     const root = document.documentElement
@@ -399,6 +658,20 @@ function App() {
     const timer = window.setTimeout(() => setToast(null), 3200)
     return () => window.clearTimeout(timer)
   }, [toast])
+
+  useEffect(() => {
+    if (selectedDate !== today) {
+      dashboardPlusRouteLock.current = null
+      return
+    }
+
+    if (!dashboardPlusReady) return
+
+    if (view !== 'dashboardPlus' && dashboardPlusRouteLock.current !== today) {
+      dashboardPlusRouteLock.current = today
+      setView('dashboardPlus')
+    }
+  }, [dashboardPlusReady, selectedDate, today, view])
 
   const showToast = (message: string, actionLabel?: string, onAction?: () => void) => {
     setToast({ message, actionLabel, onAction })
@@ -504,10 +777,12 @@ function App() {
     }))
   }
 
-  const currentViewLabel = NAV_ITEMS.find(item => item.id === view)?.label ?? 'Heute'
+  const currentViewLabel = view === 'dashboardPlus'
+    ? 'Dashboard+'
+    : NAV_ITEMS.find(item => item.id === view)?.label ?? 'Heute'
   const navigateTo = (nextView: View) => {
     setView(nextView)
-    if (nextView === 'today') setSelectedDate(today)
+    if (nextView === 'today' || nextView === 'dashboardPlus') setSelectedDate(today)
   }
 
   return (
@@ -575,6 +850,10 @@ function App() {
             <strong>Life OS</strong>
           </div>
           <div className="mobile-header__actions">
+            <BadgeButton label="Dashboard+ öffnen" onClick={() => navigateTo('dashboardPlus')}>
+              <Crown size={16} />
+              <span>Dashboard+</span>
+            </BadgeButton>
             <IconButton label="Theme wechseln" onClick={quickToggleTheme}>
               {resolvedTheme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </IconButton>
@@ -595,6 +874,10 @@ function App() {
                 <Cloud size={14} />
                 {syncStatus === 'syncing' ? 'Speichert …' : 'Lokal gespeichert'}
               </span>
+              <BadgeButton label="Dashboard+ öffnen" onClick={() => navigateTo('dashboardPlus')}>
+                <Crown size={16} />
+                <span>Dashboard+</span>
+              </BadgeButton>
               <IconButton label="Einstellungen öffnen" onClick={() => setSettingsOpen(true)}>
                 <Settings size={18} />
               </IconButton>
@@ -656,6 +939,15 @@ function App() {
 
           {view === 'progress' && (
             <ProgressView entries={entries} today={today} />
+          )}
+
+          {view === 'dashboardPlus' && (
+            <DashboardPlusView
+              dashboard={dashboardPlus}
+              onChange={setDashboardPlus}
+              onBackToToday={() => navigateTo('today')}
+              today={today}
+            />
           )}
         </main>
 
@@ -1635,6 +1927,498 @@ function ProgressView({ entries, today }: { entries: DashboardEntry[]; today: st
             })}
           </div>
         </section>
+      </div>
+    </div>
+  )
+}
+
+function DashboardPlusView({
+  dashboard,
+  onChange,
+  onBackToToday,
+  today,
+}: {
+  dashboard: DashboardPlusState
+  onChange: Dispatch<SetStateAction<DashboardPlusState>>
+  onBackToToday: () => void
+  today: string
+}) {
+  const [activeBoardId, setActiveBoardId] = useState(dashboard.boards[0]?.id ?? 'personal')
+
+  useEffect(() => {
+    if (!dashboard.boards.some(board => board.id === activeBoardId)) {
+      setActiveBoardId(dashboard.boards[0]?.id ?? 'personal')
+    }
+  }, [activeBoardId, dashboard.boards])
+
+  const activeBoard = dashboard.boards.find(board => board.id === activeBoardId) ?? dashboard.boards[0]
+
+  const updateOverview = (patch: Partial<DashboardPlusState['overview']>) => {
+    onChange(current => ({ ...current, overview: { ...current.overview, ...patch } }))
+  }
+
+  const updateFocusTask = (index: number, patch: Partial<DashboardPlusTask>) => {
+    onChange(current => ({
+      ...current,
+      focusTodos: current.focusTodos.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
+    }))
+  }
+
+  const addFocusTask = () => {
+    onChange(current => ({
+      ...current,
+      focusTodos: [...current.focusTodos, { id: crypto.randomUUID(), title: 'Neue Aufgabe', tag: '', time: '', done: false, priority: 'blue' }],
+    }))
+  }
+
+  const removeFocusTask = (index: number) => {
+    onChange(current => ({
+      ...current,
+      focusTodos: current.focusTodos.filter((_, itemIndex) => itemIndex !== index),
+    }))
+  }
+
+  const updateSupplement = (index: number, patch: Partial<DashboardPlusSupplement>) => {
+    onChange(current => ({
+      ...current,
+      supplements: current.supplements.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
+    }))
+  }
+
+  const addSupplement = () => {
+    onChange(current => ({
+      ...current,
+      supplements: [...current.supplements, { id: crypto.randomUUID(), name: 'Neues Produkt', brand: '', stock: 0, unit: 'g', dailyUse: 0, dailyUnit: 'g', color: '#7c7bff' }],
+    }))
+  }
+
+  const removeSupplement = (index: number) => {
+    onChange(current => ({
+      ...current,
+      supplements: current.supplements.filter((_, itemIndex) => itemIndex !== index),
+    }))
+  }
+
+  const updateBoardTask = (boardId: string, taskIndex: number, patch: Partial<DashboardPlusTask>) => {
+    onChange(current => ({
+      ...current,
+      boards: current.boards.map(board => (
+        board.id === boardId
+          ? { ...board, tasks: board.tasks.map((task, itemIndex) => (itemIndex === taskIndex ? { ...task, ...patch } : task)) }
+          : board
+      )),
+    }))
+  }
+
+  const addBoardTask = (boardId: string) => {
+    onChange(current => ({
+      ...current,
+      boards: current.boards.map(board => (
+        board.id === boardId
+          ? { ...board, tasks: [...board.tasks, { id: crypto.randomUUID(), title: 'Neue Board-Aufgabe', tag: '', time: '', done: false, priority: 'blue' }] }
+          : board
+      )),
+    }))
+  }
+
+  const removeBoardTask = (boardId: string, taskIndex: number) => {
+    onChange(current => ({
+      ...current,
+      boards: current.boards.map(board => (
+        board.id === boardId
+          ? { ...board, tasks: board.tasks.filter((_, itemIndex) => itemIndex !== taskIndex) }
+          : board
+      )),
+    }))
+  }
+
+  const updateShoppingItem = (index: number, patch: Partial<DashboardPlusShoppingItem>) => {
+    onChange(current => ({
+      ...current,
+      shopping: {
+        ...current.shopping,
+        items: current.shopping.items.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
+      },
+    }))
+  }
+
+  const updateRecurringBill = (index: number, patch: Partial<DashboardPlusBill>) => {
+    onChange(current => ({
+      ...current,
+      finances: {
+        ...current.finances,
+        recurring: current.finances.recurring.map((bill, billIndex) => (billIndex === index ? { ...bill, ...patch } : bill)),
+      },
+    }))
+  }
+
+  const updateOpenBill = (index: number, patch: Partial<DashboardPlusBill>) => {
+    onChange(current => ({
+      ...current,
+      finances: {
+        ...current.finances,
+        openBills: current.finances.openBills.map((bill, billIndex) => (billIndex === index ? { ...bill, ...patch } : bill)),
+      },
+    }))
+  }
+
+  const formatMoney = (value: number) => value.toLocaleString('de-DE', { maximumFractionDigits: 2, minimumFractionDigits: 0 })
+
+  return (
+    <div className="view-stack dashboard-plus-view">
+      <section className="page-intro dashboard-plus-intro">
+        <div>
+          <span className="eyebrow">Dashboard+</span>
+          <h2>Alles auf einen Blick, aber lebendig editierbar.</h2>
+          <p>Das ist die projectbaby-Vorlage in unserem Life-OS-Look. Jedes Feld bleibt direkt anfassbar.</p>
+        </div>
+        <div className="dashboard-plus-intro__actions">
+          <button type="button" className="secondary-button" onClick={onBackToToday}>
+            <ChevronLeft size={16} /> Heute
+          </button>
+          <span className="sync-pill sync-pill--synced">
+            <Cloud size={14} /> {dashboard.overview.syncStatus}
+          </span>
+        </div>
+      </section>
+
+      <section className="card dashboard-plus-hero">
+        <div className="dashboard-plus-hero__meta">
+          <div>
+            <span className="eyebrow">{dashboard.overview.dateLabel}</span>
+            <h2>Preview</h2>
+          </div>
+          <ProgressRing value={dashboard.overview.score} size={86} />
+        </div>
+        <div className="dashboard-plus-hero__stats">
+          <label className="kpi-card dashboard-plus-metric">
+            <span>Habits</span>
+            <input type="number" min="0" value={dashboard.overview.habits} onChange={event => updateOverview({ habits: Number(event.target.value) || 0 })} />
+            <small>aktiv</small>
+          </label>
+          <label className="kpi-card dashboard-plus-metric">
+            <span>Todos</span>
+            <input type="number" min="0" value={dashboard.overview.todos} onChange={event => updateOverview({ todos: Number(event.target.value) || 0 })} />
+            <small>heute</small>
+          </label>
+          <label className="kpi-card dashboard-plus-metric">
+            <span>Projekte</span>
+            <input type="number" min="0" value={dashboard.overview.projects} onChange={event => updateOverview({ projects: Number(event.target.value) || 0 })} />
+            <small>Boards</small>
+          </label>
+        </div>
+      </section>
+
+      <div className="dashboard-plus-grid">
+        <section className="card dashboard-plus-card dashboard-plus-card--wide">
+          <SectionTitle
+            eyebrow="Tages-Fokus"
+            title="Top Aufgaben"
+            action={<button type="button" className="small-button" onClick={addFocusTask}><Plus size={14} /> Aufgabe</button>}
+          />
+          <div className="editable-task-list">
+            {dashboard.focusTodos.map((task, index) => (
+              <div className={task.done ? 'editable-task is-done' : 'editable-task'} key={task.id}>
+                <button
+                  type="button"
+                  className="task-check"
+                  onClick={() => updateFocusTask(index, { done: !task.done })}
+                  aria-pressed={task.done}
+                >
+                  {task.done ? <Check size={17} /> : <Circle size={17} />}
+                </button>
+                <div className="editable-task__content dashboard-plus-editable-content">
+                  <input
+                    className="dashboard-plus-input dashboard-plus-input--title"
+                    value={task.title}
+                    onChange={event => updateFocusTask(index, { title: event.target.value })}
+                    aria-label="Aufgabe"
+                  />
+                  <div className="dashboard-plus-inline-row">
+                    <input
+                      className="dashboard-plus-input"
+                      value={task.tag}
+                      onChange={event => updateFocusTask(index, { tag: event.target.value })}
+                      placeholder="Tag"
+                      aria-label="Tag"
+                    />
+                    <input
+                      className="dashboard-plus-input"
+                      value={task.time}
+                      onChange={event => updateFocusTask(index, { time: event.target.value })}
+                      placeholder="Zeit"
+                      aria-label="Zeit"
+                    />
+                  </div>
+                </div>
+                <div className="editable-task__actions">
+                  <button type="button" className="icon-button" onClick={() => removeFocusTask(index)} aria-label="Löschen">
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="card dashboard-plus-card">
+          <SectionTitle eyebrow="Supplements" title="Bestände" action={<button type="button" className="small-button" onClick={addSupplement}><Plus size={14} /> Produkt</button>} />
+          <div className="dashboard-plus-supplements">
+            {dashboard.supplements.map((item, index) => (
+              <div className="supp-card dashboard-plus-supp-card" style={{ borderTopColor: item.color }} key={item.id}>
+                <input className="dashboard-plus-input dashboard-plus-input--title" value={item.name} onChange={event => updateSupplement(index, { name: event.target.value })} />
+                <input className="dashboard-plus-input" value={item.brand} onChange={event => updateSupplement(index, { brand: event.target.value })} placeholder="Marke / Info" />
+                <div className="dashboard-plus-inline-row">
+                  <input className="dashboard-plus-input" type="number" min="0" value={item.stock} onChange={event => updateSupplement(index, { stock: Number(event.target.value) || 0 })} />
+                  <input className="dashboard-plus-input" value={item.unit} onChange={event => updateSupplement(index, { unit: event.target.value })} />
+                </div>
+                <div className="dashboard-plus-inline-row">
+                  <input className="dashboard-plus-input" type="number" min="0" value={item.dailyUse} onChange={event => updateSupplement(index, { dailyUse: Number(event.target.value) || 0 })} />
+                  <input className="dashboard-plus-input" value={item.dailyUnit} onChange={event => updateSupplement(index, { dailyUnit: event.target.value })} />
+                </div>
+                <input className="dashboard-plus-input dashboard-plus-input--color" value={item.color} onChange={event => updateSupplement(index, { color: event.target.value })} />
+                <button type="button" className="secondary-button secondary-button--full" onClick={() => removeSupplement(index)}>
+                  <Trash2 size={15} /> Entfernen
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="card dashboard-plus-card dashboard-plus-card--wide">
+          <SectionTitle eyebrow="Projekte" title="Boards" />
+          <div className="project-tabs dashboard-plus-tabs">
+            {dashboard.boards.map(board => (
+              <button
+                type="button"
+                key={board.id}
+                className={board.id === activeBoardId ? 'project-tab active' : 'project-tab'}
+                onClick={() => setActiveBoardId(board.id)}
+              >
+                {board.label} <span className="tab-count">{board.count}</span>
+              </button>
+            ))}
+          </div>
+          {activeBoard && (
+            <>
+              <div className="progress-ring-wrap dashboard-plus-board-summary">
+                <div>
+                  <div className="prog-label">Heute erledigt</div>
+                  <div className="prog-sub">{activeBoard.tasks.filter(task => task.done).length} von {activeBoard.tasks.length} Aufgaben</div>
+                </div>
+                <div className="prog-num">{activeBoard.tasks.length ? Math.round((activeBoard.tasks.filter(task => task.done).length / activeBoard.tasks.length) * 100) : 0}%</div>
+              </div>
+              <div className="editable-task-list">
+                {activeBoard.tasks.map((task, index) => (
+                  <div className={task.done ? 'editable-task is-done' : 'editable-task'} key={task.id}>
+                    <button type="button" className="task-check" onClick={() => updateBoardTask(activeBoard.id, index, { done: !task.done })} aria-pressed={task.done}>
+                      {task.done ? <Check size={17} /> : <Circle size={17} />}
+                    </button>
+                    <div className="editable-task__content dashboard-plus-editable-content">
+                      <input className="dashboard-plus-input dashboard-plus-input--title" value={task.title} onChange={event => updateBoardTask(activeBoard.id, index, { title: event.target.value })} aria-label="Board Aufgabe" />
+                      <div className="dashboard-plus-inline-row">
+                        <input className="dashboard-plus-input" value={task.tag} onChange={event => updateBoardTask(activeBoard.id, index, { tag: event.target.value })} placeholder="Tag" />
+                        <input className="dashboard-plus-input" value={task.time} onChange={event => updateBoardTask(activeBoard.id, index, { time: event.target.value })} placeholder="Zeit" />
+                      </div>
+                    </div>
+                    <div className="editable-task__actions">
+                      <button type="button" className="icon-button" onClick={() => removeBoardTask(activeBoard.id, index)} aria-label="Löschen">
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button type="button" className="secondary-button secondary-button--full" onClick={() => addBoardTask(activeBoard.id)}>
+                <Plus size={15} /> Aufgabe hinzufügen
+              </button>
+            </>
+          )}
+        </section>
+
+        <section className="card dashboard-plus-card">
+          <SectionTitle eyebrow="Kaufliste" title="Offen" />
+          <div className="shopping-list dashboard-plus-shopping-list">
+            {dashboard.shopping.items.map((item, index) => (
+              <label className={item.done ? 'shop-item is-done' : 'shop-item'} key={item.id}>
+                <div className="shop-icon" style={{ background: 'rgba(124,123,255,0.1)' }}>{item.icon}</div>
+                <div className="shop-body dashboard-plus-shop-body">
+                  <input className="dashboard-plus-input dashboard-plus-input--title" value={item.name} onChange={event => updateShoppingItem(index, { name: event.target.value })} />
+                  <input className="dashboard-plus-input" value={item.note} onChange={event => updateShoppingItem(index, { note: event.target.value })} />
+                </div>
+                <div className="dashboard-plus-shop-meta">
+                  <input className="dashboard-plus-input dashboard-plus-input--money" type="number" min="0" step="0.01" value={item.price} onChange={event => updateShoppingItem(index, { price: Number(event.target.value) || 0 })} />
+                  <span className="shop-price">€ {formatMoney(item.price)}</span>
+                </div>
+                <button type="button" className="shop-check" onClick={() => updateShoppingItem(index, { done: !item.done })} aria-pressed={item.done} />
+              </label>
+            ))}
+          </div>
+        </section>
+
+        <section className="card dashboard-plus-card">
+          <SectionTitle eyebrow="Stats" title="Verlauf" />
+          <div className="kpi-grid dashboard-plus-stats-grid">
+            <label className="kpi-card dashboard-plus-metric">
+              <span>Ø Score</span>
+              <input type="number" min="0" max="100" value={dashboard.stats.average} onChange={event => onChange(current => ({ ...current, stats: { ...current.stats, average: Number(event.target.value) || 0 } }))} />
+              <small>letzte 7 Tage</small>
+            </label>
+            <label className="kpi-card dashboard-plus-metric">
+              <span>Best Tag</span>
+              <input type="number" min="0" max="100" value={dashboard.stats.best} onChange={event => onChange(current => ({ ...current, stats: { ...current.stats, best: Number(event.target.value) || 0 } }))} />
+              <small>diese Woche</small>
+            </label>
+            <label className="kpi-card dashboard-plus-metric">
+              <span>Rhythmus</span>
+              <input type="number" min="0" max="30" value={dashboard.stats.rhythm} onChange={event => onChange(current => ({ ...current, stats: { ...current.stats, rhythm: Number(event.target.value) || 0 } }))} />
+              <small>Tage</small>
+            </label>
+            <label className="kpi-card dashboard-plus-metric">
+              <span>Gewicht</span>
+              <input type="number" min="0" step="0.1" value={dashboard.stats.weight} onChange={event => onChange(current => ({ ...current, stats: { ...current.stats, weight: Number(event.target.value) || 0 } }))} />
+              <small>kg</small>
+            </label>
+          </div>
+
+          <div className="week-chart dashboard-plus-week-chart">
+            <div className="heatmap-title">SCORE — LETZTE 7 TAGE</div>
+            <div className="week-bars">
+              {dashboard.stats.weeklyBars.map((bar, index) => (
+                <div className="week-bar-wrap" key={`${index}-${bar}`}>
+                  <input
+                    className="dashboard-plus-bar-input"
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={bar}
+                    onChange={event => onChange(current => ({
+                      ...current,
+                      stats: {
+                        ...current.stats,
+                        weeklyBars: current.stats.weeklyBars.map((item, barIndex) => (barIndex === index ? Number(event.target.value) || 0 : item)),
+                      },
+                    }))}
+                  />
+                  <div className="week-bar" style={{ height: `${bar}%`, background: 'linear-gradient(180deg,var(--accent),var(--accent2))' }} />
+                  <div className="week-day">{['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'][index] ?? '—'}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="heatmap-wrap dashboard-plus-heatmap">
+            <div className="heatmap-title">TODO-ABSCHLUSS — LETZTE 2 WOCHEN</div>
+            <div className="heatmap-grid">
+              {dashboard.stats.heatmap.map((value, index) => (
+                <button
+                  type="button"
+                  key={`${index}-${value}`}
+                  className="heatmap-cell dashboard-plus-heatmap-cell"
+                  style={{ background: value === 0 ? 'rgba(255,255,255,0.05)' : `rgba(124,123,255,${Math.min(0.15 + (value * 0.15), 0.85)})` }}
+                  onClick={() => onChange(current => ({
+                    ...current,
+                    stats: {
+                      ...current.stats,
+                      heatmap: current.stats.heatmap.map((item, cellIndex) => (cellIndex === index ? (item + 1) % 5 : item)),
+                    },
+                  }))}
+                  aria-label={`Heatmap ${index + 1}`}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="todo-card dashboard-plus-projects">
+            {dashboard.stats.projects.map((project, index) => (
+              <div className="todo-item dashboard-plus-project-row" key={project.id}>
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: project.color, flexShrink: 0 }} />
+                <div className="todo-body">
+                  <input className="dashboard-plus-input dashboard-plus-input--title" value={project.name} onChange={event => onChange(current => ({
+                    ...current,
+                    stats: {
+                      ...current.stats,
+                      projects: current.stats.projects.map((item, projectIndex) => (projectIndex === index ? { ...item, name: event.target.value } : item)),
+                    },
+                  }))} />
+                </div>
+                <input className="dashboard-plus-input dashboard-plus-input--money dashboard-plus-input--percent" type="number" min="0" max="100" value={project.percent} onChange={event => onChange(current => ({
+                  ...current,
+                  stats: {
+                    ...current.stats,
+                    projects: current.stats.projects.map((item, projectIndex) => (projectIndex === index ? { ...item, percent: Number(event.target.value) || 0 } : item)),
+                  },
+                }))} />
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="card dashboard-plus-card dashboard-plus-card--wide">
+          <SectionTitle eyebrow="Finanzen" title="Rechnungen" />
+          <div className="kpi-grid dashboard-plus-stats-grid">
+            <label className="kpi-card dashboard-plus-metric">
+              <span>Monatlich fix</span>
+              <input type="number" min="0" value={dashboard.finances.monthlyFixed} onChange={event => onChange(current => ({ ...current, finances: { ...current.finances, monthlyFixed: Number(event.target.value) || 0 } }))} />
+              <small>€ {formatMoney(dashboard.finances.monthlyFixed)}</small>
+            </label>
+            <label className="kpi-card dashboard-plus-metric">
+              <span>Offen</span>
+              <input type="number" min="0" value={dashboard.finances.open} onChange={event => onChange(current => ({ ...current, finances: { ...current.finances, open: Number(event.target.value) || 0 } }))} />
+              <small>3 Rechnungen</small>
+            </label>
+            <label className="kpi-card dashboard-plus-metric">
+              <span>Überfällig</span>
+              <input type="number" min="0" value={dashboard.finances.overdue} onChange={event => onChange(current => ({ ...current, finances: { ...current.finances, overdue: Number(event.target.value) || 0 } }))} />
+              <small>1 Rechnung</small>
+            </label>
+          </div>
+
+          <div className="dashboard-plus-finance-columns">
+            <div>
+              <div className="fin-section-label">💳 Wiederkehrend</div>
+              <div className="dashboard-plus-bill-list">
+                {dashboard.finances.recurring.map((bill, index) => (
+                  <div className="bill-card dashboard-plus-bill-card" key={bill.id} style={{ borderColor: bill.status === 'overdue' ? 'rgba(255,69,58,0.3)' : undefined }}>
+                    <div className="bill-dot" style={{ background: bill.color }} />
+                    <div className="bill-body dashboard-plus-bill-body">
+                      <input className="dashboard-plus-input dashboard-plus-input--title" value={bill.name} onChange={event => updateRecurringBill(index, { name: event.target.value })} />
+                      <input className="dashboard-plus-input" value={bill.subtitle} onChange={event => updateRecurringBill(index, { subtitle: event.target.value })} />
+                    </div>
+                    <div className="bill-right dashboard-plus-bill-right">
+                      <input className="dashboard-plus-input dashboard-plus-input--money" type="number" min="0" value={bill.amount} onChange={event => updateRecurringBill(index, { amount: Number(event.target.value) || 0 })} />
+                      <input className="dashboard-plus-input" value={bill.due} onChange={event => updateRecurringBill(index, { due: event.target.value })} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="fin-section-label">🧾 Offene Rechnungen</div>
+              <div className="dashboard-plus-bill-list">
+                {dashboard.finances.openBills.map((bill, index) => (
+                  <div className="bill-card dashboard-plus-bill-card" key={bill.id} style={{ borderColor: bill.status === 'overdue' ? 'rgba(255,69,58,0.3)' : undefined }}>
+                    <div className="bill-dot" style={{ background: bill.color }} />
+                    <div className="bill-body dashboard-plus-bill-body">
+                      <input className="dashboard-plus-input dashboard-plus-input--title" value={bill.name} onChange={event => updateOpenBill(index, { name: event.target.value })} />
+                      <input className="dashboard-plus-input" value={bill.subtitle} onChange={event => updateOpenBill(index, { subtitle: event.target.value })} />
+                    </div>
+                    <div className="bill-right dashboard-plus-bill-right">
+                      <input className="dashboard-plus-input dashboard-plus-input--money" type="number" min="0" value={bill.amount} onChange={event => updateOpenBill(index, { amount: Number(event.target.value) || 0 })} />
+                      <input className="dashboard-plus-input" value={bill.due} onChange={event => updateOpenBill(index, { due: event.target.value })} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div className="dashboard-plus-footer">
+        <span>Snapshot: {today}</span>
+        <span>Alles ist lokal editierbar und wird in diesem Browser gespeichert.</span>
       </div>
     </div>
   )
