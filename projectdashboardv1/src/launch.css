@@ -285,6 +285,31 @@ button:disabled {
   background: linear-gradient(90deg, var(--accent), var(--lilac));
 }
 
+.level-caption {
+  margin: 10px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.breakdown-list {
+  display: grid;
+  gap: 16px;
+}
+
+.breakdown-row__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 7px;
+  font-size: 12.5px;
+}
+
+.breakdown-row__head span {
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
 .app-stage {
   min-height: 100vh;
   margin-left: var(--sidebar-width);

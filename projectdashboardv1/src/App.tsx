@@ -58,8 +58,9 @@ import {
 import { useEntries } from './hooks/useEntries'
 import type { DashboardEntry } from './types/DashboardEntry'
 import { createDefaultEntry } from './types/DashboardEntry'
-import { calculateScore } from './lib/score'
+import { calculateScore, calculateStreakForHabit, getScoreBreakdown } from './lib/score'
 import { exportJSON, importJSON, saveAllEntries } from './lib/storage'
+import { levelProgress, loadXP, xpToNextLevel } from './lib/xp-store'
 import './launch.css'
 
 type View = 'today' | 'plan' | 'checkin' | 'progress' | 'dashboardPlus'
@@ -222,7 +223,11 @@ const DEF_TASKS = [
 ] as const
 
 const LVLS = ['Einstieg', 'Aufbau', 'Übung', 'Rhythmus', 'Konstanz', 'Gefestigt', 'Vertieft', 'Verankert', 'Meisterschaft', 'Souverän'] as const
-const XPT  = [0, 500, 1100, 1900, 3000, 4400, 6200, 8600, 11600, 15600] as const
+
+/** Maps the persisted xp-store level (unbounded) onto the LVLS name ladder. */
+function levelName(level: number): string {
+  return LVLS[Math.min(Math.max(level, 1), LVLS.length) - 1]
+}
 
 type HabitDef = {
   id: RoutineKey
@@ -250,14 +255,6 @@ const DAILY_HABITS: HabitDef[] = [
 function getDailyQuote(): string {
   const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86_400_000)
   return QUOTES[dayOfYear % QUOTES.length]
-}
-
-function getLevelFromScore(totalScore: number): string {
-  let level = 0
-  for (let i = XPT.length - 1; i >= 0; i--) {
-    if (totalScore >= XPT[i]) { level = i; break }
-  }
-  return LVLS[level]
 }
 
 function createDashboardPlusSeed(): DashboardPlusState {
@@ -1930,18 +1927,27 @@ function ProgressView({ entries, today }: { entries: DashboardEntry[]; today: st
   const average = Math.round(lastSeven.reduce((sum, item) => sum + item.score, 0) / lastSeven.length)
   const best = Math.max(...lastSeven.map(item => item.score))
 
-  let streak = 0
-  for (let index = lastSeven.length - 1; index >= 0; index -= 1) {
-    if (lastSeven[index].score > 0) streak += 1
-    else break
-  }
+  const xp = loadXP()
+
+  const movementStreak = (() => {
+    const sorted = [...entries].sort((a, b) => b.date.localeCompare(a.date))
+    let count = 0
+    for (const entry of sorted) {
+      if (entry.pushupsDone || entry.squatsDone) count += 1
+      else break
+    }
+    return count
+  })()
 
   const habitStats = [
-    { label: 'Proteinshake', count: lastSeven.filter(item => item.entry.proteinShake).length, icon: Coffee },
-    { label: 'Dankbarkeit', count: lastSeven.filter(item => item.entry.gratitudeDone).length, icon: Sparkles },
-    { label: 'Fokus', count: lastSeven.filter(item => item.entry.focusDone).length, icon: Focus },
-    { label: 'Bewegung', count: lastSeven.filter(item => item.entry.pushupsDone || item.entry.squatsDone).length, icon: Dumbbell },
+    { label: 'Proteinshake', count: lastSeven.filter(item => item.entry.proteinShake).length, streak: calculateStreakForHabit(entries, 'proteinShake'), icon: Coffee },
+    { label: 'Dankbarkeit', count: lastSeven.filter(item => item.entry.gratitudeDone).length, streak: calculateStreakForHabit(entries, 'gratitudeDone'), icon: Sparkles },
+    { label: 'Fokus', count: lastSeven.filter(item => item.entry.focusDone).length, streak: calculateStreakForHabit(entries, 'focusDone'), icon: Focus },
+    { label: 'Bewegung', count: lastSeven.filter(item => item.entry.pushupsDone || item.entry.squatsDone).length, streak: movementStreak, icon: Dumbbell },
   ]
+
+  const todayEntry = entries.find(item => item.date === today) ?? createDefaultEntry(today)
+  const breakdown = getScoreBreakdown(todayEntry)
 
   return (
     <div className="view-stack">
@@ -1956,7 +1962,7 @@ function ProgressView({ entries, today }: { entries: DashboardEntry[]; today: st
       <div className="kpi-grid">
         <div className="kpi-card"><span>Wochenschnitt</span><strong>{average}%</strong><small>letzte 7 Tage</small></div>
         <div className="kpi-card"><span>Bester Tag</span><strong>{best}%</strong><small>diese Woche</small></div>
-        <div className="kpi-card"><span>Rhythmus</span><strong>{streak}</strong><small>{plural(streak, 'Tag', 'Tage')} · {getLevelFromScore(lastSeven.reduce((s, i) => s + i.score, 0))}</small></div>
+        <div className="kpi-card"><span>Rhythmus</span><strong>{xp.streakDays}</strong><small>{plural(xp.streakDays, 'Tag', 'Tage')} · {levelName(xp.level)}</small></div>
       </div>
 
       <div className="progress-layout">
@@ -1986,7 +1992,7 @@ function ProgressView({ entries, today }: { entries: DashboardEntry[]; today: st
                   <span className="rhythm-row__icon"><Icon size={17} /></span>
                   <div>
                     <strong>{stat.label}</strong>
-                    <span>{stat.count} von 7 Tagen</span>
+                    <span>{stat.count} von 7 Tagen{stat.streak > 1 ? ` · ${stat.streak}er Serie` : ''}</span>
                   </div>
                   <div className="radial-mini" style={{ '--value': `${(stat.count / 7) * 360}deg` } as CSSProperties}>
                     <span>{stat.count}</span>
@@ -1997,6 +2003,41 @@ function ProgressView({ entries, today }: { entries: DashboardEntry[]; today: st
           </div>
         </section>
       </div>
+
+      <section className="card">
+        <SectionTitle eyebrow="Gamification" title="Level & Fortschritt" />
+        <div className="progress-ring-wrap">
+          <div>
+            <div className="prog-label">Level {xp.level} · {levelName(xp.level)}</div>
+            <div className="prog-sub">{xp.totalXP} XP gesamt</div>
+          </div>
+          <div className="prog-num">{levelProgress(xp)}%</div>
+        </div>
+        <div className="mini-progress" aria-hidden="true">
+          <span style={{ width: `${levelProgress(xp)}%` }} />
+        </div>
+        <p className="level-caption">
+          Noch {xpToNextLevel(xp)} XP bis Level {xp.level + 1}
+          {xp.streakDays > 0 ? ` · ${xp.streakDays} ${plural(xp.streakDays, 'Tag', 'Tage')} Serie (Score ≥ 50)` : ''}
+        </p>
+      </section>
+
+      <section className="card">
+        <SectionTitle eyebrow="Heute" title="Score im Detail" />
+        <div className="breakdown-list">
+          {breakdown.map(category => (
+            <div className="breakdown-row" key={category.category}>
+              <div className="breakdown-row__head">
+                <strong>{category.category}</strong>
+                <span>{category.achieved} / {category.max}</span>
+              </div>
+              <div className="mini-progress" aria-hidden="true">
+                <span style={{ width: `${category.max ? Math.round((category.achieved / category.max) * 100) : 0}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   )
 }

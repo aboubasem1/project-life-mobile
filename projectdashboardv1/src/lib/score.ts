@@ -60,7 +60,7 @@ export interface ScoreBreakdown {
   category: string
   achieved: number
   max: number
-  items: { label: string; achieved: boolean; points: number }[]
+  items: { label: string; achieved: boolean; points: number; earned: number }[]
 }
 
 export function getScoreBreakdown(entry: DashboardEntry): ScoreBreakdown[] {
@@ -68,33 +68,37 @@ export function getScoreBreakdown(entry: DashboardEntry): ScoreBreakdown[] {
     label: string,
     habitKeys: (keyof DashboardEntry)[],
     numericKeys: (keyof DashboardEntry)[] = [],
-    extraItems: { label: string; achieved: boolean; points: number }[] = [],
+    extraItems: { label: string; achieved: boolean; points: number; earned: number }[] = [],
   ): ScoreBreakdown => {
     const items = [
       ...HABIT_SCORES.filter(h => habitKeys.includes(h.key)).map(h => ({
         label: h.label,
         achieved: !!entry[h.key],
         points: h.points,
+        earned: entry[h.key] ? h.points : 0,
       })),
-      ...NUMERIC_SCORES.filter(n => numericKeys.includes(n.key)).map(n => ({
-        label: n.label,
-        achieved: (entry[n.key] as number) >= n.threshold,
-        points: n.points,
-      })),
+      ...NUMERIC_SCORES.filter(n => numericKeys.includes(n.key)).map(n => {
+        const achieved = (entry[n.key] as number) >= n.threshold
+        return { label: n.label, achieved, points: n.points, earned: achieved ? n.points : 0 }
+      }),
       ...extraItems,
     ]
     return {
       category: label,
-      achieved: items.filter(i => i.achieved).reduce((s, i) => s + i.points, 0),
+      achieved: items.reduce((s, i) => s + i.earned, 0),
       max: items.reduce((s, i) => s + i.points, 0),
       items,
     }
   }
 
   return [
+    // Mood/sleep award partial credit (e.g. "Gut" = 3 of 5), so their max stays
+    // the fixed ceiling while `earned` reflects the actual points scored —
+    // otherwise the category max would shrink to whatever mood happens to be
+    // selected and make 100% trivially reachable on a bad day.
     section('Morgen', ['coldShower', 'proteinShake'], ['meditationMinutes'], [
-      { label: `Stimmung: ${entry.mood || '—'}`, achieved: Boolean(entry.mood), points: MOOD_SCORES[entry.mood] ?? 0 },
-      { label: `Schlafqualität: ${entry.sleepQuality || '—'}`, achieved: Boolean(entry.sleepQuality), points: SLEEP_SCORES[entry.sleepQuality] ?? 0 },
+      { label: `Stimmung: ${entry.mood || '—'}`, achieved: Boolean(entry.mood), points: 5, earned: MOOD_SCORES[entry.mood] ?? 0 },
+      { label: `Schlafqualität: ${entry.sleepQuality || '—'}`, achieved: Boolean(entry.sleepQuality), points: 5, earned: SLEEP_SCORES[entry.sleepQuality] ?? 0 },
     ]),
     section('Training', ['pushupsDone', 'squatsDone', 'wallsitDone', 'plankDone']),
     section('Mindset', ['gratitudeDone', 'focusDone', 'winnerModeDone']),
