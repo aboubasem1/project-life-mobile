@@ -325,6 +325,7 @@ button:disabled {
   background: var(--surface);
   color: var(--text-soft);
   cursor: pointer;
+  touch-action: manipulation;
   transition: border-color 150ms ease, background 150ms ease, color 150ms ease, transform 150ms ease;
 }
 
@@ -1391,6 +1392,7 @@ button:disabled {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.01em;
+  touch-action: manipulation;
   transition: transform 150ms ease, border-color 150ms ease, background 150ms ease, color 150ms ease;
 }
 
@@ -2018,9 +2020,11 @@ button:disabled {
   .desktop-topbar { display: none; }
   .app-stage { margin-left: 0; }
   .mobile-header {
-    position: sticky;
+    position: fixed;
     top: 0;
-    z-index: 80;
+    left: 0;
+    right: 0;
+    z-index: 200;
     display: flex;
     min-height: 66px;
     height: calc(66px + env(safe-area-inset-top));
@@ -2032,14 +2036,21 @@ button:disabled {
     backdrop-filter: blur(24px);
     isolation: isolate;
     pointer-events: auto;
+    /* forces its own compositing layer so taps register immediately on notch/Dynamic Island devices in standalone (installed) mode */
+    transform: translateZ(0);
   }
   .mobile-header__actions {
     position: relative;
     z-index: 1;
     pointer-events: auto;
   }
+  .mobile-header__actions .icon-button {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
   .brand--mobile .brand__mark { width: 32px; height: 32px; border-radius: 11px; }
-  .app-main { padding: 18px 16px 34px; }
+  .app-main { padding: calc(66px + env(safe-area-inset-top) + 18px) 16px 34px; }
   .view-stack { gap: 16px; }
   .mobile-nav {
     position: fixed;
