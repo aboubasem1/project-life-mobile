@@ -1,0 +1,236 @@
+name: AI change
+run-name: AI change ${{ inputs.request_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: Internal request ID
+        required: true
+        type: string
+      task:
+        description: Requested product change
+        required: true
+        type: string
+      viewport:
+        description: Target viewport
+        required: true
+        type: choice
+        options:
+          - mobile
+          - desktop
+          - all
+      page_url:
+        description: Affected page or route
+        required: false
+        default: /
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-change-${{ inputs.request_id }}
+  cancel-in-progress: false
+
+jobs:
+  change:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate request
+        shell: bash
+        env:
+          REQUEST_ID: ${{ inputs.request_id }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$REQUEST_ID" =~ ^chg-[a-z0-9-]{8,64}$ ]]; then
+            echo "Invalid request ID"
+            exit 1
+          fi
+
+      - name: Create work branch
+        shell: bash
+        env:
+          REQUEST_ID: ${{ inputs.request_id }}
+        run: |
+          set -euo pipefail
+          git switch -c "ai/$REQUEST_ID"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: projectdashboardv1/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: projectdashboardv1
+        run: npm ci
+
+      - name: Prepare Codex prompt
+        shell: bash
+        env:
+          USER_TASK: ${{ inputs.task }}
+          TARGET_VIEWPORT: ${{ inputs.viewport }}
+          PAGE_URL: ${{ inputs.page_url }}
+          REQUEST_ID: ${{ inputs.request_id }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs')
+
+          const task = process.env.USER_TASK || ''
+          const viewport = process.env.TARGET_VIEWPORT || 'all'
+          const pageUrl = process.env.PAGE_URL || '/'
+          const requestId = process.env.REQUEST_ID || ''
+
+          const prompt = `You are modifying the public Project Life React/Vite application in this repository.
+
+          REQUEST ID: ${requestId}
+          AFFECTED PAGE OR ROUTE: ${pageUrl}
+          TARGET VIEWPORT: ${viewport}
+          
+          USER REQUEST
+          ---
+          ${task}
+          ---
+          
+          IMPLEMENTATION RULES
+          1. Work only inside projectdashboardv1/.
+          2. Do not modify .github/, api/, server/, vercel.json, any environment file, package.json, package-lock.json, index.html, vite.config.ts, the developer console, or developer-launcher.js.
+          3. Do not add dependencies. Use the existing React, TypeScript, CSS and lucide-react stack.
+          4. Inspect the current implementation before changing it. Make the smallest complete change that fulfills the request.
+          5. Preserve existing stored user data, routes, Supabase behavior, PWA behavior and unrelated features.
+          6. For mobile requests, test the layout conceptually at 390px width. For desktop requests, test at 1440px width. For all, cover both.
+          7. Every visible control must work. Add accessible labels, keyboard behavior and reduced-motion handling where relevant.
+          8. Do not leave preview, demo, beta, placeholder, TODO or mock labels in user-facing UI.
+          9. Do not add new analytics, third-party network requests, credentials, remote scripts, eval, or dynamic code execution.
+          10. Do not output a plan only. Apply the edits to the repository files.
+          11. Keep the final response brief: changed files, behavior implemented and any limitation.
+          `
+
+          fs.writeFileSync('.codex-task.md', prompt)
+          NODE
+
+      - name: Apply change with Codex
+        id: codex
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: .codex-task.md
+          output-file: .codex-output.md
+          sandbox: workspace-write
+          safety-strategy: drop-sudo
+          allow-users: aboubasem1
+          effort: medium
+
+      - name: Remove runtime prompt files
+        run: rm -f .codex-task.md .codex-output.md
+
+      - name: Enforce protected paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <({ git diff --name-only; git ls-files --others --exclude-standard; } | sort -u)
+
+          if [[ ${#changed[@]} -eq 0 ]]; then
+            echo "Codex produced no file changes."
+            exit 1
+          fi
+
+          printf '%s\n' "${changed[@]}"
+
+          for file in "${changed[@]}"; do
+            if [[ ! "$file" =~ ^projectdashboardv1/ ]]; then
+              echo "Blocked change outside projectdashboardv1: $file"
+              exit 1
+            fi
+
+            if [[ "$file" =~ ^projectdashboardv1/public/developer/ ]] ||
+               [[ "$file" == "projectdashboardv1/public/developer-launcher.js" ]] ||
+               [[ "$file" == "projectdashboardv1/index.html" ]] ||
+               [[ "$file" == "projectdashboardv1/vite.config.ts" ]] ||
+               [[ "$file" == "projectdashboardv1/package.json" ]] ||
+               [[ "$file" == "projectdashboardv1/package-lock.json" ]] ||
+               [[ "$file" =~ (^|/)\.env ]]; then
+              echo "Blocked protected file: $file"
+              exit 1
+            fi
+          done
+
+      - name: Validate diff
+        shell: bash
+        run: |
+          git add --intent-to-add projectdashboardv1
+          git diff --check
+
+      - name: Build application
+        working-directory: projectdashboardv1
+        run: npm run build
+
+      - name: Commit and push change
+        shell: bash
+        env:
+          REQUEST_ID: ${{ inputs.request_id }}
+          GH_TOKEN: ${{ secrets.REPO_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh auth setup-git
+          git config user.name "Project Life AI"
+          git config user.email "project-life-ai@users.noreply.github.com"
+          git add projectdashboardv1
+          git -c core.hooksPath=/dev/null commit -m "AI change: $REQUEST_ID"
+          git -c core.hooksPath=/dev/null push --set-upstream origin "ai/$REQUEST_ID"
+
+      - name: Create pull request
+        id: pull_request
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.REPO_ADMIN_TOKEN }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          USER_TASK: ${{ inputs.task }}
+          TARGET_VIEWPORT: ${{ inputs.viewport }}
+          PAGE_URL: ${{ inputs.page_url }}
+          CODEX_SUMMARY: ${{ steps.codex.outputs.final-message }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs')
+          const body = `## Angeforderte Änderung
+
+          ${process.env.USER_TASK || ''}
+          
+          ## Ziel
+          
+          - Route: ${process.env.PAGE_URL || '/'}
+          - Ansicht: ${process.env.TARGET_VIEWPORT || 'all'}
+          - Request: ${process.env.REQUEST_ID || ''}
+          
+          ## Codex-Zusammenfassung
+          
+          ${process.env.CODEX_SUMMARY || 'Änderung umgesetzt und Build erfolgreich geprüft.'}
+          
+          ## Prüfung
+          
+          - npm ci
+          - npm run build
+          - geschützte Pfade unverändert
+          `
+          fs.writeFileSync('/tmp/pr-body.md', body)
+          NODE
+
+          PR_URL=$(gh pr create \
+            --base main \
+            --head "ai/$REQUEST_ID" \
+            --title "AI change: $REQUEST_ID" \
+            --body-file /tmp/pr-body.md)
+
+          echo "url=$PR_URL" >> "$GITHUB_OUTPUT"
+          echo "Pull request: $PR_URL" >> "$GITHUB_STEP_SUMMARY"
