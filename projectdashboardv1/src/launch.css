@@ -2022,13 +2022,21 @@ button:disabled {
     top: 0;
     z-index: 80;
     display: flex;
-    height: 66px;
+    min-height: 66px;
+    height: calc(66px + env(safe-area-inset-top));
     align-items: center;
     justify-content: space-between;
-    padding: 0 18px;
+    padding: max(8px, env(safe-area-inset-top)) 18px 0;
     border-bottom: 1px solid var(--border);
     background: color-mix(in srgb, var(--bg) 84%, transparent);
     backdrop-filter: blur(24px);
+    isolation: isolate;
+    pointer-events: auto;
+  }
+  .mobile-header__actions {
+    position: relative;
+    z-index: 1;
+    pointer-events: auto;
   }
   .brand--mobile .brand__mark { width: 32px; height: 32px; border-radius: 11px; }
   .app-main { padding: 18px 16px 34px; }
