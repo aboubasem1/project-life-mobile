@@ -427,18 +427,28 @@ function createDashboardPlusSeed(): DashboardPlusState {
 // must never reach render as anything but a same-shaped array — otherwise a
 // single stale/missing field crashes the whole view (e.g. an unknown
 // shopping-item icon, or a field from before it existed in the schema).
+// PriorityBadge does PRIORITY_META[priority] with no fallback, so any task
+// persisted under the pre-Phase-2 scheme ('red'/'orange'/'blue') or otherwise
+// invalid crashes the Todos tab the instant it renders.
+function normalizeTaskPriority(task: DashboardPlusTask): DashboardPlusTask {
+  return PRIORITY_ORDER.includes(task.priority) ? task : { ...task, priority: 'p3' }
+}
+
 function normalizeDashboardPlusState(parsed: Partial<DashboardPlusState> | null | undefined): DashboardPlusState {
   const seed = createDashboardPlusSeed()
   if (!parsed || typeof parsed !== 'object' || !parsed.overview) return seed
 
   return {
     overview: { ...seed.overview, ...parsed.overview },
-    focusTodos: Array.isArray(parsed.focusTodos) ? parsed.focusTodos : seed.focusTodos,
+    focusTodos: Array.isArray(parsed.focusTodos) ? parsed.focusTodos.map(normalizeTaskPriority) : seed.focusTodos,
     supplements: Array.isArray(parsed.supplements) ? parsed.supplements : seed.supplements,
     medications: Array.isArray(parsed.medications) ? parsed.medications : seed.medications,
     goals: Array.isArray(parsed.goals) ? parsed.goals : seed.goals,
     boards: Array.isArray(parsed.boards)
-      ? parsed.boards.map(board => ({ ...board, tasks: Array.isArray(board.tasks) ? board.tasks : [] }))
+      ? parsed.boards.map(board => ({
+        ...board,
+        tasks: Array.isArray(board.tasks) ? board.tasks.map(normalizeTaskPriority) : [],
+      }))
       : seed.boards,
     shopping: {
       total: typeof parsed.shopping?.total === 'number' ? parsed.shopping.total : seed.shopping.total,
@@ -739,7 +749,7 @@ function SectionTitle({
 }
 
 function PriorityBadge({ priority, onCycle }: { priority: DashboardPlusPriority; onCycle: () => void }) {
-  const meta = PRIORITY_META[priority]
+  const meta = PRIORITY_META[priority] ?? PRIORITY_META.p3
   return (
     <button
       type="button"
@@ -1208,7 +1218,7 @@ function App() {
           })}
         </nav>
 
-        {view !== 'dashboardPlus' && (
+        {view !== 'dashboardPlus' && !(view === 'today' && !entry.energyLevel) && (
           <button type="button" className="fab" onClick={() => setQuickAddOpen(true)} aria-label="Schnell hinzufügen">
             <Plus size={22} />
           </button>
