@@ -26,7 +26,9 @@ import {
   Coffee,
   CreditCard,
   Crown,
+  Droplet,
   Dumbbell,
+  FlaskConical,
   Focus,
   GripVertical,
   Heart,
@@ -38,8 +40,10 @@ import {
   Package,
   Pause,
   Pencil,
+  Pill,
   Play,
   Plus,
+  Receipt,
   RotateCcw,
   Settings,
   ShoppingCart,
@@ -118,13 +122,22 @@ type DashboardPlusBoard = {
   tasks: DashboardPlusTask[]
 }
 
+type DashboardPlusShoppingIcon = 'flask' | 'droplet' | 'pill'
+
 type DashboardPlusShoppingItem = {
   id: string
-  icon: string
+  icon: DashboardPlusShoppingIcon
   name: string
   note: string
   price: number
   done: boolean
+  lowStock?: boolean
+}
+
+const SHOPPING_ICONS: Record<DashboardPlusShoppingIcon, { icon: typeof FlaskConical; tint: string; ink: string }> = {
+  flask: { icon: FlaskConical, tint: 'var(--accent-soft)', ink: 'var(--accent-strong)' },
+  droplet: { icon: Droplet, tint: 'color-mix(in srgb, var(--blue) 16%, transparent)', ink: 'var(--blue)' },
+  pill: { icon: Pill, tint: 'var(--sage-soft)', ink: 'var(--sage)' },
 }
 
 type DashboardPlusBill = {
@@ -208,7 +221,7 @@ const DEF_TASKS = [
   'Abend-Check-in · Reflektion',
 ] as const
 
-const LVLS = ['Rookie', 'Starter', 'Focused', 'Grinder', 'Achiever', 'Warrior', 'Elite', 'Legend', 'Master', 'Godmode'] as const
+const LVLS = ['Einstieg', 'Aufbau', 'Übung', 'Rhythmus', 'Konstanz', 'Gefestigt', 'Vertieft', 'Verankert', 'Meisterschaft', 'Souverän'] as const
 const XPT  = [0, 500, 1100, 1900, 3000, 4400, 6200, 8600, 11600, 15600] as const
 
 type HabitDef = {
@@ -313,9 +326,9 @@ function createDashboardPlusSeed(): DashboardPlusState {
     shopping: {
       total: 89.90,
       items: [
-        { id: 'shop-1', icon: '🧪', name: 'Creatine Monohydrate 1kg', note: 'BulkPowders · Bestand kritisch ⚠️', price: 24.99, done: false },
-        { id: 'shop-2', icon: '🐟', name: 'Omega-3 Nachfüllpack', note: 'Optimum · 300 Caps', price: 34.90, done: false },
-        { id: 'shop-3', icon: '💊', name: 'Magnesium Bisglycinate', note: 'Bioptimizers · 240 Caps', price: 34.00, done: false },
+        { id: 'shop-1', icon: 'flask', name: 'Creatine Monohydrate 1kg', note: 'BulkPowders', price: 24.99, done: false, lowStock: true },
+        { id: 'shop-2', icon: 'droplet', name: 'Omega-3 Nachfüllpack', note: 'Optimum · 300 Caps', price: 34.90, done: false },
+        { id: 'shop-3', icon: 'pill', name: 'Magnesium Bisglycinate', note: 'Bioptimizers · 240 Caps', price: 34.00, done: false },
       ],
     },
     stats: {
@@ -347,7 +360,7 @@ function createDashboardPlusSeed(): DashboardPlusState {
         { id: 'bill-tax', name: 'Steuerberater', subtitle: 'Fällig: 15.05.2026', amount: 89, due: '16 Tage überfällig', status: 'overdue', color: 'var(--red)' },
         { id: 'bill-design', name: 'Lieferant Design-Assets', subtitle: 'Fällig: 05.06.2026', amount: 149, due: 'in 5 Tagen', status: 'open', color: 'var(--orange)' },
         { id: 'bill-figma', name: 'Software-Lizenz Figma', subtitle: 'Fällig: 15.06.2026', amount: 102, due: 'in 15 Tagen', status: 'open', color: 'var(--orange)' },
-        { id: 'bill-vercel', name: 'Hosting · Vercel Pro', subtitle: 'Bezahlt am 01.05.2026', amount: 20, due: '✓ erledigt', status: 'paid', color: 'var(--green)' },
+        { id: 'bill-vercel', name: 'Hosting · Vercel Pro', subtitle: 'Bezahlt am 01.05.2026', amount: 20, due: 'Bezahlt', status: 'paid', color: 'var(--green)' },
       ],
     },
   }
@@ -2323,12 +2336,19 @@ function DashboardPlusView({
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Kaufliste" title="Offen" />
           <div className="shopping-list dashboard-plus-shopping-list">
-            {dashboard.shopping.items.map((item, index) => (
+            {dashboard.shopping.items.map((item, index) => {
+              const shopIcon = SHOPPING_ICONS[item.icon]
+              return (
               <label className={item.done ? 'shop-item is-done' : 'shop-item'} key={item.id}>
-                <div className="shop-icon" style={{ background: 'rgba(124,123,255,0.1)' }}>{item.icon}</div>
+                <div className="shop-icon" style={{ background: shopIcon.tint, color: shopIcon.ink }}>
+                  <shopIcon.icon size={17} />
+                </div>
                 <div className="shop-body dashboard-plus-shop-body">
                   <input className="dashboard-plus-input dashboard-plus-input--title" value={item.name} onChange={event => updateShoppingItem(index, { name: event.target.value })} />
                   <input className="dashboard-plus-input" value={item.note} onChange={event => updateShoppingItem(index, { note: event.target.value })} />
+                  {item.lowStock && (
+                    <span className="status-chip status-chip--warn"><span className="status-chip__dot" />Bestand kritisch</span>
+                  )}
                 </div>
                 <div className="dashboard-plus-shop-meta">
                   <input className="dashboard-plus-input dashboard-plus-input--money" type="number" min="0" step="0.01" value={item.price} onChange={event => updateShoppingItem(index, { price: Number(event.target.value) || 0 })} />
@@ -2336,7 +2356,8 @@ function DashboardPlusView({
                 </div>
                 <button type="button" className="shop-check" onClick={() => updateShoppingItem(index, { done: !item.done })} aria-pressed={item.done} />
               </label>
-            ))}
+              )
+            })}
           </div>
         </section>
       </div>
@@ -2468,10 +2489,10 @@ function DashboardPlusView({
 
           <div className="dashboard-plus-finance-columns">
             <div>
-              <div className="fin-section-label">💳 Wiederkehrend</div>
+              <div className="fin-section-label"><CreditCard size={13} /> Wiederkehrend</div>
               <div className="dashboard-plus-bill-list">
                 {dashboard.finances.recurring.map((bill, index) => (
-                  <div className="bill-card dashboard-plus-bill-card" key={bill.id} style={{ borderColor: bill.status === 'overdue' ? 'rgba(255,69,58,0.3)' : undefined }}>
+                  <div className="bill-card dashboard-plus-bill-card" key={bill.id} style={{ borderColor: bill.status === 'overdue' ? 'color-mix(in srgb, var(--danger) 30%, transparent)' : undefined }}>
                     <div className="bill-dot" style={{ background: bill.color }} />
                     <div className="bill-body dashboard-plus-bill-body">
                       <input className="dashboard-plus-input dashboard-plus-input--title" value={bill.name} onChange={event => updateRecurringBill(index, { name: event.target.value })} />
@@ -2479,7 +2500,11 @@ function DashboardPlusView({
                     </div>
                     <div className="bill-right dashboard-plus-bill-right">
                       <input className="dashboard-plus-input dashboard-plus-input--money" type="number" min="0" value={bill.amount} onChange={event => updateRecurringBill(index, { amount: Number(event.target.value) || 0 })} />
-                      <input className="dashboard-plus-input" value={bill.due} onChange={event => updateRecurringBill(index, { due: event.target.value })} />
+                      {bill.status === 'paid' ? (
+                        <span className="status-chip status-chip--good"><span className="status-chip__dot" />Bezahlt</span>
+                      ) : (
+                        <input className="dashboard-plus-input" value={bill.due} onChange={event => updateRecurringBill(index, { due: event.target.value })} />
+                      )}
                     </div>
                   </div>
                 ))}
@@ -2487,10 +2512,10 @@ function DashboardPlusView({
             </div>
 
             <div>
-              <div className="fin-section-label">🧾 Offene Rechnungen</div>
+              <div className="fin-section-label"><Receipt size={13} /> Offene Rechnungen</div>
               <div className="dashboard-plus-bill-list">
                 {dashboard.finances.openBills.map((bill, index) => (
-                  <div className="bill-card dashboard-plus-bill-card" key={bill.id} style={{ borderColor: bill.status === 'overdue' ? 'rgba(255,69,58,0.3)' : undefined }}>
+                  <div className="bill-card dashboard-plus-bill-card" key={bill.id} style={{ borderColor: bill.status === 'overdue' ? 'color-mix(in srgb, var(--danger) 30%, transparent)' : undefined }}>
                     <div className="bill-dot" style={{ background: bill.color }} />
                     <div className="bill-body dashboard-plus-bill-body">
                       <input className="dashboard-plus-input dashboard-plus-input--title" value={bill.name} onChange={event => updateOpenBill(index, { name: event.target.value })} />
@@ -2498,7 +2523,11 @@ function DashboardPlusView({
                     </div>
                     <div className="bill-right dashboard-plus-bill-right">
                       <input className="dashboard-plus-input dashboard-plus-input--money" type="number" min="0" value={bill.amount} onChange={event => updateOpenBill(index, { amount: Number(event.target.value) || 0 })} />
-                      <input className="dashboard-plus-input" value={bill.due} onChange={event => updateOpenBill(index, { due: event.target.value })} />
+                      {bill.status === 'paid' ? (
+                        <span className="status-chip status-chip--good"><span className="status-chip__dot" />Bezahlt</span>
+                      ) : (
+                        <input className="dashboard-plus-input" value={bill.due} onChange={event => updateOpenBill(index, { due: event.target.value })} />
+                      )}
                     </div>
                   </div>
                 ))}

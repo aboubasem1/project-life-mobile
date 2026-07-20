@@ -1471,6 +1471,40 @@ button:disabled {
   font-weight: 700;
 }
 
+.status-chip {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.status-chip__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.status-chip--good {
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+  color: var(--success);
+}
+
+.status-chip--warn {
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+  color: var(--warning);
+}
+
+.status-chip--bad {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger);
+}
+
 .project-tab.active .tab-count {
   background: rgba(255, 255, 255, 0.24);
 }
@@ -1516,7 +1550,7 @@ button:disabled {
 
 .shop-item {
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) auto auto;
+  grid-template-columns: 40px minmax(0, 1fr) 96px auto;
   align-items: center;
   gap: 10px;
   padding: 10px;
@@ -1633,9 +1667,17 @@ button:disabled {
 }
 
 .fin-section-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   margin-bottom: 10px;
+  color: var(--text-soft);
   font-size: 12px;
   font-weight: 700;
+}
+
+.fin-section-label svg {
+  color: var(--text-muted);
 }
 
 .bill-card {
@@ -1874,7 +1916,7 @@ button:disabled {
   display: grid;
   gap: 8px;
   justify-items: end;
-  min-width: 120px;
+  min-width: 0;
 }
 
 .dashboard-plus-shop-meta .shop-price {
@@ -2494,9 +2536,9 @@ button:disabled {
   .dashboard-plus-footer { align-items: flex-start; flex-direction: column; }
   .dashboard-plus-bill-card { grid-template-columns: auto minmax(0, 1fr); }
   .dashboard-plus-bill-right { grid-column: 2; }
-  .shop-item { grid-template-columns: 34px minmax(0, 1fr) auto auto; gap: 8px; padding: 8px; }
-  .shop-icon { width: 34px; height: 34px; font-size: 15px; }
-  .dashboard-plus-shop-meta { min-width: 84px; }
+  .shop-item { grid-template-columns: 34px minmax(0, 1fr) 78px auto; gap: 8px; padding: 8px; }
+  .shop-icon { width: 34px; height: 34px; }
+  .shop-icon svg { width: 15px; height: 15px; }
   .week-bar-wrap { grid-template-rows: auto 90px auto; }
   .heatmap-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); }
 }

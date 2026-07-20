@@ -102,14 +102,6 @@ export function getScoreBreakdown(entry: DashboardEntry): ScoreBreakdown[] {
   ]
 }
 
-export function getScoreLabel(score: number): string {
-  if (score >= 90) return 'ELITE ⚡'
-  if (score >= 75) return 'STARK 🔥'
-  if (score >= 55) return 'SOLIDE ✓'
-  if (score >= 35) return 'AUSBAUFÄHIG'
-  return 'ANLAUF'
-}
-
 export function getScoreColor(score: number): string {
   if (score >= 90) return '#ffd60a'
   if (score >= 75) return '#34c759'
