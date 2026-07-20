@@ -843,7 +843,7 @@ function TodayView({
     setDragOverIdx(null)
   }
 
-  const handleTouchStart = (e: React.TouchEvent, idx: number) => {
+  const handleTouchStart = (_e: React.TouchEvent, idx: number) => {
     touchRef.current = { sourceIdx: idx }
     setDragIdx(idx)
   }
