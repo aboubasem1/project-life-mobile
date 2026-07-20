@@ -2264,14 +2264,21 @@ function DashboardPlusView({
               </button>
             ))}
           </div>
-          {activeBoard && (
+          {activeBoard && (() => {
+            const doneCount = activeBoard.tasks.filter(task => task.done).length
+            const totalCount = activeBoard.tasks.length
+            const percent = totalCount ? Math.round((doneCount / totalCount) * 100) : 0
+            return (
             <>
               <div className="progress-ring-wrap dashboard-plus-board-summary">
                 <div>
                   <div className="prog-label">Heute erledigt</div>
-                  <div className="prog-sub">{activeBoard.tasks.filter(task => task.done).length} von {activeBoard.tasks.length} Aufgaben</div>
+                  <div className="prog-sub">{doneCount} von {totalCount} Aufgaben</div>
+                  {percent >= 80 && totalCount > 0 && (
+                    <span className="status-chip status-chip--good"><span className="status-chip__dot" />Fast geschafft</span>
+                  )}
                 </div>
-                <div className="prog-num">{activeBoard.tasks.length ? Math.round((activeBoard.tasks.filter(task => task.done).length / activeBoard.tasks.length) * 100) : 0}%</div>
+                <div className="prog-num">{percent}%</div>
               </div>
               <div className="editable-task-list">
                 {activeBoard.tasks.map((task, index) => (
@@ -2298,7 +2305,8 @@ function DashboardPlusView({
                 <Plus size={15} /> Aufgabe hinzufügen
               </button>
             </>
-          )}
+            )
+          })()}
         </section>
       </div>
       )}

@@ -1531,6 +1531,10 @@ button:disabled {
   font-size: 11px;
 }
 
+.prog-sub + .status-chip {
+  margin-top: 8px;
+}
+
 .prog-num {
   font-size: 22px;
   font-weight: 700;
