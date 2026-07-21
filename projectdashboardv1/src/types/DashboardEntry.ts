@@ -48,7 +48,7 @@ export interface DashboardEntry {
 
   // ADHD-optimised fields
   energyLevel?:   'low' | 'okay' | 'high'
-  breathingDone?: boolean
+  breathingDone: boolean
   anchors?:        string[]
   anchorsDone?:    boolean[]
 
@@ -84,10 +84,11 @@ export const createDefaultEntry = (date: string): DashboardEntry => ({
   waterLiters: 0,
   deepWorkHours: 0,
   dailyScore: 0,
+  breathingDone: false,
 })
 
 export type HabitKey = keyof Pick<DashboardEntry,
-  'coldShower' | 'proteinShake' | 'pushupsDone' | 'squatsDone' |
+  'breathingDone' | 'coldShower' | 'proteinShake' | 'pushupsDone' | 'squatsDone' |
   'wallsitDone' | 'plankDone' | 'gratitudeDone' | 'focusDone' |
   'winnerModeDone' | 'journalDone' | 'familyTimeDone'
 >

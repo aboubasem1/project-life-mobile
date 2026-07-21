@@ -11,6 +11,7 @@ import {
 } from 'react'
 import {
   Activity,
+  AlertCircle,
   BarChart3,
   BatteryLow,
   Bell,
@@ -24,8 +25,11 @@ import {
   Circle,
   Cloud,
   Coffee,
+  CreditCard,
   Crown,
   Dumbbell,
+  Fish,
+  FlaskConical,
   Focus,
   GripVertical,
   Heart,
@@ -35,10 +39,13 @@ import {
   Moon,
   Pause,
   Pencil,
+  Pill,
   Play,
   Plus,
+  Receipt,
   RotateCcw,
   Settings,
+  ShoppingBag,
   Snowflake,
   Sparkles,
   Sun,
@@ -50,8 +57,20 @@ import {
 import { useEntries } from './hooks/useEntries'
 import type { DashboardEntry } from './types/DashboardEntry'
 import { createDefaultEntry } from './types/DashboardEntry'
-import { calculateScore } from './lib/score'
-import { exportJSON, importJSON, saveAllEntries } from './lib/storage'
+import { getDayPolicy, pickNextStep } from './lib/dayPolicy'
+import { buildWeekInsights } from './lib/insights'
+import { deriveLaborOverview, deriveLaborStats, smartLaborHints } from './lib/laborLive'
+import { hashFromView, navigateHash, viewFromHash } from './lib/routing'
+import { calculateScore, calculateStreakForHabit } from './lib/score'
+import type { HabitKey } from './types/DashboardEntry'
+import {
+  applyBackupExtras,
+  exportBackupBundle,
+  getLastBackupAt,
+  importBackupFile,
+  mergeEntriesByDate,
+  saveAllEntries,
+} from './lib/storage'
 import './launch.css'
 
 type View = 'today' | 'plan' | 'checkin' | 'progress' | 'dashboardPlus'
@@ -104,7 +123,34 @@ type DashboardPlusSupplement = {
   unit: string
   dailyUse: number
   dailyUnit: string
-  color: string
+  /** Legacy / optional — accent is derived in UI from id/name */
+  color?: string
+}
+
+const SUPPLEMENT_ACCENTS = [
+  'var(--accent)',
+  'var(--sage)',
+  'var(--blue)',
+  'var(--lilac)',
+  'var(--warning)',
+] as const
+
+function hashSupplementKey(value: string): number {
+  let hash = 0
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0
+  }
+  return Math.abs(hash)
+}
+
+function supplementAccent(item: Pick<DashboardPlusSupplement, 'id' | 'name'>, index: number): string {
+  const key = item.id || item.name || String(index)
+  return SUPPLEMENT_ACCENTS[hashSupplementKey(key) % SUPPLEMENT_ACCENTS.length]
+}
+
+function supplementDaysRemaining(stock: number, dailyUse: number): number | null {
+  if (dailyUse <= 0) return null
+  return Math.floor(stock / dailyUse)
 }
 
 type DashboardPlusBoard = {
@@ -114,14 +160,38 @@ type DashboardPlusBoard = {
   tasks: DashboardPlusTask[]
 }
 
+type ShoppingIconKey = 'flask' | 'fish' | 'pill' | 'bag'
+
 type DashboardPlusShoppingItem = {
   id: string
-  icon: string
+  /** Semantic icon key — never an emoji */
+  icon: ShoppingIconKey | string
   name: string
   note: string
   price: number
   done: boolean
 }
+
+const SHOPPING_ICON_MAP: Record<ShoppingIconKey, typeof ShoppingBag> = {
+  flask: FlaskConical,
+  fish: Fish,
+  pill: Pill,
+  bag: ShoppingBag,
+}
+
+function shoppingIconKey(raw: string): ShoppingIconKey {
+  const value = raw.trim().toLowerCase()
+  if (value === 'flask' || value === 'fish' || value === 'pill' || value === 'bag') return value
+  // Legacy emoji / unknown → bag
+  return 'bag'
+}
+
+function ShoppingItemIcon({ icon }: { icon: string }) {
+  const Icon = SHOPPING_ICON_MAP[shoppingIconKey(icon)]
+  return <Icon size={16} />
+}
+
+type DashboardPlusBillStatus = 'paid' | 'open' | 'overdue'
 
 type DashboardPlusBill = {
   id: string
@@ -129,8 +199,70 @@ type DashboardPlusBill = {
   subtitle: string
   amount: number
   due: string
-  status: 'paid' | 'open' | 'overdue'
+  status: DashboardPlusBillStatus
   color: string
+}
+
+type FinanceSummary = {
+  monthlyFixed: number
+  recurringCount: number
+  openSum: number
+  openCount: number
+  overdueSum: number
+  overdueCount: number
+  hints: string[]
+}
+
+function sumBillAmounts(bills: DashboardPlusBill[]): number {
+  return bills.reduce((total, bill) => total + (Number.isFinite(bill.amount) ? bill.amount : 0), 0)
+}
+
+function deriveFinanceSummary(finances: DashboardPlusState['finances']): FinanceSummary {
+  const openBills = finances.openBills.filter(bill => bill.status === 'open')
+  const overdueBills = [...finances.recurring, ...finances.openBills].filter(bill => bill.status === 'overdue')
+  const monthlyFixed = sumBillAmounts(finances.recurring)
+  const openSum = sumBillAmounts(openBills)
+  const overdueSum = sumBillAmounts(overdueBills)
+  const hints: string[] = []
+
+  if (overdueBills.length > 0) {
+    hints.push(
+      overdueBills.length === 1
+        ? 'Eine Rechnung ist überfällig — zuerst klären, dann weiterplanen.'
+        : `${overdueBills.length} Rechnungen sind überfällig — ruhig abarbeiten, bevor Neues dazukommt.`,
+    )
+  }
+  if (monthlyFixed > 0 && openSum + overdueSum > monthlyFixed * 0.45) {
+    hints.push('Offene Beträge sind relativ hoch zum Monatsfix — kurz priorisieren.')
+  }
+  if (hints.length === 0) {
+    hints.push('Fixkosten und offene Posten im Blick — ohne den Tagesfokus zu stören.')
+  }
+
+  return {
+    monthlyFixed,
+    recurringCount: finances.recurring.length,
+    openSum,
+    openCount: openBills.length,
+    overdueSum,
+    overdueCount: overdueBills.length,
+    hints: hints.slice(0, 2),
+  }
+}
+
+function billStatusLabel(status: DashboardPlusBillStatus): string {
+  switch (status) {
+    case 'paid':
+      return 'Bezahlt'
+    case 'open':
+      return 'Offen'
+    case 'overdue':
+      return 'Überfällig'
+    default: {
+      const _exhaustive: never = status
+      return _exhaustive
+    }
+  }
 }
 
 type DashboardPlusState = {
@@ -235,13 +367,13 @@ function getLevelFromScore(totalScore: number): string {
 function createDashboardPlusSeed(): DashboardPlusState {
   return {
     overview: {
-      dateLabel: 'Sonntag, 1. Jun 2026',
-      syncStatus: 'Bereit',
-      syncTime: 'gerade eben',
-      score: 76,
-      habits: 8,
-      todos: 5,
-      projects: 3,
+      dateLabel: new Intl.DateTimeFormat('de-DE', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' }).format(new Date()),
+      syncStatus: 'Lokal',
+      syncTime: 'nur dieses Gerät',
+      score: 0,
+      habits: 0,
+      todos: 0,
+      projects: 0,
     },
     focusTodos: [
       { id: 'focus-1', title: 'Creatine bestellen (Lager fast leer)', tag: 'DRINGEND', time: 'heute', done: false, priority: 'red' },
@@ -249,11 +381,11 @@ function createDashboardPlusSeed(): DashboardPlusState {
       { id: 'focus-3', title: 'Landing Page copy finalisieren', tag: 'MONDAS', time: '14:00', done: false, priority: 'blue' },
     ],
     supplements: [
-      { id: 'supp-1', name: 'Hüttenkäse', brand: '500g Becher', stock: 400, unit: 'g', dailyUse: 200, dailyUnit: 'g', color: '#0a84ff' },
-      { id: 'supp-2', name: 'Creatine Monohydrate', brand: 'BulkPowders · 500g', stock: 60, unit: 'g', dailyUse: 10, dailyUnit: 'g', color: '#ff3b30' },
-      { id: 'supp-3', name: 'Haferflocken', brand: 'Naturgut · 1kg', stock: 600, unit: 'g', dailyUse: 80, dailyUnit: 'g', color: '#7c7bff' },
-      { id: 'supp-4', name: 'Omega-3', brand: 'Optimum · 180 Caps', stock: 63, unit: 'Caps', dailyUse: 2, dailyUnit: 'Caps', color: '#ff9f0a' },
-      { id: 'supp-5', name: 'Vitamin D3 + K2', brand: 'Now Foods · 365 Caps', stock: 299, unit: 'Caps', dailyUse: 1, dailyUnit: 'Caps', color: '#5ac8fa' },
+      { id: 'supp-1', name: 'Hüttenkäse', brand: '500g Becher', stock: 400, unit: 'g', dailyUse: 200, dailyUnit: 'g' },
+      { id: 'supp-2', name: 'Creatine Monohydrate', brand: 'BulkPowders · 500g', stock: 60, unit: 'g', dailyUse: 10, dailyUnit: 'g' },
+      { id: 'supp-3', name: 'Haferflocken', brand: 'Naturgut · 1kg', stock: 600, unit: 'g', dailyUse: 80, dailyUnit: 'g' },
+      { id: 'supp-4', name: 'Omega-3', brand: 'Optimum · 180 Caps', stock: 63, unit: 'Caps', dailyUse: 2, dailyUnit: 'Caps' },
+      { id: 'supp-5', name: 'Vitamin D3 + K2', brand: 'Now Foods · 365 Caps', stock: 299, unit: 'Caps', dailyUse: 1, dailyUnit: 'Caps' },
     ],
     boards: [
       {
@@ -298,9 +430,9 @@ function createDashboardPlusSeed(): DashboardPlusState {
     shopping: {
       total: 89.90,
       items: [
-        { id: 'shop-1', icon: '🧪', name: 'Creatine Monohydrate 1kg', note: 'BulkPowders · Bestand kritisch ⚠️', price: 24.99, done: false },
-        { id: 'shop-2', icon: '🐟', name: 'Omega-3 Nachfüllpack', note: 'Optimum · 300 Caps', price: 34.90, done: false },
-        { id: 'shop-3', icon: '💊', name: 'Magnesium Bisglycinate', note: 'Bioptimizers · 240 Caps', price: 34.00, done: false },
+        { id: 'shop-1', icon: 'flask', name: 'Creatine Monohydrate 1kg', note: 'BulkPowders · Bestand kritisch', price: 24.99, done: false },
+        { id: 'shop-2', icon: 'fish', name: 'Omega-3 Nachfüllpack', note: 'Optimum · 300 Caps', price: 34.90, done: false },
+        { id: 'shop-3', icon: 'pill', name: 'Magnesium Bisglycinate', note: 'Bioptimizers · 240 Caps', price: 34.00, done: false },
       ],
     },
     stats: {
@@ -312,8 +444,8 @@ function createDashboardPlusSeed(): DashboardPlusState {
       heatmap: [1, 2, 3, 4, 3, 2, 1, 0, 2, 3, 4, 4, 3, 2, 2, 3, 1, 0, 1, 3, 4, 3, 2, 1, 0, 2, 3, 4],
       projects: [
         { id: 'proj-personal', name: 'Personal', percent: 50, color: 'var(--accent)' },
-        { id: 'proj-mondas', name: 'Mondas', percent: 17, color: 'var(--orange)' },
-        { id: 'proj-health', name: 'Health', percent: 33, color: 'var(--green)' },
+        { id: 'proj-mondas', name: 'Mondas', percent: 17, color: 'var(--warning)' },
+        { id: 'proj-health', name: 'Health', percent: 33, color: 'var(--sage)' },
       ],
     },
     finances: {
@@ -322,19 +454,42 @@ function createDashboardPlusSeed(): DashboardPlusState {
       overdue: 89,
       recurring: [
         { id: 'bill-rent', name: 'Miete', subtitle: 'Monatlich · 1. jeden Monat', amount: 520, due: 'nächste: 01.06', status: 'open', color: 'var(--accent)' },
-        { id: 'bill-power', name: 'Strom · Vattenfall', subtitle: 'Monatlich · 15. jeden Monat', amount: 89, due: 'nächste: 15.06', status: 'open', color: 'var(--teal)' },
-        { id: 'bill-internet', name: 'Internet · Telekom', subtitle: 'Monatlich · 20. jeden Monat', amount: 44, due: 'nächste: 20.06', status: 'open', color: 'var(--green)' },
-        { id: 'bill-streaming', name: 'Spotify + Netflix', subtitle: 'Monatlich · 5. jeden Monat', amount: 28, due: 'nächste: 05.06', status: 'open', color: '#bf5af2' },
-        { id: 'bill-gym', name: 'Gym · McFit', subtitle: 'Monatlich · 1. jeden Monat', amount: 24, due: 'nächste: 01.06', status: 'open', color: 'var(--orange)' },
-        { id: 'bill-icloud', name: 'iCloud 200GB', subtitle: 'Monatlich · 12. jeden Monat', amount: 3, due: 'nächste: 12.06', status: 'open', color: 'var(--accent2)' },
+        { id: 'bill-power', name: 'Strom · Vattenfall', subtitle: 'Monatlich · 15. jeden Monat', amount: 89, due: 'nächste: 15.06', status: 'open', color: 'var(--blue)' },
+        { id: 'bill-internet', name: 'Internet · Telekom', subtitle: 'Monatlich · 20. jeden Monat', amount: 44, due: 'nächste: 20.06', status: 'open', color: 'var(--sage)' },
+        { id: 'bill-streaming', name: 'Spotify + Netflix', subtitle: 'Monatlich · 5. jeden Monat', amount: 28, due: 'nächste: 05.06', status: 'open', color: 'var(--lilac)' },
+        { id: 'bill-gym', name: 'Gym · McFit', subtitle: 'Monatlich · 1. jeden Monat', amount: 24, due: 'nächste: 01.06', status: 'open', color: 'var(--warning)' },
+        { id: 'bill-icloud', name: 'iCloud 200GB', subtitle: 'Monatlich · 12. jeden Monat', amount: 3, due: 'nächste: 12.06', status: 'open', color: 'var(--blue)' },
       ],
       openBills: [
-        { id: 'bill-tax', name: 'Steuerberater', subtitle: 'Fällig: 15.05.2026', amount: 89, due: '16 Tage überfällig', status: 'overdue', color: 'var(--red)' },
-        { id: 'bill-design', name: 'Lieferant Design-Assets', subtitle: 'Fällig: 05.06.2026', amount: 149, due: 'in 5 Tagen', status: 'open', color: 'var(--orange)' },
-        { id: 'bill-figma', name: 'Software-Lizenz Figma', subtitle: 'Fällig: 15.06.2026', amount: 102, due: 'in 15 Tagen', status: 'open', color: 'var(--orange)' },
-        { id: 'bill-vercel', name: 'Hosting · Vercel Pro', subtitle: 'Bezahlt am 01.05.2026', amount: 20, due: '✓ erledigt', status: 'paid', color: 'var(--green)' },
+        { id: 'bill-tax', name: 'Steuerberater', subtitle: 'Fällig: 15.05.2026', amount: 89, due: '16 Tage überfällig', status: 'overdue', color: 'var(--danger)' },
+        { id: 'bill-design', name: 'Lieferant Design-Assets', subtitle: 'Fällig: 05.06.2026', amount: 149, due: 'in 5 Tagen', status: 'open', color: 'var(--warning)' },
+        { id: 'bill-figma', name: 'Software-Lizenz Figma', subtitle: 'Fällig: 15.06.2026', amount: 102, due: 'in 15 Tagen', status: 'open', color: 'var(--warning)' },
+        { id: 'bill-vercel', name: 'Hosting · Vercel Pro', subtitle: 'Bezahlt am 01.05.2026', amount: 20, due: 'erledigt', status: 'paid', color: 'var(--success)' },
       ],
     },
+  }
+}
+
+function stripEmojis(value: string): string {
+  return value
+    .replace(/\p{Extended_Pictographic}/gu, '')
+    .replace(/\uFE0F/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
+function normalizeShoppingItem(item: DashboardPlusShoppingItem): DashboardPlusShoppingItem {
+  const legacyMap: Record<string, ShoppingIconKey> = {
+    '🧪': 'flask',
+    '🐟': 'fish',
+    '💊': 'pill',
+  }
+  const mapped = legacyMap[item.icon] ?? shoppingIconKey(item.icon)
+  return {
+    ...item,
+    icon: mapped,
+    name: stripEmojis(item.name),
+    note: stripEmojis(item.note),
   }
 }
 
@@ -344,7 +499,15 @@ function loadDashboardPlusState(): DashboardPlusState {
     if (!stored) return createDashboardPlusSeed()
     const parsed = JSON.parse(stored) as DashboardPlusState
     if (!parsed || !parsed.overview || !Array.isArray(parsed.focusTodos)) return createDashboardPlusSeed()
-    return parsed
+    return {
+      ...parsed,
+      shopping: {
+        ...parsed.shopping,
+        items: Array.isArray(parsed.shopping?.items)
+          ? parsed.shopping.items.map(normalizeShoppingItem)
+          : [],
+      },
+    }
   } catch {
     return createDashboardPlusSeed()
   }
@@ -366,6 +529,12 @@ const NAV_ITEMS: Array<{ id: View; label: string; icon: typeof Home }> = [
   { id: 'plan', label: 'Plan', icon: ListTodo },
   { id: 'checkin', label: 'Check-in', icon: Heart },
   { id: 'progress', label: 'Verlauf', icon: BarChart3 },
+  { id: 'dashboardPlus', label: 'Labor', icon: Crown },
+]
+
+const STREAK_HABIT_KEYS: HabitKey[] = [
+  'coldShower', 'proteinShake', 'pushupsDone', 'squatsDone', 'wallsitDone', 'plankDone',
+  'gratitudeDone', 'focusDone', 'winnerModeDone', 'journalDone', 'familyTimeDone', 'breathingDone',
 ]
 
 const ENERGY_OPTIONS: Array<{
@@ -373,14 +542,21 @@ const ENERGY_OPTIONS: Array<{
   label: string
   description: string
 }> = [
-  { value: 'low', label: 'Niedrig', description: 'Nur das Nötigste' },
-  { value: 'okay', label: 'Okay', description: 'Ruhiger Standardtag' },
-  { value: 'high', label: 'Gut', description: 'Mehr Fokus möglich' },
+  { value: 'low', label: 'Niedrig', description: 'Wir reduzieren heute aufs Wichtigste' },
+  { value: 'okay', label: 'Okay', description: 'Ein ruhiger, machbarer Tag' },
+  { value: 'high', label: 'Gut', description: 'Platz für tieferen Fokus' },
 ]
+
+function storageStatusLabel(syncStatus: string, isOnline: boolean): string {
+  if (!isOnline || syncStatus === 'offline') return 'Offline · lokal'
+  if (syncStatus === 'syncing') return 'Speichert lokal …'
+  if (syncStatus === 'synced') return 'Lokal gespeichert'
+  return 'Nur dieses Gerät'
+}
 
 const MOODS = ['Ruhig', 'Gut', 'Neutral', 'Müde', 'Gestresst']
 const SLEEP_QUALITY = ['Schlecht', 'Okay', 'Gut', 'Sehr gut']
-const SLEEP_DURATION = ['5h', '6h', '6.5h', '7h', '7.5h', '8h', '9h']
+const SLEEP_DURATION = ['<5h', '5h', '6h', '6.5h', '7h', '7.5h', '8h', '>8h']
 
 function loadSettings(): AppSettings {
   try {
@@ -493,28 +669,6 @@ function IconButton({
   )
 }
 
-function BadgeButton({
-  label,
-  children,
-  onClick,
-}: {
-  label: string
-  children: ReactNode
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      className="badge-button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-    >
-      {children}
-    </button>
-  )
-}
-
 function ProgressRing({ value, size = 72 }: { value: number; size?: number }) {
   const safeValue = clampNumber(Math.round(value), 0, 100)
   return (
@@ -579,7 +733,7 @@ function EmptyState({
 
 function App() {
   const { entries, syncStatus, isOnline, saveEntry, reloadAll } = useEntries()
-  const [view, setView] = useState<View>('today')
+  const [view, setView] = useState<View>(() => viewFromHash())
   const [selectedDate, setSelectedDate] = useState(() => dateKey(new Date()))
   const [settings, setSettings] = useState<AppSettings>(loadSettings)
   const [dashboardPlus, setDashboardPlus] = useState<DashboardPlusState>(loadDashboardPlusState)
@@ -587,49 +741,78 @@ function App() {
   const [taskEditor, setTaskEditor] = useState<{ index: number | null; value: string } | null>(null)
   const [focusSession, setFocusSession] = useState<FocusSession | null>(null)
   const [toast, setToast] = useState<ToastState>(null)
-  const dashboardPlusRouteLock = useRef<string | null>(null)
+  const [lastBackupAt, setLastBackupAt] = useState<string | null>(() => getLastBackupAt())
 
   const today = dateKey(new Date())
+  const nowHour = new Date().getHours()
   const entry = useMemo(
     () => entries.find(item => item.date === selectedDate) ?? createDefaultEntry(selectedDate),
     [entries, selectedDate],
   )
 
-  const score = clampNumber(calculateScore(entry), 0, 100)
+  const scoreGoals = useMemo(() => ({ proteinGoal: settings.proteinGoal }), [settings.proteinGoal])
+  const score = clampNumber(calculateScore(entry, scoreGoals), 0, 100)
   const anchors = entry.anchors ?? []
   const anchorsDone = entry.anchorsDone ?? []
   const completedAnchors = anchors.filter((_, index) => Boolean(anchorsDone[index])).length
-  const activeRoutineDefinitions = useMemo(
-    () => settings.activeHabits
-      .map(id => DAILY_HABITS.find(item => item.id === id))
-      .filter((item): item is HabitDef => item !== undefined),
-    [settings.activeHabits],
+  const dayPolicy = useMemo(
+    () => getDayPolicy({
+      energy: entry.energyLevel,
+      activeHabits: settings.activeHabits,
+      baseFocusMinutes: settings.focusMinutes,
+      hour: selectedDate === today ? nowHour : 12,
+    }),
+    [entry.energyLevel, settings.activeHabits, settings.focusMinutes, selectedDate, today, nowHour],
   )
-  const dashboardPlusReady = useMemo(() => {
-    const routinesComplete = activeRoutineDefinitions.length === 0
-      || activeRoutineDefinitions.every(item => Boolean(entry[item.id as keyof DashboardEntry]))
-    const anchorsComplete = anchors.length === 0 || anchors.every((_, index) => Boolean(anchorsDone[index]))
-    const dreamComplete = entry.dreamed === undefined
-      ? false
-      : entry.dreamed === false
-        ? true
-        : Boolean(entry.dreamQuality)
-    const needsMorningWeight = selectedDate === today && new Date().getHours() < 12
-    const weightComplete = !needsMorningWeight || entry.weightKg > 0
 
-    return Boolean(entry.mood)
-      && Boolean(entry.sleepQuality)
-      && Boolean(entry.sleepDuration)
-      && Boolean(entry.energyLevel)
-      && routinesComplete
-      && anchorsComplete
-      && dreamComplete
-      && weightComplete
-  }, [activeRoutineDefinitions, anchors, anchorsDone, entry, selectedDate, today])
+  const streakByKey = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const key of STREAK_HABIT_KEYS) {
+      map[key] = calculateStreakForHabit(entries, key)
+    }
+    return map
+  }, [entries])
+
+  const laborOpenBoards = useMemo(
+    () => dashboardPlus.boards.filter(board => board.tasks.some(task => !task.done)).length,
+    [dashboardPlus.boards],
+  )
+
+  const laborLive = useMemo(
+    () => deriveLaborOverview({
+      entries,
+      today,
+      activeHabits: settings.activeHabits,
+      openBoardCount: laborOpenBoards,
+      goals: scoreGoals,
+    }),
+    [entries, today, settings.activeHabits, laborOpenBoards, scoreGoals],
+  )
+
+  const laborStats = useMemo(
+    () => deriveLaborStats({ entries, today, goals: scoreGoals }),
+    [entries, today, scoreGoals],
+  )
 
   const updateEntry = (patch: Partial<DashboardEntry>) => {
     void saveEntry({ ...entry, ...patch })
   }
+
+  const saveEntryForDate = async (date: string, patch: Partial<DashboardEntry>) => {
+    const base = entries.find(item => item.date === date) ?? createDefaultEntry(date)
+    await saveEntry({ ...base, ...patch })
+  }
+
+  useEffect(() => {
+    const onHash = () => setView(viewFromHash())
+    window.addEventListener('hashchange', onHash)
+    if (!window.location.hash) navigateHash(view, true)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
+  useEffect(() => {
+    if (hashFromView(view) !== window.location.hash) navigateHash(view, true)
+  }, [view])
 
   useEffect(() => {
     safeLocalStorageSetItem(SETTINGS_KEY, JSON.stringify(settings))
@@ -656,40 +839,42 @@ function App() {
 
   useEffect(() => {
     if (!toast) return
-    const timer = window.setTimeout(() => setToast(null), 3200)
+    const timer = window.setTimeout(() => setToast(null), 4200)
     return () => window.clearTimeout(timer)
   }, [toast])
-
-  useEffect(() => {
-    if (selectedDate !== today) {
-      dashboardPlusRouteLock.current = null
-      return
-    }
-
-    if (!dashboardPlusReady) return
-
-    if (view !== 'dashboardPlus' && dashboardPlusRouteLock.current !== today) {
-      dashboardPlusRouteLock.current = today
-      setView('dashboardPlus')
-    }
-  }, [dashboardPlusReady, selectedDate, today, view])
 
   const showToast = (message: string, actionLabel?: string, onAction?: () => void) => {
     setToast({ message, actionLabel, onAction })
   }
 
   const handleExport = () => {
-    exportJSON(entries)
-    showToast('Backup exportiert.')
+    exportBackupBundle({
+      entries,
+      settings,
+      dashboardPlus,
+    })
+    setLastBackupAt(new Date().toISOString())
+    showToast('Vollständiges Backup exportiert.')
   }
 
   const handleImport = async (file: File) => {
     try {
-      const imported = await importJSON(file)
-      const normalized = imported.map(entry => ({ ...entry, dailyScore: calculateScore(entry) }))
-      if (!saveAllEntries(normalized)) throw new Error('localStorage unavailable')
+      const imported = await importBackupFile(file)
+      const normalized = imported.entries.map(item => ({ ...item, dailyScore: calculateScore(item, scoreGoals) }))
+      const replaceAll = window.confirm(
+        `${imported.entryCount} Tage gefunden (${imported.mode === 'bundle' ? 'Vollbackup' : 'nur Einträge'}).\n\nOK = alles ersetzen\nAbbrechen = nach Datum mergen`,
+      )
+      const finalEntries = replaceAll ? normalized : mergeEntriesByDate(entries, normalized)
+
+      if (!saveAllEntries(finalEntries)) throw new Error('localStorage unavailable')
+      if (imported.mode === 'bundle') {
+        applyBackupExtras(imported)
+        if (imported.settings) setSettings(loadSettings())
+        if (imported.dashboardPlus) setDashboardPlus(loadDashboardPlusState())
+      }
+      setLastBackupAt(new Date().toISOString())
       await reloadAll()
-      showToast('Backup importiert.')
+      showToast(imported.mode === 'bundle' ? 'Vollbackup importiert.' : 'Einträge importiert.')
     } catch {
       showToast('Import fehlgeschlagen.')
     }
@@ -716,8 +901,14 @@ function App() {
     if (!clean) return
 
     if (index === null) {
-      if (anchors.length >= 5) {
-        showToast('Maximal fünf Tagesanker halten den Tag übersichtlich.')
+      if (anchors.length >= dayPolicy.maxAnchors) {
+        showToast(
+          dayPolicy.energy === 'low'
+            ? 'Bei niedriger Energie reichen maximal zwei Anker.'
+            : dayPolicy.energy === 'okay'
+              ? 'Heute maximal drei Anker — hält den Tag machbar.'
+              : 'Maximal fünf Tagesanker halten den Tag übersichtlich.',
+        )
         return
       }
       setAnchors([...anchors, clean], [...anchorsDone, false])
@@ -758,7 +949,7 @@ function App() {
   const openFocus = (title: string, taskIndex?: number, routineKey?: RoutineKey, overrideMinutes?: number) => {
     setFocusSession({
       title,
-      minutes: clampNumber(overrideMinutes ?? settings.focusMinutes, 5, 120),
+      minutes: clampNumber(overrideMinutes ?? dayPolicy.focusMinutes, 5, 120),
       taskIndex,
       routineKey,
     })
@@ -795,11 +986,10 @@ function App() {
     }))
   }
 
-  const currentViewLabel = view === 'dashboardPlus'
-    ? 'Dashboard+'
-    : NAV_ITEMS.find(item => item.id === view)?.label ?? 'Heute'
+  const currentViewLabel = NAV_ITEMS.find(item => item.id === view)?.label ?? 'Heute'
   const navigateTo = (nextView: View) => {
     setView(nextView)
+    navigateHash(nextView)
     if (nextView === 'today' || nextView === 'dashboardPlus') setSelectedDate(today)
   }
 
@@ -868,10 +1058,6 @@ function App() {
             <strong>Life OS</strong>
           </div>
           <div className="mobile-header__actions">
-            <BadgeButton label="Dashboard+ öffnen" onClick={() => navigateTo('dashboardPlus')}>
-              <Crown size={16} />
-              <span>Dashboard+</span>
-            </BadgeButton>
             <IconButton label="Theme wechseln" onClick={quickToggleTheme}>
               {resolvedTheme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </IconButton>
@@ -888,14 +1074,10 @@ function App() {
               <h1>{greeting()}{settings.name.trim() ? `, ${settings.name.trim()}` : ''}.</h1>
             </div>
             <div className="topbar-actions">
-              <span className={`sync-pill sync-pill--${syncStatus}`}>
+              <span className={`sync-pill sync-pill--${syncStatus}`} title="Daten bleiben in diesem Browser">
                 <Cloud size={14} />
-                {isOnline ? (syncStatus === 'syncing' ? 'Speichert …' : 'Bereit') : 'Offline'}
+                {storageStatusLabel(syncStatus, isOnline)}
               </span>
-              <BadgeButton label="Dashboard+ öffnen" onClick={() => navigateTo('dashboardPlus')}>
-                <Crown size={16} />
-                <span>Dashboard+</span>
-              </BadgeButton>
               <IconButton label="Einstellungen öffnen" onClick={() => setSettingsOpen(true)}>
                 <Settings size={18} />
               </IconButton>
@@ -911,6 +1093,7 @@ function App() {
               settings={settings}
               anchors={anchors}
               anchorsDone={anchorsDone}
+              streakByKey={streakByKey}
               onDateChange={setSelectedDate}
               onUpdate={updateEntry}
               onToggleAnchor={toggleAnchor}
@@ -920,6 +1103,24 @@ function App() {
               onReorderHabits={ids => setSettings(current => ({ ...current, activeHabits: ids }))}
               onOpenPlan={() => navigateTo('plan')}
               onOpenCheckin={() => navigateTo('checkin')}
+              onPromoteThoughtToTomorrow={async text => {
+                const tomorrow = addDays(today, 1)
+                const tomorrowEntry = entries.find(item => item.date === tomorrow) ?? createDefaultEntry(tomorrow)
+                const nextAnchors = [...(tomorrowEntry.anchors ?? [])]
+                if (nextAnchors.length >= 5) {
+                  showToast('Morgen hat schon fünf Anker.')
+                  return
+                }
+                if (nextAnchors.includes(text)) {
+                  showToast('Schon als Morgen-Anker geplant.')
+                  return
+                }
+                await saveEntryForDate(tomorrow, {
+                  anchors: [...nextAnchors, text],
+                  anchorsDone: [...(tomorrowEntry.anchorsDone ?? []).slice(0, nextAnchors.length), false],
+                })
+                showToast('Als Morgen-Anker gespeichert.')
+              }}
               showToast={showToast}
             />
           )}
@@ -930,7 +1131,9 @@ function App() {
               today={today}
               anchors={anchors}
               anchorsDone={anchorsDone}
-              focusMinutes={settings.focusMinutes}
+              focusMinutes={dayPolicy.focusMinutes}
+              maxAnchors={dayPolicy.maxAnchors}
+              energy={entry.energyLevel}
               onDateChange={setSelectedDate}
               onAddTask={() => setTaskEditor({ index: null, value: '' })}
               onAddSuggestion={text => saveTask(text, null)}
@@ -965,6 +1168,9 @@ function App() {
               onChange={setDashboardPlus}
               onBackToToday={() => navigateTo('today')}
               today={today}
+              liveOverview={laborLive}
+              liveStats={laborStats}
+              energy={entry.energyLevel}
             />
           )}
         </main>
@@ -1008,6 +1214,7 @@ function App() {
       {settingsOpen && (
         <SettingsModal
           settings={settings}
+          lastBackupAt={lastBackupAt}
           onChange={setSettings}
           onExport={handleExport}
           onImport={handleImport}
@@ -1103,6 +1310,8 @@ function TodayView({
   onReorderHabits,
   onOpenPlan,
   onOpenCheckin,
+  onPromoteThoughtToTomorrow,
+  streakByKey,
   showToast,
 }: {
   entry: DashboardEntry
@@ -1112,6 +1321,7 @@ function TodayView({
   settings: AppSettings
   anchors: string[]
   anchorsDone: boolean[]
+  streakByKey: Record<string, number>
   onDateChange: (date: string) => void
   onUpdate: (patch: Partial<DashboardEntry>) => void
   onToggleAnchor: (index: number) => void
@@ -1121,7 +1331,8 @@ function TodayView({
   onReorderHabits: (ids: string[]) => void
   onOpenPlan: () => void
   onOpenCheckin: () => void
-  showToast: (message: string) => void
+  onPromoteThoughtToTomorrow: (text: string) => Promise<void>
+  showToast: (message: string, actionLabel?: string, onAction?: () => void) => void
 }) {
   const [capture, setCapture] = useState('')
   const [dragIdx,     setDragIdx]     = useState<number | null>(null)
@@ -1129,8 +1340,16 @@ function TodayView({
   const touchRef = useRef<{ sourceIdx: number } | null>(null)
 
   const energy = entry.energyLevel
-  // Preserve the order from settings.activeHabits
-  const routineItems = settings.activeHabits
+  const hour = date === today ? new Date().getHours() : 12
+  const policy = getDayPolicy({
+    energy,
+    activeHabits: settings.activeHabits,
+    baseFocusMinutes: settings.focusMinutes,
+    hour,
+  })
+  const dayMode = policy.mode
+
+  const allRoutineItems = settings.activeHabits
     .map(id => DAILY_HABITS.find(h => h.id === id))
     .filter((h): h is HabitDef => h !== undefined)
     .map(h => ({
@@ -1141,12 +1360,18 @@ function TodayView({
       done: Boolean(entry[h.id as keyof DashboardEntry]),
     }))
 
+  const routineItems = allRoutineItems.filter(item => policy.primaryHabitIds.includes(item.key))
+  const deferredRoutineItems = allRoutineItems.filter(item => policy.deferredHabitIds.includes(item.key))
+
   const applyReorder = (fromIdx: number, toIdx: number) => {
     if (fromIdx === toIdx) return
-    const next = [...settings.activeHabits]
-    const [moved] = next.splice(fromIdx, 1)
-    next.splice(toIdx, 0, moved)
-    onReorderHabits(next)
+    // Reorder within the full activeHabits list using primary indices mapped back
+    const primaryIds = [...policy.primaryHabitIds]
+    if (fromIdx < 0 || toIdx < 0 || fromIdx >= primaryIds.length || toIdx >= primaryIds.length) return
+    const [moved] = primaryIds.splice(fromIdx, 1)
+    primaryIds.splice(toIdx, 0, moved)
+    const deferred = settings.activeHabits.filter(id => !policy.primaryHabitIds.includes(id))
+    onReorderHabits([...primaryIds, ...deferred])
   }
 
   const handleDrop = (toIdx: number) => {
@@ -1182,20 +1407,34 @@ function TodayView({
   }
 
   const routineDone = routineItems.filter(item => item.done).length
-  const nextTaskIndex = anchors.findIndex((_, index) => !anchorsDone[index])
-  const nextRoutine = routineItems.find(item => !item.done)
-  const isLowEnergy = energy === 'low'
-  const focusTitle = nextTaskIndex >= 0
-    ? anchors[nextTaskIndex]
-    : nextRoutine?.label ?? 'Tagesabschluss'
+  const nextStep = pickNextStep({
+    anchors,
+    anchorsDone,
+    habits: routineItems.map(item => ({
+      key: item.key,
+      label: item.label,
+      minutes: item.minutes,
+      done: item.done,
+    })),
+    energy,
+    hour,
+    streakByKey,
+  })
+  const focusTitle = nextStep
+    ? nextStep.title
+    : 'Tagesabschluss'
+  const nextTaskIndex = nextStep?.kind === 'anchor' ? nextStep.index : -1
+  const focusMinutesForNext = nextStep?.kind === 'habit'
+    ? (nextStep.minutes ?? policy.focusMinutes)
+    : policy.focusMinutes
 
   const completeNext = () => {
-    if (nextTaskIndex >= 0) {
-      onToggleAnchor(nextTaskIndex)
+    if (nextStep?.kind === 'anchor') {
+      onToggleAnchor(nextStep.index)
       return
     }
-    if (nextRoutine) {
-      onUpdate({ [nextRoutine.key]: true } as Partial<DashboardEntry>)
+    if (nextStep?.kind === 'habit') {
+      onUpdate({ [nextStep.key]: true } as Partial<DashboardEntry>)
     }
   }
 
@@ -1207,7 +1446,17 @@ function TodayView({
     const nextText = entry.journalText ? `${entry.journalText}\n${time} — ${clean}` : `${time} — ${clean}`
     onUpdate({ journalText: nextText })
     setCapture('')
-    showToast('Gedanke geparkt.')
+    showToast('Gedanke geparkt.', 'Morgen-Anker?', () => {
+      void onPromoteThoughtToTomorrow(clean)
+    })
+  }
+
+  const promoteDeferred = (key: string) => {
+    const without = settings.activeHabits.filter(id => id !== key)
+    const insertAt = Math.min(policy.primaryHabitIds.length, without.length)
+    without.splice(insertAt, 0, key)
+    onReorderHabits(without)
+    showToast('Für heute in die Routine geholt.')
   }
 
   return (
@@ -1224,35 +1473,40 @@ function TodayView({
             <span className="eyebrow">Dein nächster Schritt</span>
             <h2>{focusTitle}</h2>
             <p>
-              {nextTaskIndex >= 0
+              {nextStep?.kind === 'anchor'
                 ? 'Nur diese eine Aufgabe. Der Rest darf kurz warten.'
-                : nextRoutine
-                  ? 'Ein kleiner Anker bringt wieder Ruhe in den Tag.'
+                : nextStep?.kind === 'habit'
+                  ? policy.heroHabitCopy
                   : getDailyQuote()}
             </p>
+            {nextStep?.streakHint && (
+              <span className="streak-hint">{nextStep.streakHint}</span>
+            )}
+            {dayMode === 'morning' && !energy && (
+              <span className="mode-hint">Morgenmodus: erst Energie, dann ein Anker.</span>
+            )}
+            {dayMode === 'evening' && (
+              <span className="mode-hint">Abendmodus: abschließen statt aufblasen.</span>
+            )}
           </div>
           <div className="hero-card__actions">
-            {(nextTaskIndex >= 0 || nextRoutine) && (() => {
-              const routineMinutes = nextTaskIndex < 0 ? nextRoutine?.minutes : undefined
-              const displayMinutes = routineMinutes ?? settings.focusMinutes
-              return (
-                <button
-                  type="button"
-                  className="primary-button"
-                  onClick={() => onOpenFocus(
-                    focusTitle,
-                    nextTaskIndex >= 0 ? nextTaskIndex : undefined,
-                    nextTaskIndex < 0 ? nextRoutine?.key : undefined,
-                    routineMinutes,
-                  )}
-                >
-                  <Play size={17} fill="currentColor" />
-                  Fokus starten
-                  <span>{displayMinutes} Min.</span>
-                </button>
-              )
-            })()}
-            {(nextTaskIndex >= 0 || nextRoutine) && (
+            {nextStep && (
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => onOpenFocus(
+                  focusTitle,
+                  nextStep.kind === 'anchor' ? nextStep.index : undefined,
+                  nextStep.kind === 'habit' ? nextStep.key as RoutineKey : undefined,
+                  nextStep.kind === 'habit' ? nextStep.minutes : focusMinutesForNext,
+                )}
+              >
+                <Play size={17} fill="currentColor" />
+                Fokus starten
+                <span>{focusMinutesForNext} Min.</span>
+              </button>
+            )}
+            {nextStep && (
               <button type="button" className="secondary-button" onClick={completeNext}>
                 <Check size={17} />
                 Erledigt
@@ -1272,7 +1526,7 @@ function TodayView({
           <span className="calm-visual__orb calm-visual__orb--three" />
           <div className="calm-visual__glass">
             <Leaf size={26} />
-            <span>{isLowEnergy ? 'Sanfter Tag' : 'Ruhiger Fokus'}</span>
+            <span>{policy.badge}</span>
           </div>
         </div>
       </section>
@@ -1298,22 +1552,27 @@ function TodayView({
       )}
 
       {energy && (
-        <div className="status-row">
-          <span className={`energy-pill energy-pill--${energy}`}>
-            {energy === 'low' ? <BatteryLow size={15} /> : <Activity size={15} />}
-            Energie: {ENERGY_OPTIONS.find(option => option.value === energy)?.label}
-          </span>
-          <button type="button" className="text-button" onClick={() => onUpdate({ energyLevel: undefined })}>
-            Ändern
-          </button>
+        <div className="status-block">
+          <div className="status-row">
+            <span className={`energy-pill energy-pill--${energy}`}>
+              {energy === 'low' ? <BatteryLow size={15} /> : <Activity size={15} />}
+              Energie: {ENERGY_OPTIONS.find(option => option.value === energy)?.label}
+            </span>
+            <button type="button" className="text-button" onClick={() => onUpdate({ energyLevel: undefined })}>
+              Ändern
+            </button>
+          </div>
+          {policy.policyNote && (
+            <p className="policy-note" role="status">{policy.policyNote}</p>
+          )}
         </div>
       )}
 
-      <div className="dashboard-grid">
+      <div className={`dashboard-grid dashboard-grid--${dayMode}`}>
         <section className="card tasks-card">
           <SectionTitle
             eyebrow="Tagesanker"
-            title={isLowEnergy ? 'Heute reicht wenig' : 'Was heute zählt'}
+            title={policy.anchorTitle}
             action={
               <button type="button" className="small-button" onClick={onAddTask}>
                 <Plus size={15} /> Aufgabe
@@ -1323,7 +1582,7 @@ function TodayView({
           {anchors.length === 0 ? (
             <EmptyState
               title="Noch keine Aufgaben"
-              text="Lege ein bis drei klare Anker fest. Mehr muss heute nicht sein."
+              text={policy.emptyAnchorsText}
               action={<button type="button" className="secondary-button" onClick={onAddTask}><Plus size={16} /> Erste Aufgabe</button>}
             />
           ) : (
@@ -1341,9 +1600,9 @@ function TodayView({
                     >
                       {done ? <Check size={16} /> : <Circle size={16} />}
                     </button>
-                    <button type="button" className="task-title" onClick={() => onOpenFocus(task, index)}>
+                    <button type="button" className="task-title" onClick={() => onOpenFocus(task, index, undefined, policy.focusMinutes)}>
                       <strong>{task}</strong>
-                      <span>{done ? 'Erledigt' : `${settings.focusMinutes} Minuten Fokus`}</span>
+                      <span>{done ? 'Erledigt' : `${policy.focusMinutes} Minuten Fokus`}</span>
                     </button>
                     <IconButton label={`${task} bearbeiten`} onClick={() => onEditTask(index, task)}>
                       <Pencil size={15} />
@@ -1363,7 +1622,7 @@ function TodayView({
         <section className="card routine-card">
           <SectionTitle
             eyebrow="Rhythmus"
-            title="Sanfte Routine"
+            title={energy === 'low' ? 'Sanfte Routine' : 'Deine Routine'}
             action={<span className="counter-pill">{routineDone}/{routineItems.length}</span>}
           />
           <div className="routine-list">
@@ -1424,7 +1683,7 @@ function TodayView({
                     className="routine-item__main"
                     onClick={() => {
                       if (!item.done) {
-                        onOpenFocus(item.label, undefined, item.key as RoutineKey, item.minutes)
+                        onOpenFocus(item.label, undefined, item.key as RoutineKey, item.minutes ?? policy.focusMinutes)
                       } else {
                         onUpdate({ [item.key]: false } as Partial<DashboardEntry>)
                       }
@@ -1440,6 +1699,37 @@ function TodayView({
               )
             })}
           </div>
+          {deferredRoutineItems.length > 0 && (
+            <div className="deferred-routine">
+              <span className="eyebrow">Heute optional</span>
+              <div className="routine-list routine-list--deferred">
+                {deferredRoutineItems.map(item => {
+                  const Icon = item.icon
+                  return (
+                    <div key={item.key} className={item.done ? 'routine-item is-done is-deferred' : 'routine-item is-deferred'}>
+                      <span className="routine-item__icon"><Icon size={18} /></span>
+                      <button
+                        type="button"
+                        className="routine-item__main"
+                        onClick={() => {
+                          if (!item.done) promoteDeferred(item.key)
+                          else onUpdate({ [item.key]: false } as Partial<DashboardEntry>)
+                        }}
+                      >
+                        <span className="routine-item__copy">
+                          <span className="routine-item__title">{item.label}</span>
+                          <small>{item.done ? 'Erledigt' : 'Tippen zum Aktivieren'}</small>
+                        </span>
+                      </button>
+                      <span className="routine-item__state">
+                        {item.done ? <Check size={16} /> : <Plus size={16} />}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="card checkin-summary">
@@ -1490,6 +1780,8 @@ function PlanView({
   anchors,
   anchorsDone,
   focusMinutes,
+  maxAnchors,
+  energy,
   onDateChange,
   onAddTask,
   onAddSuggestion,
@@ -1505,6 +1797,8 @@ function PlanView({
   anchors: string[]
   anchorsDone: boolean[]
   focusMinutes: number
+  maxAnchors: number
+  energy?: EnergyLevel
   onDateChange: (date: string) => void
   onAddTask: () => void
   onAddSuggestion: (text: string) => void
@@ -1524,9 +1818,15 @@ function PlanView({
         <div>
           <span className="eyebrow">Plan</span>
           <h2>Ein klarer Tag braucht wenig.</h2>
-          <p>Ordne nur die Aufgaben, die heute wirklich zählen. Maximal fünf.</p>
+          <p>
+            {energy === 'low'
+              ? `Bei niedriger Energie maximal ${maxAnchors} Anker.`
+              : energy === 'okay'
+                ? `Machbarer Tag: maximal ${maxAnchors} Anker.`
+                : `Ordne nur die Aufgaben, die heute wirklich zählen. Maximal ${maxAnchors}.`}
+          </p>
         </div>
-        <button type="button" className="primary-button" onClick={onAddTask} disabled={anchors.length >= 5}>
+        <button type="button" className="primary-button" onClick={onAddTask} disabled={anchors.length >= maxAnchors}>
           <Plus size={17} /> Neue Aufgabe
         </button>
       </section>
@@ -1544,7 +1844,7 @@ function PlanView({
               text="Beginne mit einer einzigen Aufgabe, die den Tag spürbar besser macht."
               action={
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 400 }}>
-                  <button type="button" className="primary-button" onClick={onAddTask}><Plus size={16} /> Eigene Aufgabe</button>
+                  <button type="button" className="primary-button" onClick={onAddTask} disabled={anchors.length >= maxAnchors}><Plus size={16} /> Eigene Aufgabe</button>
                   <p style={{ margin: '8px 0 6px', fontSize: 11, color: 'var(--text-muted)', textAlign: 'left' }}>Schnell hinzufügen:</p>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                     {availableSuggestions.slice(0, 5 - anchors.length).map(t => (
@@ -1809,8 +2109,8 @@ function CheckinView({
             return (
               <>
                 <SectionTitle
-                  eyebrow="Ernährung"
-                  title={isMorning ? 'Morgen-Protokoll' : 'Körper versorgen'}
+                  eyebrow="Werte"
+                  title={isMorning ? 'Morgen-Protokoll' : 'Körper & Fokus'}
                 />
                 {isMorning ? (
                   <NumberField
@@ -1820,13 +2120,13 @@ function CheckinView({
                     step={0.1}
                     min={35}
                     max={200}
-                    placeholder="65.0"
+                    placeholder="z. B. 65,0"
                     onChange={weightKg => onUpdate({ weightKg })}
                   />
                 ) : (
                   <div className="form-grid">
                     <NumberField
-                      label={`Protein · Ziel ${settings.proteinGoal} g`}
+                      label={`Protein · Ziel ${settings.proteinGoal}`}
                       value={entry.proteinGrams}
                       unit="g"
                       step={5}
@@ -1854,7 +2154,7 @@ function CheckinView({
                       step={0.1}
                       min={35}
                       max={200}
-                      placeholder="65.0"
+                      placeholder="z. B. 65,0"
                       onChange={weightKg => onUpdate({ weightKg })}
                     />
                     <NumberField
@@ -1901,6 +2201,7 @@ function ProgressView({ entries, today }: { entries: DashboardEntry[]; today: st
   })
   const average = Math.round(lastSeven.reduce((sum, item) => sum + item.score, 0) / lastSeven.length)
   const best = Math.max(...lastSeven.map(item => item.score))
+  const insights = buildWeekInsights(entries, today)
 
   let streak = 0
   for (let index = lastSeven.length - 1; index >= 0; index -= 1) {
@@ -1930,6 +2231,18 @@ function ProgressView({ entries, today }: { entries: DashboardEntry[]; today: st
         <div className="kpi-card"><span>Bester Tag</span><strong>{best}%</strong><small>diese Woche</small></div>
         <div className="kpi-card"><span>Rhythmus</span><strong>{streak}</strong><small>{plural(streak, 'Tag', 'Tage')} · {getLevelFromScore(lastSeven.reduce((s, i) => s + i.score, 0))}</small></div>
       </div>
+
+      <section className="card insight-card">
+        <SectionTitle eyebrow="Muster" title="Was die Woche dir sagt" />
+        <div className="insight-list">
+          {insights.map(insight => (
+            <div className="insight-row" key={insight.id}>
+              <strong>{insight.title}</strong>
+              <p>{insight.text}</p>
+            </div>
+          ))}
+        </div>
+      </section>
 
       <div className="progress-layout">
         <section className="card chart-card">
@@ -1978,13 +2291,27 @@ function DashboardPlusView({
   onChange,
   onBackToToday,
   today,
+  liveOverview,
+  liveStats,
+  energy,
 }: {
   dashboard: DashboardPlusState
   onChange: Dispatch<SetStateAction<DashboardPlusState>>
   onBackToToday: () => void
   today: string
+  liveOverview: ReturnType<typeof deriveLaborOverview>
+  liveStats: ReturnType<typeof deriveLaborStats>
+  energy?: DashboardEntry['energyLevel']
 }) {
   const [activeBoardId, setActiveBoardId] = useState(dashboard.boards[0]?.id ?? 'personal')
+  const openFocusTodos = dashboard.focusTodos.filter(task => !task.done).length
+  const lowStockCount = dashboard.supplements.filter(item => item.dailyUse > 0 && item.stock <= item.dailyUse * 7).length
+  const hints = smartLaborHints({
+    energy,
+    score: liveOverview.score,
+    openTodos: openFocusTodos,
+    lowStockCount,
+  })
 
   useEffect(() => {
     if (!dashboard.boards.some(board => board.id === activeBoardId)) {
@@ -1993,10 +2320,8 @@ function DashboardPlusView({
   }, [activeBoardId, dashboard.boards])
 
   const activeBoard = dashboard.boards.find(board => board.id === activeBoardId) ?? dashboard.boards[0]
-
-  const updateOverview = (patch: Partial<DashboardPlusState['overview']>) => {
-    onChange(current => ({ ...current, overview: { ...current.overview, ...patch } }))
-  }
+  const financeSummary = useMemo(() => deriveFinanceSummary(dashboard.finances), [dashboard.finances])
+  const formatMoney = (value: number) => value.toLocaleString('de-DE', { maximumFractionDigits: 2, minimumFractionDigits: 0 })
 
   const updateFocusTask = (index: number, patch: Partial<DashboardPlusTask>) => {
     onChange(current => ({
@@ -2029,7 +2354,7 @@ function DashboardPlusView({
   const addSupplement = () => {
     onChange(current => ({
       ...current,
-      supplements: [...current.supplements, { id: crypto.randomUUID(), name: 'Neues Produkt', brand: '', stock: 0, unit: 'g', dailyUse: 0, dailyUnit: 'g', color: '#7c7bff' }],
+      supplements: [...current.supplements, { id: crypto.randomUUID(), name: 'Neues Produkt', brand: '', stock: 0, unit: 'g', dailyUse: 0, dailyUnit: 'g' }],
     }))
   }
 
@@ -2103,22 +2428,81 @@ function DashboardPlusView({
     }))
   }
 
-  const formatMoney = (value: number) => value.toLocaleString('de-DE', { maximumFractionDigits: 2, minimumFractionDigits: 0 })
+  const renderBillCard = (
+    bill: DashboardPlusBill,
+    index: number,
+    onPatch: (index: number, patch: Partial<DashboardPlusBill>) => void,
+  ) => (
+    <div
+      className={`bill-card dashboard-plus-bill-card is-${bill.status}`}
+      key={bill.id}
+    >
+      <div className="bill-dot" style={{ background: bill.color }} aria-hidden="true" />
+      <div className="bill-body dashboard-plus-bill-body">
+        <input
+          className="dashboard-plus-input dashboard-plus-input--title dashboard-plus-input--ghost"
+          value={bill.name}
+          onChange={event => onPatch(index, { name: event.target.value })}
+          aria-label="Rechnungsname"
+        />
+        <input
+          className="dashboard-plus-input dashboard-plus-input--ghost"
+          value={bill.subtitle}
+          onChange={event => onPatch(index, { subtitle: event.target.value })}
+          aria-label="Rechnungsdetails"
+        />
+        <div className="dashboard-plus-bill-meta">
+          <select
+            className={`bill-status-select is-${bill.status}`}
+            value={bill.status}
+            onChange={event => onPatch(index, { status: event.target.value as DashboardPlusBillStatus })}
+            aria-label="Status"
+          >
+            <option value="open">Offen</option>
+            <option value="overdue">Überfällig</option>
+            <option value="paid">Bezahlt</option>
+          </select>
+          <input
+            className="dashboard-plus-input dashboard-plus-input--ghost dashboard-plus-input--due"
+            value={bill.due}
+            onChange={event => onPatch(index, { due: event.target.value })}
+            aria-label="Fälligkeit"
+          />
+        </div>
+      </div>
+      <div className="bill-right dashboard-plus-bill-right">
+        <label className="bill-amount-field">
+          <span className="bill-amount-prefix">€</span>
+          <input
+            className="dashboard-plus-input dashboard-plus-input--money dashboard-plus-input--ghost"
+            type="number"
+            min="0"
+            value={bill.amount}
+            onChange={event => onPatch(index, { amount: Number(event.target.value) || 0 })}
+            aria-label="Betrag"
+          />
+        </label>
+        <span className={`bill-status-pill is-${bill.status}`}>{billStatusLabel(bill.status)}</span>
+      </div>
+    </div>
+  )
 
   return (
     <div className="view-stack dashboard-plus-view">
       <section className="page-intro dashboard-plus-intro">
         <div>
-          <span className="eyebrow">Dashboard+</span>
-          <h2>Alles auf einen Blick, aber lebendig editierbar.</h2>
-          <p>Das ist die projectbaby-Vorlage in unserem Life-OS-Look. Jedes Feld bleibt direkt anfassbar.</p>
+          <span className="eyebrow">Labor</span>
+          <h2>Verwaltung ohne Fokus-Diebstahl.</h2>
+          <p>
+            Bestände, Boards und Listen — angebunden an deinen echten Tageskern. Lokal auf diesem Gerät.
+          </p>
         </div>
         <div className="dashboard-plus-intro__actions">
           <button type="button" className="secondary-button" onClick={onBackToToday}>
-            <ChevronLeft size={16} /> Heute
+            <ChevronLeft size={16} /> Zum Tageskern
           </button>
-          <span className="sync-pill sync-pill--synced">
-            <Cloud size={14} /> {dashboard.overview.syncStatus}
+          <span className="sync-pill sync-pill--synced" title="Kein Cloud-Sync">
+            <Cloud size={14} /> Lokal
           </span>
         </div>
       </section>
@@ -2126,27 +2510,32 @@ function DashboardPlusView({
       <section className="card dashboard-plus-hero">
         <div className="dashboard-plus-hero__meta">
           <div>
-            <span className="eyebrow">{dashboard.overview.dateLabel}</span>
-            <h2>Preview</h2>
+            <span className="eyebrow">{liveOverview.dateLabel}</span>
+            <h2>Live aus dem Tageskern</h2>
           </div>
-          <ProgressRing value={dashboard.overview.score} size={86} />
+          <ProgressRing value={liveOverview.score} size={86} />
         </div>
         <div className="dashboard-plus-hero__stats">
-          <label className="kpi-card dashboard-plus-metric">
+          <div className="kpi-card dashboard-plus-metric">
             <span>Habits</span>
-            <input type="number" min="0" value={dashboard.overview.habits} onChange={event => updateOverview({ habits: Number(event.target.value) || 0 })} />
-            <small>aktiv</small>
-          </label>
-          <label className="kpi-card dashboard-plus-metric">
-            <span>Todos</span>
-            <input type="number" min="0" value={dashboard.overview.todos} onChange={event => updateOverview({ todos: Number(event.target.value) || 0 })} />
+            <strong>{liveOverview.habits}/{liveOverview.habitsTotal || 0}</strong>
+            <small>heute erledigt</small>
+          </div>
+          <div className="kpi-card dashboard-plus-metric">
+            <span>Anker</span>
+            <strong>{liveOverview.todos}/{liveOverview.todosTotal || 0}</strong>
             <small>heute</small>
-          </label>
-          <label className="kpi-card dashboard-plus-metric">
-            <span>Projekte</span>
-            <input type="number" min="0" value={dashboard.overview.projects} onChange={event => updateOverview({ projects: Number(event.target.value) || 0 })} />
-            <small>Boards</small>
-          </label>
+          </div>
+          <div className="kpi-card dashboard-plus-metric">
+            <span>Boards</span>
+            <strong>{liveOverview.projects}</strong>
+            <small>mit offenen Tasks</small>
+          </div>
+        </div>
+        <div className="labor-hints">
+          {hints.map(hint => (
+            <p key={hint}>{hint}</p>
+          ))}
         </div>
       </section>
 
@@ -2205,38 +2594,101 @@ function DashboardPlusView({
         <section className="card dashboard-plus-card">
           <SectionTitle eyebrow="Supplements" title="Bestände" action={<button type="button" className="small-button" onClick={addSupplement}><Plus size={14} /> Produkt</button>} />
           <div className="dashboard-plus-supplements">
-            {dashboard.supplements.map((item, index) => (
-              <div className="supp-card dashboard-plus-supp-card" style={{ borderTopColor: item.color }} key={item.id}>
-                <input className="dashboard-plus-input dashboard-plus-input--title" value={item.name} onChange={event => updateSupplement(index, { name: event.target.value })} />
-                <input className="dashboard-plus-input" value={item.brand} onChange={event => updateSupplement(index, { brand: event.target.value })} placeholder="Marke / Info" />
-                <div className="dashboard-plus-inline-row">
-                  <input className="dashboard-plus-input" type="number" min="0" value={item.stock} onChange={event => updateSupplement(index, { stock: Number(event.target.value) || 0 })} />
-                  <input className="dashboard-plus-input" value={item.unit} onChange={event => updateSupplement(index, { unit: event.target.value })} />
+            {dashboard.supplements.map((item, index) => {
+              const daysLeft = supplementDaysRemaining(item.stock, item.dailyUse)
+              const isLow = daysLeft !== null && daysLeft <= 7
+              const accent = supplementAccent(item, index)
+              return (
+                <div
+                  className={`supp-card dashboard-plus-supp-card${isLow ? ' is-low' : ''}`}
+                  style={{ ['--supp-accent' as string]: accent }}
+                  key={item.id}
+                >
+                  <input
+                    className="dashboard-plus-input dashboard-plus-input--title"
+                    value={item.name}
+                    onChange={event => updateSupplement(index, { name: event.target.value })}
+                    aria-label="Produktname"
+                  />
+                  <input
+                    className="dashboard-plus-input"
+                    value={item.brand}
+                    onChange={event => updateSupplement(index, { brand: event.target.value })}
+                    placeholder="Marke / Info"
+                    aria-label="Marke oder Info"
+                  />
+                  <div className="dashboard-plus-supp-fields">
+                    <label className="dashboard-plus-supp-field">
+                      <span className="dashboard-plus-supp-label">Bestand</span>
+                      <div className="dashboard-plus-inline-row">
+                        <input
+                          className="dashboard-plus-input"
+                          type="number"
+                          min="0"
+                          value={item.stock}
+                          onChange={event => updateSupplement(index, { stock: Number(event.target.value) || 0 })}
+                          aria-label="Bestand"
+                        />
+                        <input
+                          className="dashboard-plus-input dashboard-plus-input--unit"
+                          value={item.unit}
+                          onChange={event => updateSupplement(index, { unit: event.target.value })}
+                          aria-label="Bestand Einheit"
+                          placeholder="Einheit"
+                        />
+                      </div>
+                    </label>
+                    <label className="dashboard-plus-supp-field">
+                      <span className="dashboard-plus-supp-label">Tagesdosis</span>
+                      <div className="dashboard-plus-inline-row">
+                        <input
+                          className="dashboard-plus-input"
+                          type="number"
+                          min="0"
+                          value={item.dailyUse}
+                          onChange={event => updateSupplement(index, { dailyUse: Number(event.target.value) || 0 })}
+                          aria-label="Tagesdosis"
+                        />
+                        <input
+                          className="dashboard-plus-input dashboard-plus-input--unit"
+                          value={item.dailyUnit}
+                          onChange={event => updateSupplement(index, { dailyUnit: event.target.value })}
+                          aria-label="Tagesdosis Einheit"
+                          placeholder="Einheit"
+                        />
+                      </div>
+                    </label>
+                  </div>
+                  {isLow && (
+                    <p className="dashboard-plus-supp-hint">
+                      {daysLeft! <= 0
+                        ? 'Bestand leer — nachbestellen'
+                        : `Noch ca. ${daysLeft} ${daysLeft === 1 ? 'Tag' : 'Tage'} · nachbestellen`}
+                    </p>
+                  )}
+                  <button type="button" className="secondary-button secondary-button--full" onClick={() => removeSupplement(index)}>
+                    <Trash2 size={15} /> Entfernen
+                  </button>
                 </div>
-                <div className="dashboard-plus-inline-row">
-                  <input className="dashboard-plus-input" type="number" min="0" value={item.dailyUse} onChange={event => updateSupplement(index, { dailyUse: Number(event.target.value) || 0 })} />
-                  <input className="dashboard-plus-input" value={item.dailyUnit} onChange={event => updateSupplement(index, { dailyUnit: event.target.value })} />
-                </div>
-                <input className="dashboard-plus-input dashboard-plus-input--color" value={item.color} onChange={event => updateSupplement(index, { color: event.target.value })} />
-                <button type="button" className="secondary-button secondary-button--full" onClick={() => removeSupplement(index)}>
-                  <Trash2 size={15} /> Entfernen
-                </button>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </section>
 
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Projekte" title="Boards" />
-          <div className="project-tabs dashboard-plus-tabs">
+          <div className="project-tabs dashboard-plus-tabs" role="tablist" aria-label="Projekt-Boards">
             {dashboard.boards.map(board => (
               <button
                 type="button"
+                role="tab"
                 key={board.id}
+                aria-selected={board.id === activeBoardId}
                 className={board.id === activeBoardId ? 'project-tab active' : 'project-tab'}
                 onClick={() => setActiveBoardId(board.id)}
               >
-                {board.label} <span className="tab-count">{board.count}</span>
+                <span className="project-tab-label">{board.label}</span>
+                <span className="tab-count">{board.tasks.length}</span>
               </button>
             ))}
           </div>
@@ -2282,14 +2734,16 @@ function DashboardPlusView({
           <div className="shopping-list dashboard-plus-shopping-list">
             {dashboard.shopping.items.map((item, index) => (
               <label className={item.done ? 'shop-item is-done' : 'shop-item'} key={item.id}>
-                <div className="shop-icon" style={{ background: 'rgba(124,123,255,0.1)' }}>{item.icon}</div>
+                <div className="shop-icon" aria-hidden="true">
+                  <ShoppingItemIcon icon={item.icon} />
+                </div>
                 <div className="shop-body dashboard-plus-shop-body">
                   <input className="dashboard-plus-input dashboard-plus-input--title" value={item.name} onChange={event => updateShoppingItem(index, { name: event.target.value })} />
                   <input className="dashboard-plus-input" value={item.note} onChange={event => updateShoppingItem(index, { note: event.target.value })} />
                 </div>
                 <div className="dashboard-plus-shop-meta">
-                  <input className="dashboard-plus-input dashboard-plus-input--money" type="number" min="0" step="0.01" value={item.price} onChange={event => updateShoppingItem(index, { price: Number(event.target.value) || 0 })} />
-                  <span className="shop-price">€ {formatMoney(item.price)}</span>
+                  <input className="dashboard-plus-input dashboard-plus-input--money" type="number" min="0" step="0.01" value={item.price} onChange={event => updateShoppingItem(index, { price: Number(event.target.value) || 0 })} aria-label="Preis" />
+                  <span className="shop-price">€</span>
                 </div>
                 <button type="button" className="shop-check" onClick={() => updateShoppingItem(index, { done: !item.done })} aria-pressed={item.done} />
               </label>
@@ -2298,77 +2752,22 @@ function DashboardPlusView({
         </section>
 
         <section className="card dashboard-plus-card">
-          <SectionTitle eyebrow="Stats" title="Verlauf" />
-          <div className="kpi-grid dashboard-plus-stats-grid">
-            <label className="kpi-card dashboard-plus-metric">
-              <span>Ø Score</span>
-              <input type="number" min="0" max="100" value={dashboard.stats.average} onChange={event => onChange(current => ({ ...current, stats: { ...current.stats, average: Number(event.target.value) || 0 } }))} />
-              <small>letzte 7 Tage</small>
-            </label>
-            <label className="kpi-card dashboard-plus-metric">
-              <span>Best Tag</span>
-              <input type="number" min="0" max="100" value={dashboard.stats.best} onChange={event => onChange(current => ({ ...current, stats: { ...current.stats, best: Number(event.target.value) || 0 } }))} />
-              <small>diese Woche</small>
-            </label>
-            <label className="kpi-card dashboard-plus-metric">
-              <span>Rhythmus</span>
-              <input type="number" min="0" max="30" value={dashboard.stats.rhythm} onChange={event => onChange(current => ({ ...current, stats: { ...current.stats, rhythm: Number(event.target.value) || 0 } }))} />
-              <small>Tage</small>
-            </label>
-            <label className="kpi-card dashboard-plus-metric">
-              <span>Gewicht</span>
-              <input type="number" min="0" step="0.1" value={dashboard.stats.weight} onChange={event => onChange(current => ({ ...current, stats: { ...current.stats, weight: Number(event.target.value) || 0 } }))} />
-              <small>kg</small>
-            </label>
+          <SectionTitle eyebrow="Stats" title="Woche aus dem Kern" />
+          <div className="labor-live-stats">
+            <div className="kpi-card"><span>Schnitt</span><strong>{liveStats.average}%</strong></div>
+            <div className="kpi-card"><span>Best</span><strong>{liveStats.best}%</strong></div>
+            <div className="kpi-card"><span>Rhythmus</span><strong>{liveStats.rhythm}</strong><small>Tage</small></div>
+            <div className="kpi-card"><span>Gewicht</span><strong>{liveStats.weight ? liveStats.weight.toFixed(1) : '—'}</strong><small>kg</small></div>
           </div>
-
-          <div className="week-chart dashboard-plus-week-chart">
-            <div className="heatmap-title">SCORE — LETZTE 7 TAGE</div>
-            <div className="week-bars">
-              {dashboard.stats.weeklyBars.map((bar, index) => (
-                <div className="week-bar-wrap" key={`${index}-${bar}`}>
-                  <input
-                    className="dashboard-plus-bar-input"
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={bar}
-                    onChange={event => onChange(current => ({
-                      ...current,
-                      stats: {
-                        ...current.stats,
-                        weeklyBars: current.stats.weeklyBars.map((item, barIndex) => (barIndex === index ? Number(event.target.value) || 0 : item)),
-                      },
-                    }))}
-                  />
-                  <div className="week-bar" style={{ height: `${bar}%`, background: 'linear-gradient(180deg,var(--accent),var(--accent2))' }} />
-                  <div className="week-day">{['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'][index] ?? '—'}</div>
-                </div>
-              ))}
-            </div>
+          <div className="labor-week-bars" aria-hidden="true">
+            {liveStats.weeklyBars.map((value, index) => (
+              <div key={liveStats.weekDates[index]} className="labor-week-bar">
+                <span style={{ height: `${Math.max(value, 4)}%` }} />
+                <small>{value}</small>
+              </div>
+            ))}
           </div>
-
-          <div className="heatmap-wrap dashboard-plus-heatmap">
-            <div className="heatmap-title">TODO-ABSCHLUSS — LETZTE 2 WOCHEN</div>
-            <div className="heatmap-grid">
-              {dashboard.stats.heatmap.map((value, index) => (
-                <button
-                  type="button"
-                  key={`${index}-${value}`}
-                  className="heatmap-cell dashboard-plus-heatmap-cell"
-                  style={{ background: value === 0 ? 'rgba(255,255,255,0.05)' : `rgba(124,123,255,${Math.min(0.15 + (value * 0.15), 0.85)})` }}
-                  onClick={() => onChange(current => ({
-                    ...current,
-                    stats: {
-                      ...current.stats,
-                      heatmap: current.stats.heatmap.map((item, cellIndex) => (cellIndex === index ? (item + 1) % 5 : item)),
-                    },
-                  }))}
-                  aria-label={`Heatmap ${index + 1}`}
-                />
-              ))}
-            </div>
-          </div>
+          <p className="labor-stats-note">Projektfortschritt unten ist Labor-Notiz — der echte Wochenverlauf bleibt unter „Verlauf“.</p>
 
           <div className="todo-card dashboard-plus-projects">
             {dashboard.stats.projects.map((project, index) => (
@@ -2397,60 +2796,53 @@ function DashboardPlusView({
 
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Finanzen" title="Rechnungen" />
-          <div className="kpi-grid dashboard-plus-stats-grid">
-            <label className="kpi-card dashboard-plus-metric">
-              <span>Monatlich fix</span>
-              <input type="number" min="0" value={dashboard.finances.monthlyFixed} onChange={event => onChange(current => ({ ...current, finances: { ...current.finances, monthlyFixed: Number(event.target.value) || 0 } }))} />
-              <small>€ {formatMoney(dashboard.finances.monthlyFixed)}</small>
-            </label>
-            <label className="kpi-card dashboard-plus-metric">
-              <span>Offen</span>
-              <input type="number" min="0" value={dashboard.finances.open} onChange={event => onChange(current => ({ ...current, finances: { ...current.finances, open: Number(event.target.value) || 0 } }))} />
-              <small>3 Rechnungen</small>
-            </label>
-            <label className="kpi-card dashboard-plus-metric">
-              <span>Überfällig</span>
-              <input type="number" min="0" value={dashboard.finances.overdue} onChange={event => onChange(current => ({ ...current, finances: { ...current.finances, overdue: Number(event.target.value) || 0 } }))} />
-              <small>1 Rechnung</small>
-            </label>
+          <div className="finance-kpi-row">
+            <div className="finance-kpi">
+              <span className="finance-kpi__label">Monatlich fix</span>
+              <strong className="finance-kpi__value">€ {formatMoney(financeSummary.monthlyFixed)}</strong>
+              <small className="finance-kpi__meta">{financeSummary.recurringCount} Fixkosten</small>
+            </div>
+            <div className="finance-kpi">
+              <span className="finance-kpi__label">Offen</span>
+              <strong className="finance-kpi__value">€ {formatMoney(financeSummary.openSum)}</strong>
+              <small className="finance-kpi__meta">{financeSummary.openCount} offen</small>
+            </div>
+            <div className={`finance-kpi${financeSummary.overdueCount > 0 ? ' is-warning' : ''}`}>
+              <span className="finance-kpi__label">Überfällig</span>
+              <strong className="finance-kpi__value">€ {formatMoney(financeSummary.overdueSum)}</strong>
+              <small className="finance-kpi__meta">{financeSummary.overdueCount} überfällig</small>
+            </div>
           </div>
+
+          {financeSummary.hints.length > 0 && (
+            <div className="finance-hints">
+              {financeSummary.hints.map(hint => (
+                <p key={hint}>
+                  <AlertCircle size={14} aria-hidden="true" />
+                  <span>{hint}</span>
+                </p>
+              ))}
+            </div>
+          )}
 
           <div className="dashboard-plus-finance-columns">
             <div>
-              <div className="fin-section-label">💳 Wiederkehrend</div>
+              <div className="fin-section-label">
+                <CreditCard size={14} aria-hidden="true" />
+                <span>Wiederkehrend</span>
+              </div>
               <div className="dashboard-plus-bill-list">
-                {dashboard.finances.recurring.map((bill, index) => (
-                  <div className="bill-card dashboard-plus-bill-card" key={bill.id} style={{ borderColor: bill.status === 'overdue' ? 'rgba(255,69,58,0.3)' : undefined }}>
-                    <div className="bill-dot" style={{ background: bill.color }} />
-                    <div className="bill-body dashboard-plus-bill-body">
-                      <input className="dashboard-plus-input dashboard-plus-input--title" value={bill.name} onChange={event => updateRecurringBill(index, { name: event.target.value })} />
-                      <input className="dashboard-plus-input" value={bill.subtitle} onChange={event => updateRecurringBill(index, { subtitle: event.target.value })} />
-                    </div>
-                    <div className="bill-right dashboard-plus-bill-right">
-                      <input className="dashboard-plus-input dashboard-plus-input--money" type="number" min="0" value={bill.amount} onChange={event => updateRecurringBill(index, { amount: Number(event.target.value) || 0 })} />
-                      <input className="dashboard-plus-input" value={bill.due} onChange={event => updateRecurringBill(index, { due: event.target.value })} />
-                    </div>
-                  </div>
-                ))}
+                {dashboard.finances.recurring.map((bill, index) => renderBillCard(bill, index, updateRecurringBill))}
               </div>
             </div>
 
             <div>
-              <div className="fin-section-label">🧾 Offene Rechnungen</div>
+              <div className="fin-section-label">
+                <Receipt size={14} aria-hidden="true" />
+                <span>Offene Rechnungen</span>
+              </div>
               <div className="dashboard-plus-bill-list">
-                {dashboard.finances.openBills.map((bill, index) => (
-                  <div className="bill-card dashboard-plus-bill-card" key={bill.id} style={{ borderColor: bill.status === 'overdue' ? 'rgba(255,69,58,0.3)' : undefined }}>
-                    <div className="bill-dot" style={{ background: bill.color }} />
-                    <div className="bill-body dashboard-plus-bill-body">
-                      <input className="dashboard-plus-input dashboard-plus-input--title" value={bill.name} onChange={event => updateOpenBill(index, { name: event.target.value })} />
-                      <input className="dashboard-plus-input" value={bill.subtitle} onChange={event => updateOpenBill(index, { subtitle: event.target.value })} />
-                    </div>
-                    <div className="bill-right dashboard-plus-bill-right">
-                      <input className="dashboard-plus-input dashboard-plus-input--money" type="number" min="0" value={bill.amount} onChange={event => updateOpenBill(index, { amount: Number(event.target.value) || 0 })} />
-                      <input className="dashboard-plus-input" value={bill.due} onChange={event => updateOpenBill(index, { due: event.target.value })} />
-                    </div>
-                  </div>
-                ))}
+                {dashboard.finances.openBills.map((bill, index) => renderBillCard(bill, index, updateOpenBill))}
               </div>
             </div>
           </div>
@@ -2595,12 +2987,14 @@ function FocusModal({
 
 function SettingsModal({
   settings,
+  lastBackupAt,
   onChange,
   onExport,
   onImport,
   onClose,
 }: {
   settings: AppSettings
+  lastBackupAt: string | null
   onChange: (settings: AppSettings) => void
   onExport: () => void
   onImport: (file: File) => Promise<void>
@@ -2670,29 +3064,40 @@ function SettingsModal({
           <label className="text-field"><span>Kalorienziel</span><input type="number" min="1000" max="8000" step="50" value={settings.calorieGoal} onChange={event => onChange({ ...settings, calorieGoal: clampNumber(Number(event.target.value) || 3500, 1000, 8000) })} /></label>
         </div>
 
-        <div className="settings-section settings-actions">
-          <button type="button" className="secondary-button" onClick={onExport}>
-            <ChevronDown size={16} /> Export JSON
-          </button>
-          <button type="button" className="secondary-button" onClick={() => importInputRef.current?.click()}>
-            <ChevronUp size={16} /> Import JSON
-          </button>
-          <input
-            ref={importInputRef}
-            type="file"
-            accept="application/json,.json"
-            hidden
-            onChange={async event => {
-              const file = event.target.files?.[0]
-              event.target.value = ''
-              if (file) await onImport(file)
-            }}
-          />
+        <div className="settings-section">
+          <h3>Backup</h3>
+          <p className="settings-help">
+            Vollbackup enthält Tage, Settings, Labor und XP. Kein Cloud-Sync — nur dieser Browser.
+          </p>
+          <p className="settings-help">
+            Letztes Backup: {lastBackupAt
+              ? new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(lastBackupAt))
+              : 'noch keines'}
+          </p>
+          <div className="settings-actions">
+            <button type="button" className="secondary-button" onClick={onExport}>
+              <ChevronDown size={16} /> Backup exportieren
+            </button>
+            <button type="button" className="secondary-button" onClick={() => importInputRef.current?.click()}>
+              <ChevronUp size={16} /> Backup importieren
+            </button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="application/json,.json"
+              hidden
+              onChange={async event => {
+                const file = event.target.files?.[0]
+                event.target.value = ''
+                if (file) await onImport(file)
+              }}
+            />
+          </div>
         </div>
 
         <div className="settings-note">
           <Bell size={18} />
-          <p>Benachrichtigungen werden nie ungefragt angefordert. Ein Timer-Hinweis erscheint nur, wenn du die Berechtigung bereits erteilt hast. Daten werden lokal gespeichert.</p>
+          <p>Benachrichtigungen werden nie ungefragt angefordert. Timer-Hinweise nur mit bestehender Berechtigung. Daten bleiben lokal — Export regelmäßig machen.</p>
         </div>
         <div className="modal-actions"><button type="button" className="primary-button" onClick={onClose}><Check size={17} /> Fertig</button></div>
       </div>

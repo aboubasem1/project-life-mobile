@@ -1,40 +1,53 @@
 import type { DashboardEntry, HabitKey } from '../types/DashboardEntry'
 
-// ─── Score weights ────────────────────────────────────────────────────────────
-// Habits (76 pts total)
-const HABIT_SCORES: { key: keyof DashboardEntry; points: number; label: string }[] = [
-  { key: 'coldShower',     points: 8,  label: 'Cold Shower'    },
-  { key: 'proteinShake',   points: 5,  label: 'Protein Shake'  },
-  { key: 'pushupsDone',    points: 8,  label: 'Pushups'        },
-  { key: 'squatsDone',     points: 8,  label: 'Squats'         },
-  { key: 'wallsitDone',    points: 5,  label: 'Wallsit'        },
-  { key: 'plankDone',      points: 5,  label: 'Plank'          },
-  { key: 'gratitudeDone',  points: 8,  label: 'Dankbarkeit'    },
-  { key: 'focusDone',      points: 8,  label: 'Deep Focus'     },
-  { key: 'winnerModeDone', points: 8,  label: 'Winner Mode'    },
-  { key: 'journalDone',    points: 8,  label: 'Journal'        },
-  { key: 'familyTimeDone', points: 5,  label: 'Familienzeit'   },
-]
-
-// Numeric thresholds (24 pts total)
-const NUMERIC_SCORES: { key: keyof DashboardEntry; threshold: number; points: number; label: string }[] = [
-  { key: 'meditationMinutes', threshold: 10,  points: 5, label: 'Meditation ≥10 min' },
-  { key: 'proteinGrams',      threshold: 150, points: 5, label: 'Protein ≥150 g'     },
-  { key: 'waterLiters',       threshold: 2.5, points: 5, label: 'Wasser ≥2.5 L'      },
-  { key: 'deepWorkHours',     threshold: 2,   points: 5, label: 'Deep Work ≥2 h'     },
-  { key: 'tasksDone',         threshold: 3,   points: 4, label: 'Tasks ≥3'           },
-]
-
-// Mood bonus (5 pts max) — aligned with the UI options
-const MOOD_SCORES: Record<string, number> = {
-  Ruhig: 5,
-  Gut: 3,
-  Neutral: 1,
-  Müde: 0,
-  Gestresst: 0,
+export type ScoreGoals = {
+  proteinGoal?: number
 }
 
-// Sleep quality bonus (5 pts max) — aligned with the UI options
+const SETTINGS_KEY = 'life-os-v1-settings'
+
+export function readScoreGoals(): ScoreGoals {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') as { proteinGoal?: number }
+    const proteinGoal = Number(raw.proteinGoal)
+    return {
+      proteinGoal: Number.isFinite(proteinGoal) && proteinGoal > 0 ? proteinGoal : 150,
+    }
+  } catch {
+    return { proteinGoal: 150 }
+  }
+}
+
+// Habits — breathing included so the hero ritual actually counts
+const HABIT_SCORES: { key: keyof DashboardEntry; points: number; label: string }[] = [
+  { key: 'breathingDone',  points: 8, label: 'Atmung'         },
+  { key: 'coldShower',     points: 8, label: 'Cold Shower'    },
+  { key: 'proteinShake',   points: 5, label: 'Protein Shake'  },
+  { key: 'pushupsDone',    points: 8, label: 'Pushups'        },
+  { key: 'squatsDone',     points: 8, label: 'Squats'         },
+  { key: 'wallsitDone',    points: 5, label: 'Wallsit'        },
+  { key: 'plankDone',      points: 5, label: 'Plank'          },
+  { key: 'gratitudeDone',  points: 8, label: 'Dankbarkeit'    },
+  { key: 'focusDone',      points: 8, label: 'Deep Focus'     },
+  { key: 'winnerModeDone', points: 8, label: 'Winner Mode'    },
+  { key: 'journalDone',    points: 8, label: 'Journal'        },
+  { key: 'familyTimeDone', points: 5, label: 'Familienzeit'   },
+]
+
+function numericScores(goals: ScoreGoals) {
+  const proteinGoal = goals.proteinGoal ?? 150
+  return [
+    { key: 'meditationMinutes' as const, threshold: 10, points: 5, label: 'Meditation ≥10 min' },
+    { key: 'proteinGrams' as const, threshold: proteinGoal, points: 5, label: `Protein ≥${proteinGoal} g` },
+    { key: 'waterLiters' as const, threshold: 2.5, points: 5, label: 'Wasser ≥2.5 L' },
+    { key: 'deepWorkHours' as const, threshold: 2, points: 5, label: 'Deep Work ≥2 h' },
+    { key: 'tasksDone' as const, threshold: 3, points: 4, label: 'Tasks ≥3' },
+  ]
+}
+
+// Flat mood points: honest check-in shouldn't be punished
+const MOOD_LOG_POINTS = 3
+
 const SLEEP_SCORES: Record<string, number> = {
   Schlecht: 0,
   Okay: 1,
@@ -42,16 +55,15 @@ const SLEEP_SCORES: Record<string, number> = {
   'Sehr gut': 5,
 }
 
-// ─── Score calc ───────────────────────────────────────────────────────────────
-export function calculateScore(entry: DashboardEntry): number {
+export function calculateScore(entry: DashboardEntry, goals: ScoreGoals = readScoreGoals()): number {
   let score = 0
-  for (const h of HABIT_SCORES) {
-    if (entry[h.key]) score += h.points
+  for (const habit of HABIT_SCORES) {
+    if (entry[habit.key]) score += habit.points
   }
-  for (const n of NUMERIC_SCORES) {
-    if ((entry[n.key] as number) >= n.threshold) score += n.points
+  for (const numeric of numericScores(goals)) {
+    if ((entry[numeric.key] as number) >= numeric.threshold) score += numeric.points
   }
-  score += MOOD_SCORES[entry.mood]          ?? 0
+  if (entry.mood) score += MOOD_LOG_POINTS
   score += SLEEP_SCORES[entry.sleepQuality] ?? 0
   return Math.min(100, score)
 }
@@ -60,41 +72,61 @@ export interface ScoreBreakdown {
   category: string
   achieved: number
   max: number
-  items: { label: string; achieved: boolean; points: number }[]
+  items: { label: string; achieved: boolean; points: number; earned: number }[]
 }
 
-export function getScoreBreakdown(entry: DashboardEntry): ScoreBreakdown[] {
+export function getScoreBreakdown(
+  entry: DashboardEntry,
+  goals: ScoreGoals = readScoreGoals(),
+): ScoreBreakdown[] {
+  const numerics = numericScores(goals)
+
   const section = (
     label: string,
     habitKeys: (keyof DashboardEntry)[],
     numericKeys: (keyof DashboardEntry)[] = [],
-    extraItems: { label: string; achieved: boolean; points: number }[] = [],
+    extraItems: { label: string; achieved: boolean; points: number; earned: number }[] = [],
   ): ScoreBreakdown => {
     const items = [
-      ...HABIT_SCORES.filter(h => habitKeys.includes(h.key)).map(h => ({
-        label: h.label,
-        achieved: !!entry[h.key],
-        points: h.points,
+      ...HABIT_SCORES.filter(habit => habitKeys.includes(habit.key)).map(habit => ({
+        label: habit.label,
+        achieved: !!entry[habit.key],
+        points: habit.points,
+        earned: entry[habit.key] ? habit.points : 0,
       })),
-      ...NUMERIC_SCORES.filter(n => numericKeys.includes(n.key)).map(n => ({
-        label: n.label,
-        achieved: (entry[n.key] as number) >= n.threshold,
-        points: n.points,
-      })),
+      ...numerics.filter(numeric => numericKeys.includes(numeric.key)).map(numeric => {
+        const achieved = (entry[numeric.key] as number) >= numeric.threshold
+        return {
+          label: numeric.label,
+          achieved,
+          points: numeric.points,
+          earned: achieved ? numeric.points : 0,
+        }
+      }),
       ...extraItems,
     ]
     return {
       category: label,
-      achieved: items.filter(i => i.achieved).reduce((s, i) => s + i.points, 0),
-      max: items.reduce((s, i) => s + i.points, 0),
+      achieved: items.reduce((sum, item) => sum + item.earned, 0),
+      max: items.reduce((sum, item) => sum + item.points, 0),
       items,
     }
   }
 
   return [
-    section('Morgen', ['coldShower', 'proteinShake'], ['meditationMinutes'], [
-      { label: `Stimmung: ${entry.mood || '—'}`, achieved: Boolean(entry.mood), points: MOOD_SCORES[entry.mood] ?? 0 },
-      { label: `Schlafqualität: ${entry.sleepQuality || '—'}`, achieved: Boolean(entry.sleepQuality), points: SLEEP_SCORES[entry.sleepQuality] ?? 0 },
+    section('Morgen', ['breathingDone', 'coldShower', 'proteinShake'], ['meditationMinutes'], [
+      {
+        label: entry.mood ? `Stimmung: ${entry.mood}` : 'Stimmung: —',
+        achieved: Boolean(entry.mood),
+        points: MOOD_LOG_POINTS,
+        earned: entry.mood ? MOOD_LOG_POINTS : 0,
+      },
+      {
+        label: `Schlafqualität: ${entry.sleepQuality || '—'}`,
+        achieved: Boolean(entry.sleepQuality),
+        points: 5,
+        earned: SLEEP_SCORES[entry.sleepQuality] ?? 0,
+      },
     ]),
     section('Training', ['pushupsDone', 'squatsDone', 'wallsitDone', 'plankDone']),
     section('Mindset', ['gratitudeDone', 'focusDone', 'winnerModeDone']),
@@ -103,9 +135,9 @@ export function getScoreBreakdown(entry: DashboardEntry): ScoreBreakdown[] {
 }
 
 export function getScoreLabel(score: number): string {
-  if (score >= 90) return 'ELITE ⚡'
-  if (score >= 75) return 'STARK 🔥'
-  if (score >= 55) return 'SOLIDE ✓'
+  if (score >= 90) return 'ELITE'
+  if (score >= 75) return 'STARK'
+  if (score >= 55) return 'SOLIDE'
   if (score >= 35) return 'AUSBAUFÄHIG'
   return 'ANLAUF'
 }
@@ -118,12 +150,11 @@ export function getScoreColor(score: number): string {
   return '#ff3b30'
 }
 
-// ─── Streak / completion helpers ──────────────────────────────────────────────
 export function calculateStreakForHabit(entries: DashboardEntry[], key: HabitKey): number {
   const sorted = [...entries].sort((a, b) => b.date.localeCompare(a.date))
   let streak = 0
-  for (const e of sorted) {
-    if (e[key]) streak++
+  for (const entry of sorted) {
+    if (entry[key]) streak++
     else break
   }
   return streak
@@ -138,5 +169,5 @@ export function calculateCompletionRate(
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, days)
   if (sorted.length === 0) return 0
-  return Math.round((sorted.filter(e => e[key]).length / sorted.length) * 100)
+  return Math.round((sorted.filter(entry => entry[key]).length / sorted.length) * 100)
 }

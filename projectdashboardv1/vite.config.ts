@@ -8,9 +8,10 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'Project Life Dashboard',
-        short_name: 'Project Life',
-        description: 'Your personal life tracking system',
+        name: 'Life OS',
+        short_name: 'Life OS',
+        description: 'Persönliches Life-Tracking — lokal, ruhig, fokussiert',
+        lang: 'de',
         theme_color: '#0f1419',
         background_color: '#0f1419',
         display: 'standalone',
