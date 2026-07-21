@@ -27,16 +27,21 @@ import {
   Coffee,
   CreditCard,
   Crown,
+  Droplet,
   Dumbbell,
   Fish,
+  Eye,
+  EyeOff,
   FlaskConical,
   Focus,
   GripVertical,
   Heart,
   Home,
+  LayoutGrid,
   Leaf,
   ListTodo,
   Moon,
+  Package,
   Pause,
   Pencil,
   Pill,
@@ -46,9 +51,11 @@ import {
   RotateCcw,
   Settings,
   ShoppingBag,
+  ShoppingCart,
   Snowflake,
   Sparkles,
   Sun,
+  Target,
   Timer,
   Trash2,
   Users,
@@ -61,7 +68,7 @@ import { getDayPolicy, pickNextStep } from './lib/dayPolicy'
 import { buildWeekInsights } from './lib/insights'
 import { deriveLaborOverview, deriveLaborStats, smartLaborHints } from './lib/laborLive'
 import { hashFromView, navigateHash, viewFromHash } from './lib/routing'
-import { calculateScore, calculateStreakForHabit } from './lib/score'
+import { calculateScore, calculateStreakForHabit, getScoreBreakdown } from './lib/score'
 import type { HabitKey } from './types/DashboardEntry'
 import {
   applyBackupExtras,
@@ -71,6 +78,7 @@ import {
   mergeEntriesByDate,
   saveAllEntries,
 } from './lib/storage'
+import { levelProgress, loadXP, xpToNextLevel } from './lib/xp-store'
 import './launch.css'
 
 type View = 'today' | 'plan' | 'checkin' | 'progress' | 'dashboardPlus'
@@ -89,6 +97,12 @@ type AppSettings = {
   proteinGoal: number
   calorieGoal: number
   activeHabits: string[]
+  dashboardPlusLayout: DashboardPlusLayout
+}
+
+type DashboardPlusLayout = {
+  order: DashboardPlusSection[]
+  hidden: DashboardPlusSection[]
 }
 
 type FocusSession = {
@@ -104,7 +118,21 @@ type ToastState = {
   onAction?: () => void
 } | null
 
-type DashboardPlusPriority = 'red' | 'orange' | 'blue'
+type DashboardPlusPriority = 'p1' | 'p2' | 'p3' | 'p4'
+
+const PRIORITY_ORDER: DashboardPlusPriority[] = ['p1', 'p2', 'p3', 'p4']
+
+const PRIORITY_META: Record<DashboardPlusPriority, { label: string; color: string }> = {
+  p1: { label: 'P1', color: 'var(--danger)' },
+  p2: { label: 'P2', color: 'var(--warning)' },
+  p3: { label: 'P3', color: 'var(--blue)' },
+  p4: { label: 'P4', color: 'var(--text-muted)' },
+}
+
+function nextPriority(current: DashboardPlusPriority): DashboardPlusPriority {
+  const index = PRIORITY_ORDER.indexOf(current)
+  return PRIORITY_ORDER[(index + 1) % PRIORITY_ORDER.length]
+}
 
 type DashboardPlusTask = {
   id: string
@@ -160,7 +188,7 @@ type DashboardPlusBoard = {
   tasks: DashboardPlusTask[]
 }
 
-type ShoppingIconKey = 'flask' | 'fish' | 'pill' | 'bag'
+type ShoppingIconKey = 'flask' | 'fish' | 'pill' | 'bag' | 'droplet'
 
 type DashboardPlusShoppingItem = {
   id: string
@@ -170,18 +198,20 @@ type DashboardPlusShoppingItem = {
   note: string
   price: number
   done: boolean
+  lowStock?: boolean
 }
 
 const SHOPPING_ICON_MAP: Record<ShoppingIconKey, typeof ShoppingBag> = {
   flask: FlaskConical,
   fish: Fish,
+  droplet: Droplet,
   pill: Pill,
   bag: ShoppingBag,
 }
 
 function shoppingIconKey(raw: string): ShoppingIconKey {
   const value = raw.trim().toLowerCase()
-  if (value === 'flask' || value === 'fish' || value === 'pill' || value === 'bag') return value
+  if (value === 'flask' || value === 'fish' || value === 'pill' || value === 'bag' || value === 'droplet') return value
   // Legacy emoji / unknown → bag
   return 'bag'
 }
@@ -200,6 +230,29 @@ type DashboardPlusBill = {
   amount: number
   due: string
   status: DashboardPlusBillStatus
+  color: string
+}
+
+type DashboardPlusMedication = {
+  id: string
+  name: string
+  dosage: string
+  time: string
+  notes: string
+  effect: string
+  sideEffects: string
+  taken: boolean
+  color: string
+}
+
+type DashboardPlusGoalTimeframe = 'Jahr' | 'Quartal' | 'Monat' | 'Woche'
+
+type DashboardPlusGoal = {
+  id: string
+  title: string
+  timeframe: DashboardPlusGoalTimeframe
+  percent: number
+  dueDate: string
   color: string
 }
 
@@ -277,6 +330,8 @@ type DashboardPlusState = {
   }
   focusTodos: DashboardPlusTask[]
   supplements: DashboardPlusSupplement[]
+  medications: DashboardPlusMedication[]
+  goals: DashboardPlusGoal[]
   boards: DashboardPlusBoard[]
   shopping: {
     total: number
@@ -299,6 +354,19 @@ type DashboardPlusState = {
     openBills: DashboardPlusBill[]
   }
 }
+
+const DASHBOARD_PLUS_TABS = [
+  { id: 'overview', label: 'Übersicht', icon: LayoutGrid },
+  { id: 'todos', label: 'Todos', icon: ListTodo },
+  { id: 'stock', label: 'Bestände', icon: Package },
+  { id: 'medications', label: 'Medis', icon: Pill },
+  { id: 'goals', label: 'Ziele', icon: Target },
+  { id: 'shopping', label: 'Kaufliste', icon: ShoppingCart },
+  { id: 'stats', label: 'Stats', icon: BarChart3 },
+  { id: 'finance', label: 'Finanzen', icon: CreditCard },
+] as const
+
+type DashboardPlusSection = (typeof DASHBOARD_PLUS_TABS)[number]['id']
 
 const SETTINGS_KEY = 'life-os-v1-settings'
 const DASHBOARD_PLUS_KEY = 'life-os-v1-dashboard-plus'
@@ -325,8 +393,12 @@ const DEF_TASKS = [
   'Abend-Check-in · Reflektion',
 ] as const
 
-const LVLS = ['Rookie', 'Starter', 'Focused', 'Grinder', 'Achiever', 'Warrior', 'Elite', 'Legend', 'Master', 'Godmode'] as const
-const XPT  = [0, 500, 1100, 1900, 3000, 4400, 6200, 8600, 11600, 15600] as const
+const LVLS = ['Einstieg', 'Aufbau', 'Übung', 'Rhythmus', 'Konstanz', 'Gefestigt', 'Vertieft', 'Verankert', 'Meisterschaft', 'Souverän'] as const
+
+/** Maps the persisted xp-store level (unbounded) onto the LVLS name ladder. */
+function levelName(level: number): string {
+  return LVLS[Math.min(Math.max(level, 1), LVLS.length) - 1]
+}
 
 type HabitDef = {
   id: RoutineKey
@@ -356,14 +428,6 @@ function getDailyQuote(): string {
   return QUOTES[dayOfYear % QUOTES.length]
 }
 
-function getLevelFromScore(totalScore: number): string {
-  let level = 0
-  for (let i = XPT.length - 1; i >= 0; i--) {
-    if (totalScore >= XPT[i]) { level = i; break }
-  }
-  return LVLS[level]
-}
-
 function createDashboardPlusSeed(): DashboardPlusState {
   return {
     overview: {
@@ -376,9 +440,9 @@ function createDashboardPlusSeed(): DashboardPlusState {
       projects: 0,
     },
     focusTodos: [
-      { id: 'focus-1', title: 'Creatine bestellen (Lager fast leer)', tag: 'DRINGEND', time: 'heute', done: false, priority: 'red' },
-      { id: 'focus-2', title: 'Morning Routine abschließen', tag: 'PERSONAL', time: '08:15', done: true, priority: 'orange' },
-      { id: 'focus-3', title: 'Landing Page copy finalisieren', tag: 'MONDAS', time: '14:00', done: false, priority: 'blue' },
+      { id: 'focus-1', title: 'Creatine bestellen (Lager fast leer)', tag: 'DRINGEND', time: 'heute', done: false, priority: 'p1' },
+      { id: 'focus-2', title: 'Morning Routine abschließen', tag: 'PERSONAL', time: '08:15', done: true, priority: 'p2' },
+      { id: 'focus-3', title: 'Landing Page copy finalisieren', tag: 'MONDAS', time: '14:00', done: false, priority: 'p3' },
     ],
     supplements: [
       { id: 'supp-1', name: 'Hüttenkäse', brand: '500g Becher', stock: 400, unit: 'g', dailyUse: 200, dailyUnit: 'g' },
@@ -387,16 +451,25 @@ function createDashboardPlusSeed(): DashboardPlusState {
       { id: 'supp-4', name: 'Omega-3', brand: 'Optimum · 180 Caps', stock: 63, unit: 'Caps', dailyUse: 2, dailyUnit: 'Caps' },
       { id: 'supp-5', name: 'Vitamin D3 + K2', brand: 'Now Foods · 365 Caps', stock: 299, unit: 'Caps', dailyUse: 1, dailyUnit: 'Caps' },
     ],
+    medications: [
+      { id: 'med-1', name: 'Magnesium Bisglycinate', dosage: '400 mg', time: '21:00', notes: 'Mit Abendessen', effect: 'Bessere Schlafqualität', sideEffects: '—', taken: false, color: 'var(--accent)' },
+      { id: 'med-2', name: 'Vitamin D3', dosage: '2000 IE', time: '08:00', notes: 'Zum Frühstück', effect: 'Stimmung, Immunsystem', sideEffects: '—', taken: true, color: 'var(--blue)' },
+    ],
+    goals: [
+      { id: 'goal-1', title: '80kg Zielgewicht erreichen', timeframe: 'Quartal', percent: 45, dueDate: '2026-09-30', color: 'var(--accent)' },
+      { id: 'goal-2', title: 'Mondas Relaunch abschließen', timeframe: 'Monat', percent: 70, dueDate: '2026-08-15', color: 'var(--blue)' },
+      { id: 'goal-3', title: '4x Training diese Woche', timeframe: 'Woche', percent: 50, dueDate: '2026-07-26', color: 'var(--sage)' },
+    ],
     boards: [
       {
         id: 'personal',
         label: 'Personal',
         count: 4,
         tasks: [
-          { id: 'personal-1', title: 'Morning Routine', tag: '', time: '08:15', done: true, priority: 'blue' },
-          { id: 'personal-2', title: 'Training absolviert', tag: '', time: '09:45', done: true, priority: 'orange' },
-          { id: 'personal-3', title: 'Creatine bestellen', tag: 'HEUTE', time: '', done: false, priority: 'red' },
-          { id: 'personal-4', title: 'Arzttermin vereinbaren', tag: 'DIESE WOCHE', time: '', done: false, priority: 'blue' },
+          { id: 'personal-1', title: 'Morning Routine', tag: '', time: '08:15', done: true, priority: 'p3' },
+          { id: 'personal-2', title: 'Training absolviert', tag: '', time: '09:45', done: true, priority: 'p2' },
+          { id: 'personal-3', title: 'Creatine bestellen', tag: 'HEUTE', time: '', done: false, priority: 'p1' },
+          { id: 'personal-4', title: 'Arzttermin vereinbaren', tag: 'DIESE WOCHE', time: '', done: false, priority: 'p3' },
         ],
       },
       {
@@ -404,10 +477,10 @@ function createDashboardPlusSeed(): DashboardPlusState {
         label: 'Mondas',
         count: 6,
         tasks: [
-          { id: 'mondas-1', title: 'Social Media Post geplant', tag: '', time: '10:30', done: true, priority: 'blue' },
-          { id: 'mondas-2', title: 'Landing Page copy finalisieren', tag: 'DEADLINE', time: '14:00', done: false, priority: 'red' },
-          { id: 'mondas-3', title: 'Speisekarte für Sommer aktualisieren', tag: 'DIESE WOCHE', time: '', done: false, priority: 'orange' },
-          { id: 'mondas-4', title: 'Dienstplan KW 24 erstellen', tag: '', time: '', done: false, priority: 'blue' },
+          { id: 'mondas-1', title: 'Social Media Post geplant', tag: '', time: '10:30', done: true, priority: 'p3' },
+          { id: 'mondas-2', title: 'Landing Page copy finalisieren', tag: 'DEADLINE', time: '14:00', done: false, priority: 'p1' },
+          { id: 'mondas-3', title: 'Speisekarte für Sommer aktualisieren', tag: 'DIESE WOCHE', time: '', done: false, priority: 'p2' },
+          { id: 'mondas-4', title: 'Dienstplan KW 24 erstellen', tag: '', time: '', done: false, priority: 'p3' },
         ],
       },
       {
@@ -415,9 +488,9 @@ function createDashboardPlusSeed(): DashboardPlusState {
         label: 'Health',
         count: 3,
         tasks: [
-          { id: 'health-1', title: 'Training — Brust/Trizeps', tag: '', time: '', done: true, priority: 'blue' },
-          { id: 'health-2', title: 'Creatine + Omega-3 nehmen', tag: 'TÄGLICH', time: '', done: false, priority: 'orange' },
-          { id: 'health-3', title: 'Protein-Ziel 180g erreichen', tag: '', time: '', done: false, priority: 'blue' },
+          { id: 'health-1', title: 'Training — Brust/Trizeps', tag: '', time: '', done: true, priority: 'p3' },
+          { id: 'health-2', title: 'Creatine + Omega-3 nehmen', tag: 'TÄGLICH', time: '', done: false, priority: 'p2' },
+          { id: 'health-3', title: 'Protein-Ziel 180g erreichen', tag: '', time: '', done: false, priority: 'p3' },
         ],
       },
       {
@@ -430,7 +503,7 @@ function createDashboardPlusSeed(): DashboardPlusState {
     shopping: {
       total: 89.90,
       items: [
-        { id: 'shop-1', icon: 'flask', name: 'Creatine Monohydrate 1kg', note: 'BulkPowders · Bestand kritisch', price: 24.99, done: false },
+        { id: 'shop-1', icon: 'flask', name: 'Creatine Monohydrate 1kg', note: 'BulkPowders · Bestand kritisch', price: 24.99, done: false, lowStock: true },
         { id: 'shop-2', icon: 'fish', name: 'Omega-3 Nachfüllpack', note: 'Optimum · 300 Caps', price: 34.90, done: false },
         { id: 'shop-3', icon: 'pill', name: 'Magnesium Bisglycinate', note: 'Bioptimizers · 240 Caps', price: 34.00, done: false },
       ],
@@ -483,8 +556,9 @@ function normalizeShoppingItem(item: DashboardPlusShoppingItem): DashboardPlusSh
     '🧪': 'flask',
     '🐟': 'fish',
     '💊': 'pill',
+    '💧': 'droplet',
   }
-  const mapped = legacyMap[item.icon] ?? shoppingIconKey(item.icon)
+  const mapped = legacyMap[item.icon] ?? shoppingIconKey(String(item.icon))
   return {
     ...item,
     icon: mapped,
@@ -493,27 +567,85 @@ function normalizeShoppingItem(item: DashboardPlusShoppingItem): DashboardPlusSh
   }
 }
 
+// Every array below is rendered with a direct .map() in DashboardPlusView, so
+// persisted state that predates a field (or was hand-edited into a bad shape)
+// must never reach render as anything but a same-shaped array — otherwise a
+// single stale/missing field crashes the whole view (e.g. an unknown
+// shopping-item icon, or a field from before it existed in the schema).
+// PriorityBadge does PRIORITY_META[priority] with no fallback, so any task
+// persisted under the pre-Phase-2 scheme ('red'/'orange'/'blue') or otherwise
+// invalid crashes the Todos tab the instant it renders.
+function normalizeTaskPriority(task: DashboardPlusTask): DashboardPlusTask {
+  const legacyPriority: Record<string, DashboardPlusPriority> = {
+    red: 'p1',
+    orange: 'p2',
+    blue: 'p3',
+  }
+  const raw = task.priority as string
+  const mapped = (legacyPriority[raw] ?? raw) as DashboardPlusPriority
+  return PRIORITY_ORDER.includes(mapped) ? { ...task, priority: mapped } : { ...task, priority: 'p3' }
+}
+
+function normalizeDashboardPlusState(parsed: Partial<DashboardPlusState> | null | undefined): DashboardPlusState {
+  const seed = createDashboardPlusSeed()
+  if (!parsed || typeof parsed !== 'object' || !parsed.overview) return seed
+
+  return {
+    overview: { ...seed.overview, ...parsed.overview },
+    focusTodos: Array.isArray(parsed.focusTodos) ? parsed.focusTodos.map(normalizeTaskPriority) : seed.focusTodos,
+    supplements: Array.isArray(parsed.supplements) ? parsed.supplements : seed.supplements,
+    medications: Array.isArray(parsed.medications) ? parsed.medications : seed.medications,
+    goals: Array.isArray(parsed.goals) ? parsed.goals : seed.goals,
+    boards: Array.isArray(parsed.boards)
+      ? parsed.boards.map(board => ({
+        ...board,
+        tasks: Array.isArray(board.tasks) ? board.tasks.map(normalizeTaskPriority) : [],
+      }))
+      : seed.boards,
+    shopping: {
+      total: typeof parsed.shopping?.total === 'number' ? parsed.shopping.total : seed.shopping.total,
+      items: Array.isArray(parsed.shopping?.items)
+        ? parsed.shopping.items.map(item => normalizeShoppingItem({
+          ...item,
+          icon: typeof item.icon === 'string' ? item.icon : 'flask',
+        }))
+        : seed.shopping.items,
+    },
+    stats: {
+      ...seed.stats,
+      ...parsed.stats,
+      weeklyBars: Array.isArray(parsed.stats?.weeklyBars) ? parsed.stats.weeklyBars : seed.stats.weeklyBars,
+      heatmap: Array.isArray(parsed.stats?.heatmap) ? parsed.stats.heatmap : seed.stats.heatmap,
+      projects: Array.isArray(parsed.stats?.projects) ? parsed.stats.projects : seed.stats.projects,
+    },
+    finances: {
+      ...seed.finances,
+      ...parsed.finances,
+      recurring: Array.isArray(parsed.finances?.recurring) ? parsed.finances.recurring : seed.finances.recurring,
+      openBills: Array.isArray(parsed.finances?.openBills) ? parsed.finances.openBills : seed.finances.openBills,
+    },
+  }
+}
+
 function loadDashboardPlusState(): DashboardPlusState {
   try {
     const stored = localStorage.getItem(DASHBOARD_PLUS_KEY)
     if (!stored) return createDashboardPlusSeed()
-    const parsed = JSON.parse(stored) as DashboardPlusState
-    if (!parsed || !parsed.overview || !Array.isArray(parsed.focusTodos)) return createDashboardPlusSeed()
-    return {
-      ...parsed,
-      shopping: {
-        ...parsed.shopping,
-        items: Array.isArray(parsed.shopping?.items)
-          ? parsed.shopping.items.map(normalizeShoppingItem)
-          : [],
-      },
-    }
+    const parsed = JSON.parse(stored) as Partial<DashboardPlusState>
+    return normalizeDashboardPlusState(parsed)
   } catch {
     return createDashboardPlusSeed()
   }
 }
 
 const DEFAULT_ACTIVE_HABITS = ['breathingDone', 'coldShower', 'proteinShake', 'pushupsDone', 'gratitudeDone']
+
+const DASHBOARD_PLUS_SECTION_IDS = DASHBOARD_PLUS_TABS.map(tab => tab.id)
+
+const DEFAULT_DASHBOARD_PLUS_LAYOUT: DashboardPlusLayout = {
+  order: [...DASHBOARD_PLUS_SECTION_IDS],
+  hidden: [],
+}
 
 const DEFAULT_SETTINGS: AppSettings = {
   name: '',
@@ -522,6 +654,22 @@ const DEFAULT_SETTINGS: AppSettings = {
   proteinGoal: 150,
   calorieGoal: 3500,
   activeHabits: DEFAULT_ACTIVE_HABITS,
+  dashboardPlusLayout: DEFAULT_DASHBOARD_PLUS_LAYOUT,
+}
+
+function normalizeDashboardPlusLayout(raw: unknown): DashboardPlusLayout {
+  const candidate = (raw ?? {}) as Partial<DashboardPlusLayout>
+  const isSection = (id: unknown): id is DashboardPlusSection =>
+    typeof id === 'string' && (DASHBOARD_PLUS_SECTION_IDS as string[]).includes(id)
+
+  const storedOrder = Array.isArray(candidate.order) ? candidate.order.filter(isSection) : []
+  const order = [...storedOrder, ...DASHBOARD_PLUS_SECTION_IDS.filter(id => !storedOrder.includes(id))]
+
+  const storedHidden = Array.isArray(candidate.hidden) ? candidate.hidden.filter(isSection) : []
+  // Never let every tab be hidden — fall back to "all visible" rather than an unusable Dashboard+.
+  const hidden = storedHidden.length >= DASHBOARD_PLUS_SECTION_IDS.length ? [] : storedHidden
+
+  return { order, hidden }
 }
 
 const NAV_ITEMS: Array<{ id: View; label: string; icon: typeof Home }> = [
@@ -572,6 +720,7 @@ function loadSettings(): AppSettings {
       proteinGoal: clampNumber(Number(stored.proteinGoal) || DEFAULT_SETTINGS.proteinGoal, 50, 400),
       calorieGoal: clampNumber(Number(stored.calorieGoal) || DEFAULT_SETTINGS.calorieGoal, 1000, 8000),
       activeHabits: Array.isArray(stored.activeHabits) ? stored.activeHabits : DEFAULT_ACTIVE_HABITS,
+      dashboardPlusLayout: normalizeDashboardPlusLayout(stored.dashboardPlusLayout),
     }
   } catch {
     return DEFAULT_SETTINGS
@@ -593,6 +742,36 @@ function addDays(key: string, amount: number): string {
   const date = fromDateKey(key)
   date.setDate(date.getDate() + amount)
   return dateKey(date)
+}
+
+function daysUntil(targetKey: string, todayKey: string): number {
+  const ms = fromDateKey(targetKey).getTime() - fromDateKey(todayKey).getTime()
+  return Math.round(ms / 86_400_000)
+}
+
+type QuickAddResult =
+  | { kind: 'weight'; value: number }
+  | { kind: 'calories'; value: number }
+  | { kind: 'water'; value: number }
+  | { kind: 'task'; title: string }
+
+/** Deliberately simple pattern matching, no NLP/AI — a handful of unit
+ * suffixes route straight into the matching daily metric, everything else
+ * becomes a new task. */
+function parseQuickAdd(raw: string): QuickAddResult {
+  const text = raw.trim()
+  const toNumber = (match: string) => Number(match.replace(',', '.'))
+
+  const weight = text.match(/(\d+(?:[.,]\d+)?)\s*kg\b/i)
+  if (weight) return { kind: 'weight', value: toNumber(weight[1]) }
+
+  const calories = text.match(/(\d+(?:[.,]\d+)?)\s*kcal\b/i)
+  if (calories) return { kind: 'calories', value: toNumber(calories[1]) }
+
+  const water = text.match(/(\d+(?:[.,]\d+)?)\s*(?:l|liter)\b/i)
+  if (water) return { kind: 'water', value: toNumber(water[1]) }
+
+  return { kind: 'task', title: text }
 }
 
 function formatLongDate(key: string): string {
@@ -669,6 +848,30 @@ function IconButton({
   )
 }
 
+function BadgeButton({
+  label,
+  children,
+  onClick,
+  className = '',
+}: {
+  label: string
+  children: ReactNode
+  onClick: () => void
+  className?: string
+}) {
+  return (
+    <button
+      type="button"
+      className={`badge-button ${className}`.trim()}
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  )
+}
+
 function ProgressRing({ value, size = 72 }: { value: number; size?: number }) {
   const safeValue = clampNumber(Math.round(value), 0, 100)
   return (
@@ -710,6 +913,22 @@ function SectionTitle({
   )
 }
 
+function PriorityBadge({ priority, onCycle }: { priority: DashboardPlusPriority; onCycle: () => void }) {
+  const meta = PRIORITY_META[priority] ?? PRIORITY_META.p3
+  return (
+    <button
+      type="button"
+      className="priority-badge"
+      style={{ '--priority-color': meta.color } as CSSProperties}
+      onClick={onCycle}
+      aria-label={`Priorität ${meta.label} — klicken zum Ändern`}
+      title={`Priorität ${meta.label}`}
+    >
+      {meta.label}
+    </button>
+  )
+}
+
 function EmptyState({
   title,
   text,
@@ -739,6 +958,7 @@ function App() {
   const [dashboardPlus, setDashboardPlus] = useState<DashboardPlusState>(loadDashboardPlusState)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [taskEditor, setTaskEditor] = useState<{ index: number | null; value: string } | null>(null)
+  const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [focusSession, setFocusSession] = useState<FocusSession | null>(null)
   const [toast, setToast] = useState<ToastState>(null)
   const [lastBackupAt, setLastBackupAt] = useState<string | null>(() => getLastBackupAt())
@@ -921,6 +1141,29 @@ function App() {
     setTaskEditor(null)
   }
 
+  const quickAddTask = (title: string) => {
+    saveTask(title, null)
+    setQuickAddOpen(false)
+  }
+
+  const quickAddWeight = (value: number) => {
+    updateEntry({ weightKg: value })
+    setQuickAddOpen(false)
+    showToast(`Gewicht gespeichert: ${value} kg`)
+  }
+
+  const quickAddCalories = (value: number) => {
+    updateEntry({ calories: value, caloriesReached: value >= settings.calorieGoal })
+    setQuickAddOpen(false)
+    showToast(`Kalorien gespeichert: ${value} kcal`)
+  }
+
+  const quickAddWater = (value: number) => {
+    updateEntry({ waterLiters: value })
+    setQuickAddOpen(false)
+    showToast(`Wasser gespeichert: ${value} L`)
+  }
+
   const deleteTask = (index: number) => {
     const deleted = anchors[index]
     const wasDone = Boolean(anchorsDone[index])
@@ -1058,6 +1301,9 @@ function App() {
             <strong>Life OS</strong>
           </div>
           <div className="mobile-header__actions">
+            <BadgeButton label="Dashboard+ öffnen" onClick={() => navigateTo('dashboardPlus')} className="badge-button--icon">
+              <Crown size={16} />
+            </BadgeButton>
             <IconButton label="Theme wechseln" onClick={quickToggleTheme}>
               {resolvedTheme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </IconButton>
@@ -1078,6 +1324,9 @@ function App() {
                 <Cloud size={14} />
                 {storageStatusLabel(syncStatus, isOnline)}
               </span>
+              <BadgeButton label="Dashboard+ öffnen" onClick={() => navigateTo('dashboardPlus')} className="badge-button--icon">
+                <Crown size={16} />
+              </BadgeButton>
               <IconButton label="Einstellungen öffnen" onClick={() => setSettingsOpen(true)}>
                 <Settings size={18} />
               </IconButton>
@@ -1171,6 +1420,8 @@ function App() {
               liveOverview={laborLive}
               liveStats={laborStats}
               energy={entry.energyLevel}
+              layout={settings.dashboardPlusLayout}
+              onOpenSettings={() => setSettingsOpen(true)}
             />
           )}
         </main>
@@ -1191,6 +1442,12 @@ function App() {
             )
           })}
         </nav>
+
+        {view !== 'dashboardPlus' && !(view === 'today' && !entry.energyLevel) && (
+          <button type="button" className="fab" onClick={() => setQuickAddOpen(true)} aria-label="Schnell hinzufügen">
+            <Plus size={22} />
+          </button>
+        )}
       </div>
 
       {taskEditor && (
@@ -1199,6 +1456,16 @@ function App() {
           isEditing={taskEditor.index !== null}
           onClose={() => setTaskEditor(null)}
           onSave={value => saveTask(value, taskEditor.index)}
+        />
+      )}
+
+      {quickAddOpen && (
+        <QuickAddModal
+          onClose={() => setQuickAddOpen(false)}
+          onSubmitTask={quickAddTask}
+          onSubmitWeight={quickAddWeight}
+          onSubmitCalories={quickAddCalories}
+          onSubmitWater={quickAddWater}
         />
       )}
 
@@ -1533,7 +1800,7 @@ function TodayView({
 
       {!energy && (
         <section className="card energy-card">
-          <SectionTitle eyebrow="Kurz einchecken" title="Wie viel Energie ist heute da?" />
+          <SectionTitle eyebrow="Kurz einchecken" title="Wie ist deine Energie heute?" />
           <div className="energy-grid">
             {ENERGY_OPTIONS.map(option => (
               <button
@@ -2203,18 +2470,27 @@ function ProgressView({ entries, today }: { entries: DashboardEntry[]; today: st
   const best = Math.max(...lastSeven.map(item => item.score))
   const insights = buildWeekInsights(entries, today)
 
-  let streak = 0
-  for (let index = lastSeven.length - 1; index >= 0; index -= 1) {
-    if (lastSeven[index].score > 0) streak += 1
-    else break
-  }
+  const xp = loadXP()
+
+  const movementStreak = (() => {
+    const sorted = [...entries].sort((a, b) => b.date.localeCompare(a.date))
+    let count = 0
+    for (const entry of sorted) {
+      if (entry.pushupsDone || entry.squatsDone) count += 1
+      else break
+    }
+    return count
+  })()
 
   const habitStats = [
-    { label: 'Proteinshake', count: lastSeven.filter(item => item.entry.proteinShake).length, icon: Coffee },
-    { label: 'Dankbarkeit', count: lastSeven.filter(item => item.entry.gratitudeDone).length, icon: Sparkles },
-    { label: 'Fokus', count: lastSeven.filter(item => item.entry.focusDone).length, icon: Focus },
-    { label: 'Bewegung', count: lastSeven.filter(item => item.entry.pushupsDone || item.entry.squatsDone).length, icon: Dumbbell },
+    { label: 'Proteinshake', count: lastSeven.filter(item => item.entry.proteinShake).length, streak: calculateStreakForHabit(entries, 'proteinShake'), icon: Coffee },
+    { label: 'Dankbarkeit', count: lastSeven.filter(item => item.entry.gratitudeDone).length, streak: calculateStreakForHabit(entries, 'gratitudeDone'), icon: Sparkles },
+    { label: 'Fokus', count: lastSeven.filter(item => item.entry.focusDone).length, streak: calculateStreakForHabit(entries, 'focusDone'), icon: Focus },
+    { label: 'Bewegung', count: lastSeven.filter(item => item.entry.pushupsDone || item.entry.squatsDone).length, streak: movementStreak, icon: Dumbbell },
   ]
+
+  const todayEntry = entries.find(item => item.date === today) ?? createDefaultEntry(today)
+  const breakdown = getScoreBreakdown(todayEntry)
 
   return (
     <div className="view-stack">
@@ -2229,7 +2505,7 @@ function ProgressView({ entries, today }: { entries: DashboardEntry[]; today: st
       <div className="kpi-grid">
         <div className="kpi-card"><span>Wochenschnitt</span><strong>{average}%</strong><small>letzte 7 Tage</small></div>
         <div className="kpi-card"><span>Bester Tag</span><strong>{best}%</strong><small>diese Woche</small></div>
-        <div className="kpi-card"><span>Rhythmus</span><strong>{streak}</strong><small>{plural(streak, 'Tag', 'Tage')} · {getLevelFromScore(lastSeven.reduce((s, i) => s + i.score, 0))}</small></div>
+        <div className="kpi-card"><span>Rhythmus</span><strong>{xp.streakDays}</strong><small>{plural(xp.streakDays, 'Tag', 'Tage')} · {levelName(xp.level)}</small></div>
       </div>
 
       <section className="card insight-card">
@@ -2271,7 +2547,7 @@ function ProgressView({ entries, today }: { entries: DashboardEntry[]; today: st
                   <span className="rhythm-row__icon"><Icon size={17} /></span>
                   <div>
                     <strong>{stat.label}</strong>
-                    <span>{stat.count} von 7 Tagen</span>
+                    <span>{stat.count} von 7 Tagen{stat.streak > 1 ? ` · ${stat.streak}er Serie` : ''}</span>
                   </div>
                   <div className="radial-mini" style={{ '--value': `${(stat.count / 7) * 360}deg` } as CSSProperties}>
                     <span>{stat.count}</span>
@@ -2282,6 +2558,41 @@ function ProgressView({ entries, today }: { entries: DashboardEntry[]; today: st
           </div>
         </section>
       </div>
+
+      <section className="card">
+        <SectionTitle eyebrow="Gamification" title="Level & Fortschritt" />
+        <div className="progress-ring-wrap">
+          <div>
+            <div className="prog-label">Level {xp.level} · {levelName(xp.level)}</div>
+            <div className="prog-sub">{xp.totalXP} XP gesamt</div>
+          </div>
+          <div className="prog-num">{levelProgress(xp)}%</div>
+        </div>
+        <div className="mini-progress" aria-hidden="true">
+          <span style={{ width: `${levelProgress(xp)}%` }} />
+        </div>
+        <p className="level-caption">
+          Noch {xpToNextLevel(xp)} XP bis Level {xp.level + 1}
+          {xp.streakDays > 0 ? ` · ${xp.streakDays} ${plural(xp.streakDays, 'Tag', 'Tage')} Serie (Score ≥ 50)` : ''}
+        </p>
+      </section>
+
+      <section className="card">
+        <SectionTitle eyebrow="Heute" title="Score im Detail" />
+        <div className="breakdown-list">
+          {breakdown.map(category => (
+            <div className="breakdown-row" key={category.category}>
+              <div className="breakdown-row__head">
+                <strong>{category.category}</strong>
+                <span>{category.achieved} / {category.max}</span>
+              </div>
+              <div className="mini-progress" aria-hidden="true">
+                <span style={{ width: `${category.max ? Math.round((category.achieved / category.max) * 100) : 0}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   )
 }
@@ -2294,6 +2605,8 @@ function DashboardPlusView({
   liveOverview,
   liveStats,
   energy,
+  layout,
+  onOpenSettings,
 }: {
   dashboard: DashboardPlusState
   onChange: Dispatch<SetStateAction<DashboardPlusState>>
@@ -2302,7 +2615,22 @@ function DashboardPlusView({
   liveOverview: ReturnType<typeof deriveLaborOverview>
   liveStats: ReturnType<typeof deriveLaborStats>
   energy?: DashboardEntry['energyLevel']
+  layout: DashboardPlusLayout
+  onOpenSettings: () => void
 }) {
+  const [activeSection, setActiveSection] = useState<DashboardPlusSection>('overview')
+
+  const tabsToRender = useMemo(() => {
+    const visible = layout.order
+      .filter(id => !layout.hidden.includes(id))
+      .map(id => DASHBOARD_PLUS_TABS.find(tab => tab.id === id))
+      .filter((tab): tab is (typeof DASHBOARD_PLUS_TABS)[number] => Boolean(tab))
+    return visible.length > 0 ? visible : DASHBOARD_PLUS_TABS
+  }, [layout])
+
+  const currentSection = tabsToRender.some(tab => tab.id === activeSection)
+    ? activeSection
+    : tabsToRender[0].id
   const [activeBoardId, setActiveBoardId] = useState(dashboard.boards[0]?.id ?? 'personal')
   const openFocusTodos = dashboard.focusTodos.filter(task => !task.done).length
   const lowStockCount = dashboard.supplements.filter(item => item.dailyUse > 0 && item.stock <= item.dailyUse * 7).length
@@ -2333,7 +2661,7 @@ function DashboardPlusView({
   const addFocusTask = () => {
     onChange(current => ({
       ...current,
-      focusTodos: [...current.focusTodos, { id: crypto.randomUUID(), title: 'Neue Aufgabe', tag: '', time: '', done: false, priority: 'blue' }],
+      focusTodos: [...current.focusTodos, { id: crypto.randomUUID(), title: 'Neue Aufgabe', tag: '', time: '', done: false, priority: 'p3' }],
     }))
   }
 
@@ -2365,6 +2693,48 @@ function DashboardPlusView({
     }))
   }
 
+  const updateMedication = (index: number, patch: Partial<DashboardPlusMedication>) => {
+    onChange(current => ({
+      ...current,
+      medications: current.medications.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
+    }))
+  }
+
+  const addMedication = () => {
+    onChange(current => ({
+      ...current,
+      medications: [...current.medications, { id: crypto.randomUUID(), name: 'Neues Medikament', dosage: '', time: '', notes: '', effect: '', sideEffects: '', taken: false, color: 'var(--accent)' }],
+    }))
+  }
+
+  const removeMedication = (index: number) => {
+    onChange(current => ({
+      ...current,
+      medications: current.medications.filter((_, itemIndex) => itemIndex !== index),
+    }))
+  }
+
+  const updateGoal = (index: number, patch: Partial<DashboardPlusGoal>) => {
+    onChange(current => ({
+      ...current,
+      goals: current.goals.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
+    }))
+  }
+
+  const addGoal = () => {
+    onChange(current => ({
+      ...current,
+      goals: [...current.goals, { id: crypto.randomUUID(), title: 'Neues Ziel', timeframe: 'Monat', percent: 0, dueDate: today, color: 'var(--accent)' }],
+    }))
+  }
+
+  const removeGoal = (index: number) => {
+    onChange(current => ({
+      ...current,
+      goals: current.goals.filter((_, itemIndex) => itemIndex !== index),
+    }))
+  }
+
   const updateBoardTask = (boardId: string, taskIndex: number, patch: Partial<DashboardPlusTask>) => {
     onChange(current => ({
       ...current,
@@ -2381,7 +2751,7 @@ function DashboardPlusView({
       ...current,
       boards: current.boards.map(board => (
         board.id === boardId
-          ? { ...board, tasks: [...board.tasks, { id: crypto.randomUUID(), title: 'Neue Board-Aufgabe', tag: '', time: '', done: false, priority: 'blue' }] }
+          ? { ...board, tasks: [...board.tasks, { id: crypto.randomUUID(), title: 'Neue Board-Aufgabe', tag: '', time: '', done: false, priority: 'p3' }] }
           : board
       )),
     }))
@@ -2501,44 +2871,66 @@ function DashboardPlusView({
           <button type="button" className="secondary-button" onClick={onBackToToday}>
             <ChevronLeft size={16} /> Zum Tageskern
           </button>
+          <button type="button" className="secondary-button" onClick={onOpenSettings}>
+            <LayoutGrid size={16} /> Reiter anpassen
+          </button>
           <span className="sync-pill sync-pill--synced" title="Kein Cloud-Sync">
             <Cloud size={14} /> Lokal
           </span>
         </div>
       </section>
 
-      <section className="card dashboard-plus-hero">
-        <div className="dashboard-plus-hero__meta">
-          <div>
-            <span className="eyebrow">{liveOverview.dateLabel}</span>
-            <h2>Live aus dem Tageskern</h2>
-          </div>
-          <ProgressRing value={liveOverview.score} size={86} />
-        </div>
-        <div className="dashboard-plus-hero__stats">
-          <div className="kpi-card dashboard-plus-metric">
-            <span>Habits</span>
-            <strong>{liveOverview.habits}/{liveOverview.habitsTotal || 0}</strong>
-            <small>heute erledigt</small>
-          </div>
-          <div className="kpi-card dashboard-plus-metric">
-            <span>Anker</span>
-            <strong>{liveOverview.todos}/{liveOverview.todosTotal || 0}</strong>
-            <small>heute</small>
-          </div>
-          <div className="kpi-card dashboard-plus-metric">
-            <span>Boards</span>
-            <strong>{liveOverview.projects}</strong>
-            <small>mit offenen Tasks</small>
-          </div>
-        </div>
-        <div className="labor-hints">
-          {hints.map(hint => (
-            <p key={hint}>{hint}</p>
-          ))}
-        </div>
-      </section>
+      <nav className="dashboard-plus-tabbar" role="tablist" aria-label="Dashboard+ Bereiche">
+        {tabsToRender.map(tab => (
+          <button
+            type="button"
+            key={tab.id}
+            role="tab"
+            aria-selected={currentSection === tab.id}
+            className={currentSection === tab.id ? 'dashboard-plus-tab active' : 'dashboard-plus-tab'}
+            onClick={() => setActiveSection(tab.id)}
+          >
+            <tab.icon size={18} />
+            <span>{tab.label}</span>
+          </button>
+        ))}
+      </nav>
 
+      {currentSection === 'overview' && (
+        <section className="card dashboard-plus-hero">
+          <div className="dashboard-plus-hero__meta">
+            <div>
+              <span className="eyebrow">{liveOverview.dateLabel}</span>
+              <h2>Live aus dem Tageskern</h2>
+            </div>
+            <ProgressRing value={liveOverview.score} size={86} />
+          </div>
+          <div className="dashboard-plus-hero__stats">
+            <div className="kpi-card dashboard-plus-metric">
+              <span>Habits</span>
+              <strong>{liveOverview.habits}/{liveOverview.habitsTotal || 0}</strong>
+              <small>heute erledigt</small>
+            </div>
+            <div className="kpi-card dashboard-plus-metric">
+              <span>Anker</span>
+              <strong>{liveOverview.todos}/{liveOverview.todosTotal || 0}</strong>
+              <small>heute</small>
+            </div>
+            <div className="kpi-card dashboard-plus-metric">
+              <span>Boards</span>
+              <strong>{liveOverview.projects}</strong>
+              <small>mit offenen Tasks</small>
+            </div>
+          </div>
+          <div className="labor-hints">
+            {hints.map(hint => (
+              <p key={hint}>{hint}</p>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {currentSection === 'todos' && (
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle
@@ -2582,6 +2974,7 @@ function DashboardPlusView({
                   </div>
                 </div>
                 <div className="editable-task__actions">
+                  <PriorityBadge priority={task.priority} onCycle={() => updateFocusTask(index, { priority: nextPriority(task.priority) })} />
                   <button type="button" className="icon-button" onClick={() => removeFocusTask(index)} aria-label="Löschen">
                     <Trash2 size={15} />
                   </button>
@@ -2591,7 +2984,71 @@ function DashboardPlusView({
           </div>
         </section>
 
-        <section className="card dashboard-plus-card">
+        <section className="card dashboard-plus-card dashboard-plus-card--wide">
+          <SectionTitle eyebrow="Projekte" title="Boards" />
+          <div className="project-tabs dashboard-plus-tabs">
+            {dashboard.boards.map(board => (
+              <button
+                type="button"
+                key={board.id}
+                className={board.id === activeBoardId ? 'project-tab active' : 'project-tab'}
+                onClick={() => setActiveBoardId(board.id)}
+              >
+                {board.label} <span className="tab-count">{board.count}</span>
+              </button>
+            ))}
+          </div>
+          {activeBoard && (() => {
+            const doneCount = activeBoard.tasks.filter(task => task.done).length
+            const totalCount = activeBoard.tasks.length
+            const percent = totalCount ? Math.round((doneCount / totalCount) * 100) : 0
+            return (
+            <>
+              <div className="progress-ring-wrap dashboard-plus-board-summary">
+                <div>
+                  <div className="prog-label">Heute erledigt</div>
+                  <div className="prog-sub">{doneCount} von {totalCount} Aufgaben</div>
+                  {percent >= 80 && totalCount > 0 && (
+                    <span className="status-chip status-chip--good"><span className="status-chip__dot" />Fast geschafft</span>
+                  )}
+                </div>
+                <div className="prog-num">{percent}%</div>
+              </div>
+              <div className="editable-task-list">
+                {activeBoard.tasks.map((task, index) => (
+                  <div className={task.done ? 'editable-task is-done' : 'editable-task'} key={task.id}>
+                    <button type="button" className="task-check" onClick={() => updateBoardTask(activeBoard.id, index, { done: !task.done })} aria-pressed={task.done}>
+                      {task.done ? <Check size={17} /> : <Circle size={17} />}
+                    </button>
+                    <div className="editable-task__content dashboard-plus-editable-content">
+                      <input className="dashboard-plus-input dashboard-plus-input--title" value={task.title} onChange={event => updateBoardTask(activeBoard.id, index, { title: event.target.value })} aria-label="Board Aufgabe" />
+                      <div className="dashboard-plus-inline-row">
+                        <input className="dashboard-plus-input" value={task.tag} onChange={event => updateBoardTask(activeBoard.id, index, { tag: event.target.value })} placeholder="Tag" />
+                        <input className="dashboard-plus-input" value={task.time} onChange={event => updateBoardTask(activeBoard.id, index, { time: event.target.value })} placeholder="Zeit" />
+                      </div>
+                    </div>
+                    <div className="editable-task__actions">
+                      <PriorityBadge priority={task.priority} onCycle={() => updateBoardTask(activeBoard.id, index, { priority: nextPriority(task.priority) })} />
+                      <button type="button" className="icon-button" onClick={() => removeBoardTask(activeBoard.id, index)} aria-label="Löschen">
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button type="button" className="secondary-button secondary-button--full" onClick={() => addBoardTask(activeBoard.id)}>
+                <Plus size={15} /> Aufgabe hinzufügen
+              </button>
+            </>
+            )
+          })()}
+        </section>
+      </div>
+      )}
+
+      {currentSection === 'stock' && (
+      <div className="dashboard-plus-grid">
+        <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Supplements" title="Bestände" action={<button type="button" className="small-button" onClick={addSupplement}><Plus size={14} /> Produkt</button>} />
           <div className="dashboard-plus-supplements">
             {dashboard.supplements.map((item, index) => {
@@ -2674,65 +3131,97 @@ function DashboardPlusView({
             })}
           </div>
         </section>
+      </div>
+      )}
 
+      {currentSection === 'medications' && (
+      <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
-          <SectionTitle eyebrow="Projekte" title="Boards" />
-          <div className="project-tabs dashboard-plus-tabs" role="tablist" aria-label="Projekt-Boards">
-            {dashboard.boards.map(board => (
-              <button
-                type="button"
-                role="tab"
-                key={board.id}
-                aria-selected={board.id === activeBoardId}
-                className={board.id === activeBoardId ? 'project-tab active' : 'project-tab'}
-                onClick={() => setActiveBoardId(board.id)}
-              >
-                <span className="project-tab-label">{board.label}</span>
-                <span className="tab-count">{board.tasks.length}</span>
-              </button>
+          <SectionTitle eyebrow="Gesundheit" title="Medikamente" action={<button type="button" className="small-button" onClick={addMedication}><Plus size={14} /> Medikament</button>} />
+          <div className="dashboard-plus-supplements">
+            {dashboard.medications.map((item, index) => (
+              <div className="supp-card dashboard-plus-supp-card" style={{ borderTopColor: item.color }} key={item.id}>
+                <div className="dashboard-plus-med-head">
+                  <input className="dashboard-plus-input dashboard-plus-input--title" value={item.name} onChange={event => updateMedication(index, { name: event.target.value })} />
+                  <button
+                    type="button"
+                    className={item.taken ? 'status-chip status-chip--good' : 'status-chip'}
+                    onClick={() => updateMedication(index, { taken: !item.taken })}
+                    aria-pressed={item.taken}
+                  >
+                    <span className="status-chip__dot" />{item.taken ? 'Genommen' : 'Ausstehend'}
+                  </button>
+                </div>
+                <div className="dashboard-plus-inline-row">
+                  <input className="dashboard-plus-input" value={item.dosage} onChange={event => updateMedication(index, { dosage: event.target.value })} placeholder="Dosierung" aria-label="Dosierung" />
+                  <input className="dashboard-plus-input" value={item.time} onChange={event => updateMedication(index, { time: event.target.value })} placeholder="Uhrzeit" aria-label="Uhrzeit" />
+                </div>
+                <input className="dashboard-plus-input" value={item.notes} onChange={event => updateMedication(index, { notes: event.target.value })} placeholder="Notizen" aria-label="Notizen" />
+                <input className="dashboard-plus-input" value={item.effect} onChange={event => updateMedication(index, { effect: event.target.value })} placeholder="Wirkung" aria-label="Wirkung" />
+                <input className="dashboard-plus-input" value={item.sideEffects} onChange={event => updateMedication(index, { sideEffects: event.target.value })} placeholder="Nebenwirkungen" aria-label="Nebenwirkungen" />
+                <button type="button" className="secondary-button secondary-button--full" onClick={() => removeMedication(index)}>
+                  <Trash2 size={15} /> Entfernen
+                </button>
+              </div>
             ))}
           </div>
-          {activeBoard && (
-            <>
-              <div className="progress-ring-wrap dashboard-plus-board-summary">
-                <div>
-                  <div className="prog-label">Heute erledigt</div>
-                  <div className="prog-sub">{activeBoard.tasks.filter(task => task.done).length} von {activeBoard.tasks.length} Aufgaben</div>
-                </div>
-                <div className="prog-num">{activeBoard.tasks.length ? Math.round((activeBoard.tasks.filter(task => task.done).length / activeBoard.tasks.length) * 100) : 0}%</div>
-              </div>
-              <div className="editable-task-list">
-                {activeBoard.tasks.map((task, index) => (
-                  <div className={task.done ? 'editable-task is-done' : 'editable-task'} key={task.id}>
-                    <button type="button" className="task-check" onClick={() => updateBoardTask(activeBoard.id, index, { done: !task.done })} aria-pressed={task.done}>
-                      {task.done ? <Check size={17} /> : <Circle size={17} />}
-                    </button>
-                    <div className="editable-task__content dashboard-plus-editable-content">
-                      <input className="dashboard-plus-input dashboard-plus-input--title" value={task.title} onChange={event => updateBoardTask(activeBoard.id, index, { title: event.target.value })} aria-label="Board Aufgabe" />
-                      <div className="dashboard-plus-inline-row">
-                        <input className="dashboard-plus-input" value={task.tag} onChange={event => updateBoardTask(activeBoard.id, index, { tag: event.target.value })} placeholder="Tag" />
-                        <input className="dashboard-plus-input" value={task.time} onChange={event => updateBoardTask(activeBoard.id, index, { time: event.target.value })} placeholder="Zeit" />
-                      </div>
-                    </div>
-                    <div className="editable-task__actions">
-                      <button type="button" className="icon-button" onClick={() => removeBoardTask(activeBoard.id, index)} aria-label="Löschen">
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <button type="button" className="secondary-button secondary-button--full" onClick={() => addBoardTask(activeBoard.id)}>
-                <Plus size={15} /> Aufgabe hinzufügen
-              </button>
-            </>
-          )}
         </section>
+      </div>
+      )}
 
-        <section className="card dashboard-plus-card">
+      {currentSection === 'goals' && (
+      <div className="dashboard-plus-grid">
+        <section className="card dashboard-plus-card dashboard-plus-card--wide">
+          <SectionTitle eyebrow="Planung" title="Ziele" action={<button type="button" className="small-button" onClick={addGoal}><Plus size={14} /> Ziel</button>} />
+          <div className="dashboard-plus-supplements">
+            {dashboard.goals.map((goal, index) => {
+              const eta = daysUntil(goal.dueDate, today)
+              const etaLabel = eta > 0
+                ? `Noch ${eta} ${plural(eta, 'Tag', 'Tage')}`
+                : eta === 0
+                  ? 'Heute fällig'
+                  : `${Math.abs(eta)} ${plural(Math.abs(eta), 'Tag', 'Tage')} überfällig`
+              return (
+                <div className="supp-card dashboard-plus-supp-card" style={{ borderTopColor: goal.color }} key={goal.id}>
+                  <div className="dashboard-plus-goal-head">
+                    <input className="dashboard-plus-input dashboard-plus-input--title" value={goal.title} onChange={event => updateGoal(index, { title: event.target.value })} aria-label="Ziel" />
+                    <button
+                      type="button"
+                      className="dashboard-plus-goal-timeframe"
+                      onClick={() => {
+                        const order: DashboardPlusGoalTimeframe[] = ['Woche', 'Monat', 'Quartal', 'Jahr']
+                        updateGoal(index, { timeframe: order[(order.indexOf(goal.timeframe) + 1) % order.length] })
+                      }}
+                    >
+                      {goal.timeframe}
+                    </button>
+                  </div>
+                  <div className="dashboard-plus-inline-row">
+                    <input className="dashboard-plus-input" type="number" min="0" max="100" value={goal.percent} onChange={event => updateGoal(index, { percent: clampNumber(Number(event.target.value) || 0, 0, 100) })} aria-label="Prozent" />
+                    <input className="dashboard-plus-input" type="date" value={goal.dueDate} onChange={event => updateGoal(index, { dueDate: event.target.value })} aria-label="Fällig am" />
+                  </div>
+                  <div className="mini-progress" aria-hidden="true">
+                    <span style={{ width: `${goal.percent}%` }} />
+                  </div>
+                  <div className="dashboard-plus-goal-eta">{etaLabel} · {goal.percent}%</div>
+                  <button type="button" className="secondary-button secondary-button--full" onClick={() => removeGoal(index)}>
+                    <Trash2 size={15} /> Entfernen
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      </div>
+      )}
+
+      {currentSection === 'shopping' && (
+      <div className="dashboard-plus-grid">
+        <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Kaufliste" title="Offen" />
           <div className="shopping-list dashboard-plus-shopping-list">
-            {dashboard.shopping.items.map((item, index) => (
+            {dashboard.shopping.items.map((item, index) => {
+              return (
               <label className={item.done ? 'shop-item is-done' : 'shop-item'} key={item.id}>
                 <div className="shop-icon" aria-hidden="true">
                   <ShoppingItemIcon icon={item.icon} />
@@ -2740,6 +3229,9 @@ function DashboardPlusView({
                 <div className="shop-body dashboard-plus-shop-body">
                   <input className="dashboard-plus-input dashboard-plus-input--title" value={item.name} onChange={event => updateShoppingItem(index, { name: event.target.value })} />
                   <input className="dashboard-plus-input" value={item.note} onChange={event => updateShoppingItem(index, { note: event.target.value })} />
+                  {item.lowStock && (
+                    <span className="status-chip status-chip--warn"><span className="status-chip__dot" />Bestand kritisch</span>
+                  )}
                 </div>
                 <div className="dashboard-plus-shop-meta">
                   <input className="dashboard-plus-input dashboard-plus-input--money" type="number" min="0" step="0.01" value={item.price} onChange={event => updateShoppingItem(index, { price: Number(event.target.value) || 0 })} aria-label="Preis" />
@@ -2747,10 +3239,15 @@ function DashboardPlusView({
                 </div>
                 <button type="button" className="shop-check" onClick={() => updateShoppingItem(index, { done: !item.done })} aria-pressed={item.done} />
               </label>
-            ))}
+              )
+            })}
           </div>
         </section>
+      </div>
+      )}
 
+      {currentSection === 'stats' && (
+      <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card">
           <SectionTitle eyebrow="Stats" title="Woche aus dem Kern" />
           <div className="labor-live-stats">
@@ -2793,7 +3290,11 @@ function DashboardPlusView({
             ))}
           </div>
         </section>
+      </div>
+      )}
 
+      {currentSection === 'finance' && (
+      <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Finanzen" title="Rechnungen" />
           <div className="finance-kpi-row">
@@ -2848,6 +3349,7 @@ function DashboardPlusView({
           </div>
         </section>
       </div>
+      )}
 
       <div className="dashboard-plus-footer">
         <span>Snapshot: {today}</span>
@@ -2893,6 +3395,63 @@ function TaskEditor({
         <div className="modal-actions">
           <button type="button" className="secondary-button" onClick={onClose}>Abbrechen</button>
           <button type="submit" className="primary-button" disabled={!value.trim()}><Check size={17} /> Speichern</button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+function QuickAddModal({
+  onClose,
+  onSubmitTask,
+  onSubmitWeight,
+  onSubmitCalories,
+  onSubmitWater,
+}: {
+  onClose: () => void
+  onSubmitTask: (title: string) => void
+  onSubmitWeight: (value: number) => void
+  onSubmitCalories: (value: number) => void
+  onSubmitWater: (value: number) => void
+}) {
+  const [value, setValue] = useState('')
+  useModalBehavior(onClose)
+
+  const parsed = parseQuickAdd(value)
+  const preview = value.trim() === ''
+    ? 'Erkennt automatisch: „74.2kg“ → Gewicht, „3000kcal“ → Kalorien, „2.5l“ → Wasser — sonst wird eine Aufgabe daraus.'
+    : parsed.kind === 'weight' ? `→ Gewicht: ${parsed.value} kg`
+      : parsed.kind === 'calories' ? `→ Kalorien: ${parsed.value} kcal`
+        : parsed.kind === 'water' ? `→ Wasser: ${parsed.value} L`
+          : `→ Neue Aufgabe: „${parsed.title}“`
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    if (!value.trim()) return
+    if (parsed.kind === 'weight') onSubmitWeight(parsed.value)
+    else if (parsed.kind === 'calories') onSubmitCalories(parsed.value)
+    else if (parsed.kind === 'water') onSubmitWater(parsed.value)
+    else onSubmitTask(parsed.title)
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}>
+      <form className="modal modal--small" onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="quick-add-title">
+        <div className="modal-header">
+          <div>
+            <span className="eyebrow">Quick Add</span>
+            <h2 id="quick-add-title">Was gibt's?</h2>
+          </div>
+          <IconButton label="Schließen" onClick={onClose}><X size={18} /></IconButton>
+        </div>
+        <label className="text-field">
+          <span>Eintrag</span>
+          <input autoFocus value={value} onChange={event => setValue(event.target.value)} maxLength={120} placeholder="z. B. „74.2kg“ oder „Zahnarzt anrufen“" />
+        </label>
+        <p className="field-hint">{preview}</p>
+        <div className="modal-actions">
+          <button type="button" className="secondary-button" onClick={onClose}>Abbrechen</button>
+          <button type="submit" className="primary-button" disabled={!value.trim()}><Check size={17} /> Hinzufügen</button>
         </div>
       </form>
     </div>
@@ -3002,6 +3561,23 @@ function SettingsModal({
 }) {
   useModalBehavior(onClose)
   const importInputRef = useRef<HTMLInputElement | null>(null)
+  const layout = settings.dashboardPlusLayout
+
+  const moveDashboardTab = (index: number, direction: -1 | 1) => {
+    const target = index + direction
+    if (target < 0 || target >= layout.order.length) return
+    const nextOrder = [...layout.order]
+    const [moved] = nextOrder.splice(index, 1)
+    nextOrder.splice(target, 0, moved)
+    onChange({ ...settings, dashboardPlusLayout: { ...layout, order: nextOrder } })
+  }
+
+  const toggleDashboardTabHidden = (id: DashboardPlusSection) => {
+    const isHidden = layout.hidden.includes(id)
+    if (!isHidden && layout.hidden.length >= DASHBOARD_PLUS_SECTION_IDS.length - 1) return
+    const nextHidden = isHidden ? layout.hidden.filter(hiddenId => hiddenId !== id) : [...layout.hidden, id]
+    onChange({ ...settings, dashboardPlusLayout: { ...layout, hidden: nextHidden } })
+  }
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}>
@@ -3037,6 +3613,49 @@ function SettingsModal({
               )
             })}
           </div>
+        </div>
+
+        <div className="settings-section">
+          <h3>Dashboard+ Reiter</h3>
+          <p style={{ margin: '-6px 0 12px', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+            Reihenfolge und Sichtbarkeit der Dashboard+ Bereiche anpassen. Mindestens ein Reiter bleibt sichtbar.
+          </p>
+          <ul className="reorder-list">
+            {layout.order.map((id, index) => {
+              const tab = DASHBOARD_PLUS_TABS.find(t => t.id === id)
+              if (!tab) return null
+              const hidden = layout.hidden.includes(id)
+              return (
+                <li key={id} className={hidden ? 'reorder-row is-hidden' : 'reorder-row'}>
+                  <tab.icon size={16} />
+                  <span className="reorder-row__label">{tab.label}</span>
+                  <div className="reorder-row__actions">
+                    <IconButton
+                      label={`${tab.label} nach oben verschieben`}
+                      onClick={() => moveDashboardTab(index, -1)}
+                      disabled={index === 0}
+                    >
+                      <ChevronUp size={15} />
+                    </IconButton>
+                    <IconButton
+                      label={`${tab.label} nach unten verschieben`}
+                      onClick={() => moveDashboardTab(index, 1)}
+                      disabled={index === layout.order.length - 1}
+                    >
+                      <ChevronDown size={15} />
+                    </IconButton>
+                    <IconButton
+                      label={hidden ? `${tab.label} einblenden` : `${tab.label} ausblenden`}
+                      onClick={() => toggleDashboardTabHidden(id)}
+                      className={hidden ? '' : 'is-active'}
+                    >
+                      {hidden ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </IconButton>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
         </div>
 
         <div className="settings-section">
