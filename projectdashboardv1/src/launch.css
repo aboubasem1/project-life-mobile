@@ -396,6 +396,31 @@ button:disabled {
 .view-stack {
   display: grid;
   gap: 24px;
+  justify-items: stretch;
+}
+
+/* Every top-level Today widget shares the full content column width.
+   Do NOT use margin:auto / max-width shrink on these — auto margins
+   disable grid stretch and collapse the item to content width
+   (~300px when .energy-grid is a single column). */
+.view-stack > .card,
+.view-stack > .hero-card,
+.view-stack > .dashboard-grid,
+.view-stack > .status-block,
+.view-stack > .energy-card {
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+  justify-self: stretch;
+  box-sizing: border-box;
+}
+
+.energy-card {
+  width: 100%;
+  max-width: none;
+  margin-left: 0;
+  margin-right: 0;
+  justify-self: stretch;
 }
 
 .date-strip-wrap {
@@ -758,12 +783,6 @@ button:disabled {
   font-size: 21px;
   font-weight: 590;
   letter-spacing: -0.035em;
-}
-
-.energy-card {
-  width: 100%;
-  max-width: 860px;
-  margin: 0 auto;
 }
 
 .energy-grid {
@@ -1423,6 +1442,106 @@ button:disabled {
 
 .checkin-card--wide {
   grid-column: 1 / -1;
+}
+
+/* CollectUI soft duration: Std. / Min. + confirm check */
+.soft-duration {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.soft-duration__field {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 56px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface-soft) 88%, var(--bg-deep));
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.soft-duration__field:focus-within {
+  border-color: var(--border-strong);
+  background: var(--surface-solid);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.soft-duration__field input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  caret-color: var(--text);
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.soft-duration__field input::placeholder {
+  color: color-mix(in srgb, var(--text-muted) 55%, transparent);
+  font-weight: 500;
+}
+
+.soft-duration__field span {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.soft-duration__confirm {
+  flex: 0 0 56px;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  border: 0;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface-soft) 88%, var(--bg-deep));
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    background 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
+}
+
+.soft-duration__confirm:hover,
+.soft-duration.is-confirmed .soft-duration__confirm {
+  background: var(--text);
+  color: var(--surface-solid);
+}
+
+.soft-duration__confirm:active {
+  transform: scale(0.94);
+}
+
+.soft-duration.is-pulse .soft-duration__confirm {
+  animation: soft-duration-pop 420ms ease;
+}
+
+@keyframes soft-duration-pop {
+  0% { transform: scale(1); }
+  35% { transform: scale(0.9); }
+  70% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+
+.soft-duration-presets .choice-button {
+  min-height: 34px;
+  padding: 0 11px;
+  font-size: 10px;
+  opacity: 0.92;
 }
 
 .choice-grid {
@@ -2316,14 +2435,37 @@ button.status-chip.status-chip--good {
   gap: 8px;
 }
 
+.dashboard-plus-empty-hint {
+  margin: 0;
+  padding: 8px 2px 4px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .shop-item {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) minmax(96px, auto) 28px;
+  grid-template-columns: 38px minmax(0, 1fr) minmax(96px, auto) auto;
   align-items: center;
   gap: 10px;
   padding: 12px;
   border-radius: 16px;
   background: var(--surface-soft);
+  cursor: default;
+}
+
+.dashboard-plus-shop-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.dashboard-plus-shop-actions .icon-button {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  border-radius: 10px;
 }
 
 .shop-item.is-done {

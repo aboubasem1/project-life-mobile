@@ -704,7 +704,115 @@ function storageStatusLabel(syncStatus: string, isOnline: boolean): string {
 
 const MOODS = ['Ruhig', 'Gut', 'Neutral', 'Müde', 'Gestresst']
 const SLEEP_QUALITY = ['Schlecht', 'Okay', 'Gut', 'Sehr gut']
-const SLEEP_DURATION = ['<5h', '5h', '6h', '6.5h', '7h', '7.5h', '8h', '>8h']
+const SLEEP_DURATION_PRESETS = ['<5h', '6h', '7h', '7.5h', '8h', '>8h']
+
+/** Parse stored sleep labels ("7.5h", "<5h") into hour/minute drafts. */
+function parseSleepDurationParts(raw: string): { hours: string; minutes: string } {
+  const value = String(raw ?? '').trim().toLowerCase()
+  if (!value) return { hours: '', minutes: '' }
+  if (value.startsWith('<')) return { hours: '4', minutes: '30' }
+  if (value.startsWith('>')) return { hours: '9', minutes: '0' }
+  const match = value.match(/^(\d+(?:[.,]\d+)?)\s*h?$/)
+  if (!match) return { hours: '', minutes: '' }
+  const total = Number.parseFloat(match[1].replace(',', '.'))
+  if (!Number.isFinite(total) || total < 0) return { hours: '', minutes: '' }
+  const hours = Math.floor(total)
+  const minutes = Math.round((total - hours) * 60)
+  return { hours: String(hours), minutes: String(minutes) }
+}
+
+function formatSleepDurationLabel(hours: number, minutes: number): string {
+  const safeHours = Math.max(0, Math.min(16, Math.floor(hours)))
+  const safeMinutes = Math.max(0, Math.min(59, Math.floor(minutes)))
+  if (safeHours === 0 && safeMinutes === 0) return ''
+  if (safeMinutes === 0) return `${safeHours}h`
+  if (safeMinutes === 30) return `${safeHours}.5h`
+  const total = Math.round((safeHours + safeMinutes / 60) * 10) / 10
+  return `${total}h`
+}
+
+function SoftDurationInput({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (next: string) => void
+}) {
+  const [hours, setHours] = useState(() => parseSleepDurationParts(value).hours)
+  const [minutes, setMinutes] = useState(() => parseSleepDurationParts(value).minutes)
+  const [confirmed, setConfirmed] = useState(() => Boolean(value))
+  const [pulse, setPulse] = useState(false)
+
+  useEffect(() => {
+    const parts = parseSleepDurationParts(value)
+    setHours(parts.hours)
+    setMinutes(parts.minutes)
+    setConfirmed(Boolean(value))
+  }, [value])
+
+  const confirm = () => {
+    const next = formatSleepDurationLabel(Number(hours) || 0, Number(minutes) || 0)
+    onChange(next)
+    setConfirmed(Boolean(next))
+    if (!next) return
+    setPulse(true)
+    window.setTimeout(() => setPulse(false), 420)
+  }
+
+  return (
+    <div
+      className={[
+        'soft-duration',
+        confirmed ? 'is-confirmed' : '',
+        pulse ? 'is-pulse' : '',
+      ].filter(Boolean).join(' ')}
+    >
+      <label className="soft-duration__field">
+        <input
+          inputMode="numeric"
+          pattern="[0-9]*"
+          value={hours}
+          placeholder="0"
+          aria-label="Stunden"
+          onChange={event => setHours(event.target.value.replace(/\D/g, '').slice(0, 2))}
+          onKeyDown={event => {
+            if (event.key === 'Enter') confirm()
+          }}
+        />
+        <span>Std.</span>
+      </label>
+      <label className="soft-duration__field">
+        <input
+          inputMode="numeric"
+          pattern="[0-9]*"
+          value={minutes}
+          placeholder="0"
+          aria-label="Minuten"
+          onChange={event => {
+            const digits = event.target.value.replace(/\D/g, '').slice(0, 2)
+            if (digits === '') {
+              setMinutes('')
+              return
+            }
+            setMinutes(String(Math.min(59, Number(digits))))
+          }}
+          onKeyDown={event => {
+            if (event.key === 'Enter') confirm()
+          }}
+        />
+        <span>Min.</span>
+      </label>
+      <button
+        type="button"
+        className="soft-duration__confirm"
+        onClick={confirm}
+        aria-label="Dauer bestätigen"
+      >
+        <Check size={20} strokeWidth={2.5} />
+      </button>
+    </div>
+  )
+}
 
 function loadSettings(): AppSettings {
   try {
@@ -2313,10 +2421,14 @@ function CheckinView({
             ))}
           </div>
 
-          {/* Sleep duration */}
+          {/* Sleep duration — CollectUI soft duration interaction */}
           <p className="field-hint" style={{ marginBottom: 8 }}>Dauer</p>
-          <div className="choice-grid" style={{ marginBottom: 16 }}>
-            {SLEEP_DURATION.map(opt => (
+          <SoftDurationInput
+            value={entry.sleepDuration}
+            onChange={next => onUpdate({ sleepDuration: next })}
+          />
+          <div className="choice-grid soft-duration-presets" style={{ marginTop: 10, marginBottom: 16 }}>
+            {SLEEP_DURATION_PRESETS.map(opt => (
               <button
                 type="button"
                 key={opt}
@@ -2778,6 +2890,36 @@ function DashboardPlusView({
     }))
   }
 
+  const addShoppingItem = () => {
+    onChange(current => ({
+      ...current,
+      shopping: {
+        ...current.shopping,
+        items: [
+          ...current.shopping.items,
+          {
+            id: crypto.randomUUID(),
+            icon: 'bag',
+            name: 'Neuer Artikel',
+            note: '',
+            price: 0,
+            done: false,
+          },
+        ],
+      },
+    }))
+  }
+
+  const removeShoppingItem = (index: number) => {
+    onChange(current => ({
+      ...current,
+      shopping: {
+        ...current.shopping,
+        items: current.shopping.items.filter((_, itemIndex) => itemIndex !== index),
+      },
+    }))
+  }
+
   const updateRecurringBill = (index: number, patch: Partial<DashboardPlusBill>) => {
     onChange(current => ({
       ...current,
@@ -3218,17 +3360,24 @@ function DashboardPlusView({
       {currentSection === 'shopping' && (
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
-          <SectionTitle eyebrow="Kaufliste" title="Offen" />
+          <SectionTitle
+            eyebrow="Kaufliste"
+            title="Offen"
+            action={<button type="button" className="small-button" onClick={addShoppingItem}><Plus size={14} /> Artikel</button>}
+          />
           <div className="shopping-list dashboard-plus-shopping-list">
+            {dashboard.shopping.items.length === 0 && (
+              <p className="dashboard-plus-empty-hint">Noch keine Artikel — füge den ersten hinzu.</p>
+            )}
             {dashboard.shopping.items.map((item, index) => {
               return (
-              <label className={item.done ? 'shop-item is-done' : 'shop-item'} key={item.id}>
+              <div className={item.done ? 'shop-item is-done' : 'shop-item'} key={item.id}>
                 <div className="shop-icon" aria-hidden="true">
                   <ShoppingItemIcon icon={item.icon} />
                 </div>
                 <div className="shop-body dashboard-plus-shop-body">
-                  <input className="dashboard-plus-input dashboard-plus-input--title" value={item.name} onChange={event => updateShoppingItem(index, { name: event.target.value })} />
-                  <input className="dashboard-plus-input" value={item.note} onChange={event => updateShoppingItem(index, { note: event.target.value })} />
+                  <input className="dashboard-plus-input dashboard-plus-input--title" value={item.name} onChange={event => updateShoppingItem(index, { name: event.target.value })} aria-label="Artikel" placeholder="Artikel" />
+                  <input className="dashboard-plus-input" value={item.note} onChange={event => updateShoppingItem(index, { note: event.target.value })} aria-label="Notiz oder Quelle" placeholder="Notiz / Quelle" />
                   {item.lowStock && (
                     <span className="status-chip status-chip--warn"><span className="status-chip__dot" />Bestand kritisch</span>
                   )}
@@ -3237,8 +3386,13 @@ function DashboardPlusView({
                   <input className="dashboard-plus-input dashboard-plus-input--money" type="number" min="0" step="0.01" value={item.price} onChange={event => updateShoppingItem(index, { price: Number(event.target.value) || 0 })} aria-label="Preis" />
                   <span className="shop-price">€</span>
                 </div>
-                <button type="button" className="shop-check" onClick={() => updateShoppingItem(index, { done: !item.done })} aria-pressed={item.done} />
-              </label>
+                <div className="dashboard-plus-shop-actions">
+                  <button type="button" className="shop-check" onClick={() => updateShoppingItem(index, { done: !item.done })} aria-pressed={item.done} aria-label={item.done ? 'Als offen markieren' : 'Als erledigt markieren'} />
+                  <button type="button" className="icon-button" onClick={() => removeShoppingItem(index)} aria-label="Artikel entfernen">
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </div>
               )
             })}
           </div>
