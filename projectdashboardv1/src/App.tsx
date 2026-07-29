@@ -69,6 +69,16 @@ import { buildWeekInsights } from './lib/insights'
 import { deriveLaborOverview, deriveLaborStats, smartLaborHints } from './lib/laborLive'
 import { hashFromView, navigateHash, viewFromHash } from './lib/routing'
 import { calculateScore, calculateStreakForHabit, getScoreBreakdown } from './lib/score'
+import { calculateHabitStrength, habitStrengthLabel } from './lib/habitStrength'
+import { calculateRecovery } from './lib/recovery'
+import {
+  filterHabitsForDate,
+  normalizeHabitSchedules,
+  toggleScheduleDay,
+  WEEKDAY_LABELS,
+  type HabitScheduleMap,
+} from './lib/habitSchedule'
+import { buildYearHeatmap, eveningPromptForDate } from './lib/heatmap'
 import type { HabitKey } from './types/DashboardEntry'
 import {
   applyBackupExtras,
@@ -97,6 +107,8 @@ type AppSettings = {
   proteinGoal: number
   calorieGoal: number
   activeHabits: string[]
+  /** Empty / missing = every day. Values 0=Mo … 6=So. */
+  habitSchedules: HabitScheduleMap
   dashboardPlusLayout: DashboardPlusLayout
 }
 
@@ -241,8 +253,15 @@ type DashboardPlusMedication = {
   notes: string
   effect: string
   sideEffects: string
+  /** @deprecated use takenDate — kept for seed/legacy */
   taken: boolean
+  /** YYYY-MM-DD when taken; cleared after midnight by comparing to today */
+  takenDate?: string
   color: string
+}
+
+function isMedicationTakenToday(item: DashboardPlusMedication, today: string): boolean {
+  return item.takenDate === today
 }
 
 type DashboardPlusGoalTimeframe = 'Jahr' | 'Quartal' | 'Monat' | 'Woche'
@@ -654,6 +673,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   proteinGoal: 150,
   calorieGoal: 3500,
   activeHabits: DEFAULT_ACTIVE_HABITS,
+  habitSchedules: {},
   dashboardPlusLayout: DEFAULT_DASHBOARD_PLUS_LAYOUT,
 }
 
@@ -829,6 +849,7 @@ function loadSettings(): AppSettings {
       proteinGoal: clampNumber(Number(stored.proteinGoal) || DEFAULT_SETTINGS.proteinGoal, 50, 400),
       calorieGoal: clampNumber(Number(stored.calorieGoal) || DEFAULT_SETTINGS.calorieGoal, 1000, 8000),
       activeHabits: Array.isArray(stored.activeHabits) ? stored.activeHabits : DEFAULT_ACTIVE_HABITS,
+      habitSchedules: normalizeHabitSchedules(stored.habitSchedules),
       dashboardPlusLayout: normalizeDashboardPlusLayout(stored.dashboardPlusLayout),
     }
   } catch {
@@ -896,6 +917,12 @@ function formatShortDate(key: string): string {
     day: '2-digit',
     month: '2-digit',
   }).format(fromDateKey(key))
+}
+
+function formatShortWeekday(key: string): string {
+  return new Intl.DateTimeFormat('de-DE', { weekday: 'short' })
+    .format(fromDateKey(key))
+    .replace('.', '')
 }
 
 function greeting(): string {
@@ -1087,14 +1114,18 @@ function App() {
   const anchors = entry.anchors ?? []
   const anchorsDone = entry.anchorsDone ?? []
   const completedAnchors = anchors.filter((_, index) => Boolean(anchorsDone[index])).length
+  const habitsDueToday = useMemo(
+    () => filterHabitsForDate(settings.activeHabits, selectedDate, settings.habitSchedules),
+    [settings.activeHabits, settings.habitSchedules, selectedDate],
+  )
   const dayPolicy = useMemo(
     () => getDayPolicy({
       energy: entry.energyLevel,
-      activeHabits: settings.activeHabits,
+      activeHabits: habitsDueToday,
       baseFocusMinutes: settings.focusMinutes,
       hour: selectedDate === today ? nowHour : 12,
     }),
-    [entry.energyLevel, settings.activeHabits, settings.focusMinutes, selectedDate, today, nowHour],
+    [entry.energyLevel, habitsDueToday, settings.focusMinutes, selectedDate, today, nowHour],
   )
 
   const streakByKey = useMemo(() => {
@@ -1171,8 +1202,19 @@ function App() {
   }
 
   const updateEntry = (patch: Partial<DashboardEntry>) => {
+    const before = loadXP()
     void saveEntry({ ...entry, ...patch }).then(ok => {
-      if (!ok) showToast('Speichern fehlgeschlagen — Speicher voll oder blockiert.')
+      if (!ok) {
+        showToast('Speichern fehlgeschlagen — Speicher voll oder blockiert.')
+        return
+      }
+      const after = loadXP()
+      const gained = after.totalXP - before.totalXP
+      if (after.level > before.level) {
+        showToast(`Level ${after.level} · +${gained} XP`)
+      } else if (gained > 0) {
+        showToast(`+${gained} XP`)
+      }
     })
   }
 
@@ -1322,19 +1364,16 @@ function App() {
         itemIndex === index ? true : Boolean(anchorsDone[itemIndex]),
       )
       setAnchors(anchors, nextDone)
-      // task focus block always counts as a focus session
       updateEntry({ focusDone: true } as Partial<DashboardEntry>)
     } else if (focusSession.routineKey) {
-      // only mark the specific routine key; only set focusDone if that IS the focus habit
       updateEntry({
         [focusSession.routineKey]: true,
-        ...(focusSession.routineKey === 'focusDone' ? {} : {}),
       } as Partial<DashboardEntry>)
     } else {
       updateEntry({ focusDone: true } as Partial<DashboardEntry>)
     }
     setFocusSession(null)
-    showToast('Fokusblock abgeschlossen.')
+    showToast('Fokusblock abgeschlossen — erledigt.')
   }
 
   const resolvedTheme = document.documentElement.dataset.theme ?? 'light'
@@ -1724,27 +1763,30 @@ function TodayView({
 
   const energy = entry.energyLevel
   const hour = date === today ? new Date().getHours() : 12
+  const habitsDue = filterHabitsForDate(settings.activeHabits, date, settings.habitSchedules)
   const policy = getDayPolicy({
     energy,
-    activeHabits: settings.activeHabits,
+    activeHabits: habitsDue,
     baseFocusMinutes: settings.focusMinutes,
     hour,
   })
   const dayMode = policy.mode
+  const recovery = calculateRecovery({ entry, energy })
 
-  const allRoutineItems = settings.activeHabits
+  const allRoutineItems = habitsDue
     .map(id => DAILY_HABITS.find(h => h.id === id))
     .filter((h): h is HabitDef => h !== undefined)
     .map(h => ({
       key: h.id,
-      label: h.label,
+      label: energy === 'low' ? `${h.label} · 2 Min` : h.label,
       icon: h.icon,
-      minutes: h.minutes,
+      minutes: energy === 'low' ? 2 : (h.minutes ?? 11),
       done: Boolean(entry[h.id as keyof DashboardEntry]),
     }))
 
   const routineItems = allRoutineItems.filter(item => policy.primaryHabitIds.includes(item.key))
   const deferredRoutineItems = allRoutineItems.filter(item => policy.deferredHabitIds.includes(item.key))
+  const skippedToday = settings.activeHabits.filter(id => !habitsDue.includes(id)).length
 
   const applyReorder = (fromIdx: number, toIdx: number) => {
     if (fromIdx === toIdx) return
@@ -1945,8 +1987,27 @@ function TodayView({
               Ändern
             </button>
           </div>
+          <div className="recovery-row" role="status">
+            <div>
+              <span className="eyebrow">Recovery</span>
+              <strong>{recovery.score}% · {recovery.label}</strong>
+              <p>{recovery.note}</p>
+            </div>
+            {recovery.suggestSoftMode && energy !== 'low' && (
+              <button
+                type="button"
+                className="small-button"
+                onClick={() => onUpdate({ energyLevel: 'low' })}
+              >
+                Soft-Mode
+              </button>
+            )}
+          </div>
           {policy.policyNote && (
             <p className="policy-note" role="status">{policy.policyNote}</p>
+          )}
+          {skippedToday > 0 && (
+            <p className="policy-note">{skippedToday} {plural(skippedToday, 'Habit', 'Habits')} heute laut Plan frei.</p>
           )}
         </div>
       )}
@@ -2590,11 +2651,12 @@ function CheckinView({
 
         <section className="card checkin-card checkin-card--wide">
           <SectionTitle eyebrow="Abschluss" title="Eine kurze Notiz" />
+          <p className="evening-prompt" role="note">{eveningPromptForDate(date)}</p>
           <textarea
             className="journal-field"
             value={journal}
             onChange={event => setJournal(event.target.value)}
-            placeholder="Was war heute wichtig? Was darf für morgen losgelassen werden?"
+            placeholder={eveningPromptForDate(date)}
             rows={6}
             maxLength={2000}
           />
@@ -2648,6 +2710,20 @@ function ProgressView({
 
   const todayEntry = entries.find(item => item.date === today) ?? createDefaultEntry(today)
   const breakdown = getScoreBreakdown(todayEntry, scoreGoals)
+  const heatmap = buildYearHeatmap(entries, today, e => calculateScore(e, scoreGoals))
+  const strengthStats = (['proteinShake', 'gratitudeDone', 'focusDone', 'breathingDone'] as const).map(key => {
+    const strength = calculateHabitStrength(entries, key, today)
+    const habit = DAILY_HABITS.find(item => item.id === key)
+    return {
+      key,
+      label: habit?.label ?? key,
+      icon: habit?.icon ?? Sparkles,
+      strength: strength.strength,
+      strengthLabel: habitStrengthLabel(strength.strength),
+      neverMissTwiceOk: strength.neverMissTwiceOk,
+      streak: calculateStreakForHabit(entries, key),
+    }
+  })
 
   return (
     <div className="view-stack">
@@ -2677,6 +2753,55 @@ function ProgressView({
         </div>
       </section>
 
+      <section className="card heatmap-card">
+        <SectionTitle eyebrow="Jahr" title="Beitrag ohne Streak-Druck" />
+        <p className="field-hint" style={{ marginTop: -8, marginBottom: 14 }}>
+          Helle Felder sind ruhige Tage — kein Reset, nur Rhythmus.
+        </p>
+        <div className="year-heatmap" role="img" aria-label="Jahres-Heatmap der Tages-Scores">
+          {heatmap.map(cell => (
+            <span
+              key={cell.date}
+              className={`year-heatmap__cell level-${cell.level}`}
+              title={`${cell.date}: ${cell.score}%`}
+            />
+          ))}
+        </div>
+        <div className="year-heatmap__legend">
+          <span>Weniger</span>
+          <span className="year-heatmap__cell level-0" />
+          <span className="year-heatmap__cell level-1" />
+          <span className="year-heatmap__cell level-2" />
+          <span className="year-heatmap__cell level-3" />
+          <span className="year-heatmap__cell level-4" />
+          <span>Mehr</span>
+        </div>
+      </section>
+
+      <section className="card">
+        <SectionTitle eyebrow="Stärke" title="Habit Strength" />
+        <div className="strength-list">
+          {strengthStats.map(item => {
+            const Icon = item.icon
+            return (
+              <div className="strength-row" key={item.key}>
+                <span className="soft-icon"><Icon size={16} /></span>
+                <div>
+                  <strong>{item.label}</strong>
+                  <span>
+                    {item.strengthLabel} · {item.strength}%
+                    {item.neverMissTwiceOk ? ' · Nie 2× hintereinander' : ''}
+                  </span>
+                </div>
+                <div className="mini-progress" aria-hidden="true">
+                  <span style={{ width: `${item.strength}%` }} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </section>
+
       <div className="progress-layout">
         <section className="card chart-card">
           <SectionTitle eyebrow="Woche" title="Tagesverlauf" />
@@ -2687,27 +2812,27 @@ function ProgressView({
                 <div className="bar-track">
                   <span style={{ height: `${Math.max(item.score, 4)}%` }} />
                 </div>
-                <strong>{new Intl.DateTimeFormat('de-DE', { weekday: 'short' }).format(fromDateKey(item.date)).replace('.', '')}</strong>
+                <strong>{formatShortWeekday(item.date)}</strong>
                 <small>{formatShortDate(item.date)}</small>
               </div>
             ))}
           </div>
         </section>
 
-        <section className="card rhythm-card">
-          <SectionTitle eyebrow="Gewohnheiten" title="Was trägt dich?" />
+        <section className="card">
+          <SectionTitle eyebrow="Rhythmus" title="Habit-Wochen" />
           <div className="rhythm-list">
-            {habitStats.map(stat => {
-              const Icon = stat.icon
+            {habitStats.map(item => {
+              const Icon = item.icon
               return (
-                <div className="rhythm-row" key={stat.label}>
-                  <span className="rhythm-row__icon"><Icon size={17} /></span>
+                <div className="rhythm-row" key={item.label}>
+                  <div className="rhythm-row__icon"><Icon size={18} /></div>
                   <div>
-                    <strong>{stat.label}</strong>
-                    <span>{stat.count} von 7 Tagen{stat.streak > 1 ? ` · ${stat.streak}er Serie` : ''}</span>
+                    <strong>{item.label}</strong>
+                    <span>{item.count}/7 diese Woche · Streak {item.streak}</span>
                   </div>
-                  <div className="radial-mini" style={{ '--value': `${(stat.count / 7) * 360}deg` } as CSSProperties}>
-                    <span>{stat.count}</span>
+                  <div className="radial-mini" style={{ '--value': `${(item.count / 7) * 360}deg` } as CSSProperties}>
+                    <span>{item.count}</span>
                   </div>
                 </div>
               )
@@ -3326,17 +3451,22 @@ function DashboardPlusView({
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Gesundheit" title="Medikamente" action={<button type="button" className="small-button" onClick={addMedication}><Plus size={14} /> Medikament</button>} />
           <div className="dashboard-plus-supplements">
-            {dashboard.medications.map((item, index) => (
+            {dashboard.medications.map((item, index) => {
+              const takenToday = isMedicationTakenToday(item, today)
+              return (
               <div className="supp-card dashboard-plus-supp-card" style={{ borderTopColor: item.color }} key={item.id}>
                 <div className="dashboard-plus-med-head">
                   <input className="dashboard-plus-input dashboard-plus-input--title" value={item.name} onChange={event => updateMedication(index, { name: event.target.value })} />
                   <button
                     type="button"
-                    className={item.taken ? 'status-chip status-chip--good' : 'status-chip'}
-                    onClick={() => updateMedication(index, { taken: !item.taken })}
-                    aria-pressed={item.taken}
+                    className={takenToday ? 'status-chip status-chip--good' : 'status-chip'}
+                    onClick={() => updateMedication(index, {
+                      takenDate: takenToday ? undefined : today,
+                      taken: !takenToday,
+                    })}
+                    aria-pressed={takenToday}
                   >
-                    <span className="status-chip__dot" />{item.taken ? 'Genommen' : 'Ausstehend'}
+                    <span className="status-chip__dot" />{takenToday ? 'Heute genommen' : 'Ausstehend'}
                   </button>
                 </div>
                 <div className="dashboard-plus-inline-row">
@@ -3350,7 +3480,8 @@ function DashboardPlusView({
                   <Trash2 size={15} /> Entfernen
                 </button>
               </div>
-            ))}
+              )
+            })}
           </div>
         </section>
       </div>
@@ -3670,6 +3801,7 @@ function FocusModal({
 }) {
   const [secondsLeft, setSecondsLeft] = useState(session.minutes * 60)
   const [running, setRunning] = useState(false)
+  const finishedRef = useRef(false)
   useModalBehavior(onClose)
 
   useEffect(() => {
@@ -3677,6 +3809,7 @@ function FocusModal({
     setSecondsLeft(session.minutes * 60)
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setRunning(false)
+    finishedRef.current = false
   }, [session.minutes])
 
   useEffect(() => {
@@ -3686,8 +3819,12 @@ function FocusModal({
         if (current <= 1) {
           window.clearInterval(timer)
           setRunning(false)
-          if ('Notification' in window && Notification.permission === 'granted') {
-            new Notification('Fokusblock beendet', { body: session.title })
+          if (!finishedRef.current) {
+            finishedRef.current = true
+            if ('Notification' in window && Notification.permission === 'granted') {
+              new Notification('Fokusblock beendet', { body: session.title })
+            }
+            window.setTimeout(() => onFinish(), 0)
           }
           return 0
         }
@@ -3695,7 +3832,7 @@ function FocusModal({
       })
     }, 1000)
     return () => window.clearInterval(timer)
-  }, [running, session.title])
+  }, [running, session.title, onFinish])
 
   const minutes = Math.floor(secondsLeft / 60)
   const seconds = secondsLeft % 60
@@ -3789,26 +3926,49 @@ function SettingsModal({
         <div className="settings-section">
           <h3>Tägliche Gewohnheiten</h3>
           <p style={{ margin: '-6px 0 12px', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-            Aktive Habits erscheinen täglich in der Routine-Karte.
+            Aktive Habits erscheinen in der Routine. Wochentage steuern, an welchen Tagen sie fällig sind (leer = jeden Tag).
           </p>
-          <div className="choice-grid">
+          <div className="habit-settings-list">
             {DAILY_HABITS.map(h => {
               const active = settings.activeHabits.includes(h.id)
+              const schedule = settings.habitSchedules[h.id]
               return (
-                <button
-                  type="button"
-                  key={h.id}
-                  className={active ? 'choice-button is-active' : 'choice-button'}
-                  onClick={() => onChange({
-                    ...settings,
-                    activeHabits: active
-                      ? settings.activeHabits.filter(id => id !== h.id)
-                      : [...settings.activeHabits, h.id],
-                  })}
-                  aria-pressed={active}
-                >
-                  {h.label}
-                </button>
+                <div className="habit-settings-row" key={h.id}>
+                  <button
+                    type="button"
+                    className={active ? 'choice-button is-active' : 'choice-button'}
+                    onClick={() => onChange({
+                      ...settings,
+                      activeHabits: active
+                        ? settings.activeHabits.filter(id => id !== h.id)
+                        : [...settings.activeHabits, h.id],
+                    })}
+                    aria-pressed={active}
+                  >
+                    {h.label}
+                  </button>
+                  {active && (
+                    <div className="weekday-chip-row" role="group" aria-label={`${h.label} Wochentage`}>
+                      {WEEKDAY_LABELS.map(day => {
+                        const selected = !schedule || schedule.includes(day.value)
+                        return (
+                          <button
+                            type="button"
+                            key={day.value}
+                            className={selected ? 'weekday-chip is-active' : 'weekday-chip'}
+                            onClick={() => onChange({
+                              ...settings,
+                              habitSchedules: toggleScheduleDay(settings.habitSchedules, h.id, day.value),
+                            })}
+                            aria-pressed={selected}
+                          >
+                            {day.short}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
               )
             })}
           </div>

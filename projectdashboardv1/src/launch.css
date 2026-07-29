@@ -1087,6 +1087,132 @@ button:disabled {
   line-height: 1.45;
 }
 
+.recovery-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--surface-soft);
+}
+
+.recovery-row .eyebrow {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.recovery-row strong {
+  display: block;
+  font-size: 14px;
+}
+
+.recovery-row p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.evening-prompt {
+  margin: -6px 0 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 560;
+  line-height: 1.45;
+}
+
+.year-heatmap {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(7, 10px);
+  grid-auto-columns: 10px;
+  gap: 3px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.year-heatmap__cell {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--track);
+}
+
+.year-heatmap__cell.level-1 { background: color-mix(in srgb, var(--sage) 28%, var(--track)); }
+.year-heatmap__cell.level-2 { background: color-mix(in srgb, var(--sage) 48%, transparent); }
+.year-heatmap__cell.level-3 { background: color-mix(in srgb, var(--accent) 55%, var(--sage)); }
+.year-heatmap__cell.level-4 { background: var(--accent); }
+
+.year-heatmap__legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 10px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.strength-list {
+  display: grid;
+  gap: 10px;
+}
+
+.strength-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 72px;
+  align-items: center;
+  gap: 10px;
+}
+
+.strength-row strong {
+  display: block;
+  font-size: 13px;
+}
+
+.strength-row span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.habit-settings-list {
+  display: grid;
+  gap: 12px;
+}
+
+.habit-settings-row {
+  display: grid;
+  gap: 8px;
+}
+
+.weekday-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.weekday-chip {
+  min-width: 34px;
+  min-height: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.weekday-chip.is-active {
+  border-color: transparent;
+  background: var(--text);
+  color: var(--surface-solid);
+}
+
 .deferred-routine {
   margin-top: 18px;
   padding-top: 16px;
