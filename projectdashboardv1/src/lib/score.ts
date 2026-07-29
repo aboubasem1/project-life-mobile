@@ -2,16 +2,22 @@ import type { DashboardEntry, HabitKey } from '../types/DashboardEntry'
 
 export type ScoreGoals = {
   proteinGoal?: number
+  /** When set, only these habit keys count toward the score. */
+  activeHabits?: string[]
 }
 
 const SETTINGS_KEY = 'life-os-v1-settings'
 
 export function readScoreGoals(): ScoreGoals {
   try {
-    const raw = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') as { proteinGoal?: number }
+    const raw = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') as {
+      proteinGoal?: number
+      activeHabits?: string[]
+    }
     const proteinGoal = Number(raw.proteinGoal)
     return {
       proteinGoal: Number.isFinite(proteinGoal) && proteinGoal > 0 ? proteinGoal : 150,
+      activeHabits: Array.isArray(raw.activeHabits) ? raw.activeHabits.map(String) : undefined,
     }
   } catch {
     return { proteinGoal: 150 }
@@ -33,6 +39,15 @@ const HABIT_SCORES: { key: keyof DashboardEntry; points: number; label: string }
   { key: 'journalDone',    points: 8, label: 'Journal'        },
   { key: 'familyTimeDone', points: 5, label: 'Familienzeit'   },
 ]
+
+function isHabitActive(key: string, activeHabits?: string[]): boolean {
+  if (!activeHabits || activeHabits.length === 0) return true
+  return activeHabits.includes(key)
+}
+
+function activeHabitScores(goals: ScoreGoals) {
+  return HABIT_SCORES.filter(habit => isHabitActive(String(habit.key), goals.activeHabits))
+}
 
 function numericScores(goals: ScoreGoals) {
   const proteinGoal = goals.proteinGoal ?? 150
@@ -57,7 +72,7 @@ const SLEEP_SCORES: Record<string, number> = {
 
 export function calculateScore(entry: DashboardEntry, goals: ScoreGoals = readScoreGoals()): number {
   let score = 0
-  for (const habit of HABIT_SCORES) {
+  for (const habit of activeHabitScores(goals)) {
     if (entry[habit.key]) score += habit.points
   }
   for (const numeric of numericScores(goals)) {
@@ -79,6 +94,7 @@ export function getScoreBreakdown(
   entry: DashboardEntry,
   goals: ScoreGoals = readScoreGoals(),
 ): ScoreBreakdown[] {
+  const habits = activeHabitScores(goals)
   const numerics = numericScores(goals)
 
   const section = (
@@ -88,7 +104,7 @@ export function getScoreBreakdown(
     extraItems: { label: string; achieved: boolean; points: number; earned: number }[] = [],
   ): ScoreBreakdown => {
     const items = [
-      ...HABIT_SCORES.filter(habit => habitKeys.includes(habit.key)).map(habit => ({
+      ...habits.filter(habit => habitKeys.includes(habit.key)).map(habit => ({
         label: habit.label,
         achieved: !!entry[habit.key],
         points: habit.points,

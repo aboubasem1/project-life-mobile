@@ -10,8 +10,17 @@ export interface UseEntriesReturn {
   entries: DashboardEntry[]
   syncStatus: SyncStatus
   isOnline: boolean
-  saveEntry: (entry: DashboardEntry) => Promise<void>
+  /** Returns false when localStorage write failed. */
+  saveEntry: (entry: DashboardEntry) => Promise<boolean>
   reloadAll: () => Promise<void>
+}
+
+function todayKeyLocal(): string {
+  const d = new Date()
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 export function useEntries(): UseEntriesReturn {
@@ -24,7 +33,7 @@ export function useEntries(): UseEntriesReturn {
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true)
-      setSyncStatus('idle')
+      setSyncStatus(current => (current === 'offline' ? 'idle' : current))
     }
 
     const handleOffline = () => {
@@ -45,12 +54,22 @@ export function useEntries(): UseEntriesReturn {
     setEntries(loadAllEntries())
   }, [])
 
-  const saveEntry = useCallback(async (entry: DashboardEntry) => {
+  const saveEntry = useCallback(async (entry: DashboardEntry): Promise<boolean> => {
     const scored: DashboardEntry = { ...entry, dailyScore: calculateScore(entry) }
 
-    // Write to localStorage
-    const updated = upsertEntry(scored)
-    awardDailyXP(scored.dailyScore, scored.date)
+    const { entries: updated, ok } = upsertEntry(scored)
+    if (!ok) {
+      setSyncStatus('error')
+      if (resetTimer.current !== null) clearTimeout(resetTimer.current)
+      resetTimer.current = window.setTimeout(
+        () => setSyncStatus(current => (current === 'offline' ? 'offline' : 'idle')),
+        4000,
+      )
+      return false
+    }
+
+    // XP: today drives streak; past days only top up without rewinding streak
+    awardDailyXP(scored.dailyScore, scored.date, todayKeyLocal())
 
     // Per-day backup slot (keeps last entries individually recoverable)
     try {
@@ -60,7 +79,11 @@ export function useEntries(): UseEntriesReturn {
     setEntries(updated)
     setSyncStatus(isOnline ? 'synced' : 'offline')
     if (resetTimer.current !== null) clearTimeout(resetTimer.current)
-    resetTimer.current = window.setTimeout(() => setSyncStatus(current => (current === 'offline' ? 'offline' : 'idle')), 2000)
+    resetTimer.current = window.setTimeout(
+      () => setSyncStatus(current => (current === 'offline' ? 'offline' : 'idle')),
+      2000,
+    )
+    return true
   }, [isOnline])
 
   return { entries, syncStatus, isOnline, saveEntry, reloadAll }

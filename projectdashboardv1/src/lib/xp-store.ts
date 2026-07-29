@@ -54,39 +54,62 @@ export function saveXP(store: XPStore): void {
   }
 }
 
-/** Award XP for a daily score. Idempotent per date — safe to call on every save. */
-export function awardDailyXP(score: number, date: string): XPStore {
-  const store = loadXP()
+function todayKeyLocal(): string {
+  const d = new Date()
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
-  // Only award once per day
-  if (store.lastScoreDate === date) {
-    // Recalculate in case score improved — never subtract
-    const newXP = scoreToXP(score)
-    // To handle same-day updates: store per-day XP awarded
-    const perDayKey = `lifeos-xp-day-${date}`
-    const prevAwarded = Number(safeGetItem(perDayKey) ?? '0')
-    const diff = newXP - prevAwarded
+/**
+ * Award XP for a daily score.
+ * Only mutates streak / lastScoreDate when `date` is today — editing past
+ * days never rewinds the live streak. Historical days can still top-up
+ * per-day XP if the score improved (never subtract).
+ */
+export function awardDailyXP(score: number, date: string, today = todayKeyLocal()): XPStore {
+  const store = loadXP()
+  const earned = scoreToXP(score)
+  const perDayKey = `lifeos-xp-day-${date}`
+  const prevAwarded = Number(safeGetItem(perDayKey) ?? '0')
+  const diff = earned - prevAwarded
+
+  // Editing a past / future day: only top up XP, never touch streak clock
+  if (date !== today) {
     if (diff <= 0) return store
-    safeSetItem(perDayKey, String(newXP))
+    safeSetItem(perDayKey, String(earned))
+    const totalXP = store.totalXP + diff
+    const updated: XPStore = {
+      ...store,
+      totalXP,
+      level: Math.floor(totalXP / XP_PER_LEVEL) + 1,
+      xp: totalXP % XP_PER_LEVEL,
+    }
+    saveXP(updated)
+    return updated
+  }
+
+  // Today — same-day improvement
+  if (store.lastScoreDate === date) {
+    if (diff <= 0) return store
+    safeSetItem(perDayKey, String(earned))
     return applyXP(store, diff, date)
   }
 
-  // New day
-  const earned = scoreToXP(score)
-  safeSetItem(`lifeos-xp-day-${date}`, String(earned))
+  // Today — first award of the day (or first after a gap)
+  safeSetItem(perDayKey, String(earned))
 
-  // Streak: consecutive days with score >= 50
   const yesterday = offsetDate(date, -1)
   const streak = store.lastScoreDate === yesterday && score >= 50
     ? store.streakDays + 1
     : score >= 50 ? 1 : 0
 
-  const updated: XPStore = applyXP(
+  return applyXP(
     { ...store, streakDays: streak },
-    earned,
+    Math.max(0, earned),
     date,
   )
-  return updated
 }
 
 function applyXP(store: XPStore, amount: number, date: string): XPStore {
@@ -135,9 +158,12 @@ function defaultXP(): XPStore {
 }
 
 function offsetDate(date: string, days: number): string {
-  const d = new Date(date + 'T00:00:00')
+  const d = new Date(date + 'T12:00:00')
   d.setDate(d.getDate() + days)
-  return d.toISOString().split('T')[0]
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 function safeGetItem(key: string): string | null {

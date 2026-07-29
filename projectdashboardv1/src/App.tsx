@@ -696,6 +696,7 @@ const ENERGY_OPTIONS: Array<{
 ]
 
 function storageStatusLabel(syncStatus: string, isOnline: boolean): string {
+  if (syncStatus === 'error') return 'Speichern fehlgeschlagen'
   if (!isOnline || syncStatus === 'offline') return 'Offline · lokal'
   if (syncStatus === 'syncing') return 'Speichert lokal …'
   if (syncStatus === 'synced') return 'Lokal gespeichert'
@@ -1078,7 +1079,10 @@ function App() {
     [entries, selectedDate],
   )
 
-  const scoreGoals = useMemo(() => ({ proteinGoal: settings.proteinGoal }), [settings.proteinGoal])
+  const scoreGoals = useMemo(
+    () => ({ proteinGoal: settings.proteinGoal, activeHabits: settings.activeHabits }),
+    [settings.proteinGoal, settings.activeHabits],
+  )
   const score = clampNumber(calculateScore(entry, scoreGoals), 0, 100)
   const anchors = entry.anchors ?? []
   const anchorsDone = entry.anchorsDone ?? []
@@ -1122,15 +1126,6 @@ function App() {
     [entries, today, scoreGoals],
   )
 
-  const updateEntry = (patch: Partial<DashboardEntry>) => {
-    void saveEntry({ ...entry, ...patch })
-  }
-
-  const saveEntryForDate = async (date: string, patch: Partial<DashboardEntry>) => {
-    const base = entries.find(item => item.date === date) ?? createDefaultEntry(date)
-    await saveEntry({ ...base, ...patch })
-  }
-
   useEffect(() => {
     const onHash = () => setView(viewFromHash())
     window.addEventListener('hashchange', onHash)
@@ -1167,12 +1162,25 @@ function App() {
 
   useEffect(() => {
     if (!toast) return
-    const timer = window.setTimeout(() => setToast(null), 4200)
+    const timer = window.setTimeout(() => setToast(null), toast.actionLabel ? 6000 : 4200)
     return () => window.clearTimeout(timer)
   }, [toast])
 
   const showToast = (message: string, actionLabel?: string, onAction?: () => void) => {
     setToast({ message, actionLabel, onAction })
+  }
+
+  const updateEntry = (patch: Partial<DashboardEntry>) => {
+    void saveEntry({ ...entry, ...patch }).then(ok => {
+      if (!ok) showToast('Speichern fehlgeschlagen — Speicher voll oder blockiert.')
+    })
+  }
+
+  const saveEntryForDate = async (date: string, patch: Partial<DashboardEntry>) => {
+    const base = entries.find(item => item.date === date) ?? createDefaultEntry(date)
+    const ok = await saveEntry({ ...base, ...patch })
+    if (!ok) showToast('Speichern fehlgeschlagen — Speicher voll oder blockiert.')
+    return ok
   }
 
   const handleExport = () => {
@@ -1516,7 +1524,7 @@ function App() {
           )}
 
           {view === 'progress' && (
-            <ProgressView entries={entries} today={today} />
+            <ProgressView entries={entries} today={today} scoreGoals={scoreGoals} />
           )}
 
           {view === 'dashboardPlus' && (
@@ -2492,16 +2500,27 @@ function CheckinView({
                   title={isMorning ? 'Morgen-Protokoll' : 'Körper & Fokus'}
                 />
                 {isMorning ? (
-                  <NumberField
-                    label="Gewicht"
-                    value={entry.weightKg}
-                    unit="kg"
-                    step={0.1}
-                    min={35}
-                    max={200}
-                    placeholder="z. B. 65,0"
-                    onChange={weightKg => onUpdate({ weightKg })}
-                  />
+                  <div className="form-grid">
+                    <NumberField
+                      label="Gewicht"
+                      value={entry.weightKg}
+                      unit="kg"
+                      step={0.1}
+                      min={35}
+                      max={200}
+                      placeholder="z. B. 65,0"
+                      onChange={weightKg => onUpdate({ weightKg })}
+                    />
+                    <NumberField
+                      label="Meditation"
+                      value={entry.meditationMinutes}
+                      unit="Min."
+                      step={1}
+                      max={180}
+                      placeholder="z. B. 10"
+                      onChange={meditationMinutes => onUpdate({ meditationMinutes })}
+                    />
+                  </div>
                 ) : (
                   <div className="form-grid">
                     <NumberField
@@ -2537,12 +2556,30 @@ function CheckinView({
                       onChange={weightKg => onUpdate({ weightKg })}
                     />
                     <NumberField
+                      label="Wasser"
+                      value={entry.waterLiters}
+                      unit="L"
+                      step={0.1}
+                      max={10}
+                      placeholder="z. B. 2,5"
+                      onChange={waterLiters => onUpdate({ waterLiters })}
+                    />
+                    <NumberField
                       label="Deep Work"
                       value={entry.deepWorkHours}
                       unit="Std."
                       step={0.25}
                       max={16}
                       onChange={deepWorkHours => onUpdate({ deepWorkHours })}
+                    />
+                    <NumberField
+                      label="Meditation"
+                      value={entry.meditationMinutes}
+                      unit="Min."
+                      step={1}
+                      max={180}
+                      placeholder="z. B. 10"
+                      onChange={meditationMinutes => onUpdate({ meditationMinutes })}
                     />
                   </div>
                 )}
@@ -2573,10 +2610,18 @@ function CheckinView({
   )
 }
 
-function ProgressView({ entries, today }: { entries: DashboardEntry[]; today: string }) {
+function ProgressView({
+  entries,
+  today,
+  scoreGoals,
+}: {
+  entries: DashboardEntry[]
+  today: string
+  scoreGoals: { proteinGoal: number; activeHabits: string[] }
+}) {
   const lastSeven = Array.from({ length: 7 }, (_, index) => addDays(today, index - 6)).map(date => {
     const entry = entries.find(item => item.date === date) ?? createDefaultEntry(date)
-    return { date, score: clampNumber(calculateScore(entry), 0, 100), entry }
+    return { date, score: clampNumber(calculateScore(entry, scoreGoals), 0, 100), entry }
   })
   const average = Math.round(lastSeven.reduce((sum, item) => sum + item.score, 0) / lastSeven.length)
   const best = Math.max(...lastSeven.map(item => item.score))
@@ -2602,7 +2647,7 @@ function ProgressView({ entries, today }: { entries: DashboardEntry[]; today: st
   ]
 
   const todayEntry = entries.find(item => item.date === today) ?? createDefaultEntry(today)
-  const breakdown = getScoreBreakdown(todayEntry)
+  const breakdown = getScoreBreakdown(todayEntry, scoreGoals)
 
   return (
     <div className="view-stack">

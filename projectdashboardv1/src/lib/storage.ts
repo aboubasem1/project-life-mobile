@@ -45,14 +45,19 @@ export function saveAllEntries(entries: DashboardEntry[]): boolean {
   return safeSetItem(ENTRIES_KEY, JSON.stringify(entries))
 }
 
-export function upsertEntry(entry: DashboardEntry): DashboardEntry[] {
+export type UpsertResult = {
+  entries: DashboardEntry[]
+  ok: boolean
+}
+
+export function upsertEntry(entry: DashboardEntry): UpsertResult {
   const all = loadAllEntries()
   const scored: DashboardEntry = { ...entry, dailyScore: calculateScore(entry) }
   const idx = all.findIndex(e => e.date === scored.date)
   if (idx >= 0) all[idx] = scored
   else all.push(scored)
-  saveAllEntries(all)
-  return all
+  const ok = saveAllEntries(all)
+  return { entries: all, ok }
 }
 
 export function getLastBackupAt(): string | null {
@@ -182,8 +187,14 @@ export { SETTINGS_KEY, DASHBOARD_PLUS_KEY, XP_KEY }
 
 // ─── Legacy schema migration ─────────────────────────────────────────────────
 function migrateLegacy(raw: Record<string, unknown>): DashboardEntry {
+  const dreamQuality = raw.dreamQuality === 'gut' || raw.dreamQuality === 'schlecht'
+    ? raw.dreamQuality
+    : undefined
+
   return {
+    id: typeof raw.id === 'string' ? raw.id : undefined,
     date: String(raw.date ?? ''),
+    userId: typeof raw.userId === 'string' ? raw.userId : undefined,
     mood: String(raw.mood ?? ''),
     sleepQuality: String(raw.sleepQuality ?? ''),
     sleepDuration: String(raw.sleepDuration ?? ''),
@@ -215,6 +226,8 @@ function migrateLegacy(raw: Record<string, unknown>): DashboardEntry {
       : undefined,
     anchors: Array.isArray(raw.anchors) ? raw.anchors.map(String) : undefined,
     anchorsDone: Array.isArray(raw.anchorsDone) ? raw.anchorsDone.map(Boolean) : undefined,
+    dreamed: typeof raw.dreamed === 'boolean' ? raw.dreamed : undefined,
+    dreamQuality,
   }
 }
 
