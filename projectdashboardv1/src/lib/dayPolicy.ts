@@ -42,8 +42,17 @@ export type RankableHabit = {
 }
 
 export type RankedStep =
-  | { kind: 'anchor'; index: number; title: string; score: number; streakHint?: string }
-  | { kind: 'habit'; key: string; title: string; minutes?: number; score: number; streakHint?: string }
+  | { kind: 'anchor'; index: number; title: string; score: number; streakHint?: string; stackHint?: string }
+  | { kind: 'habit'; key: string; title: string; minutes?: number; score: number; streakHint?: string; stackHint?: string }
+
+/** After completing A, nudge B (Atomic Habits stacking). */
+export const HABIT_STACKS: Record<string, string> = {
+  breathingDone: 'proteinShake',
+  proteinShake: 'coldShower',
+  coldShower: 'pushupsDone',
+  gratitudeDone: 'journalDone',
+  focusDone: 'winnerModeDone',
+}
 
 function intensityOf(habitId: string): HabitIntensity {
   return HABIT_INTENSITY[habitId] ?? 'steady'
@@ -176,6 +185,7 @@ export function rankNextSteps(input: {
     let score = 40
     const streak = streaks[habit.key] ?? 0
     let streakHint: string | undefined
+    let stackHint: string | undefined
 
     if (energy === 'low') {
       if (intensity === 'recovery') score += 28
@@ -211,6 +221,17 @@ export function rankNextSteps(input: {
       streakHint = `Streak ${streak} retten`
     }
 
+    // Habit stacking: boost B if A is already done today
+    for (const [prev, next] of Object.entries(HABIT_STACKS)) {
+      if (next !== habit.key) continue
+      const prevDone = input.habits.find(item => item.key === prev)?.done
+      if (prevDone) {
+        score += 14
+        const prevLabel = input.habits.find(item => item.key === prev)?.label ?? prev
+        stackHint = `Stack nach ${prevLabel}`
+      }
+    }
+
     ranked.push({
       kind: 'habit',
       key: habit.key,
@@ -218,6 +239,7 @@ export function rankNextSteps(input: {
       minutes: habit.minutes,
       score,
       streakHint,
+      stackHint,
     })
   }
 

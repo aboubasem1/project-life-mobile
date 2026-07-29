@@ -58,25 +58,27 @@ Aufwand — wir arbeiten sie nacheinander ab und haken hier ab, was fertig ist.
 
 **Aufwand: M · ca. 1 Tag.**
 
-- [ ] Gewichtsverlauf mit Trendlinie, BMI, Wochen-/Monatsänderung aus
+- [x] Gewichtsverlauf mit Trendlinie, BMI, Wochen-/Monatsänderung aus
       vorhandenen Tageseinträgen berechnen
-- [ ] Ernährung: Fett, Kohlenhydrate, Ballaststoffe ergänzen, als
+- [x] Ernährung: Fett, Kohlenhydrate, Ballaststoffe ergänzen, als
       Fortschrittsringe statt Zahlen
-- [ ] Schlaf: echte Bettzeit/Aufstehzeit statt Text-Buckets, Wochendurchschnitt
-- [ ] Bewegung: Schritte & Trainings-Log statt reiner Ja/Nein-Checkboxen
-- [ ] Dashboard+ Finanzen & Stats an echte Daten anschließen statt manuell
+- [x] Schlaf: echte Bettzeit/Aufstehzeit statt Text-Buckets, Wochendurchschnitt
+- [x] Bewegung: Schritte & Trainings-Log statt reiner Ja/Nein-Checkboxen
+      (Schritte im Check-in; Trainings-Checkboxen bleiben ergänzend)
+- [x] Dashboard+ Finanzen & Stats an echte Daten anschließen statt manuell
       editierbarer Mock-Werte
+      (KPIs live aus Einträgen/Rechnungen; Projekt-% bleibt Labor-Notiz)
 
 ## Phase 4 — Struktur & Bedienung
 
 **Aufwand: L · mehrere Tage.**
 
-- [ ] Swipe-Gesten (links = erledigt, rechts = verschieben) auf Aufgabenlisten
-- [ ] Long-Press-Kontextmenü (bearbeiten/verschieben/löschen/Priorität)
-- [ ] Restliche Listentypen als ein generisches „Listen“-System (Packliste,
+- [x] Swipe-Gesten (links = erledigt, rechts = verschieben) auf Aufgabenlisten
+- [x] Long-Press-Kontextmenü (bearbeiten/verschieben/löschen/Priorität)
+- [x] Restliche Listentypen als ein generisches „Listen“-System (Packliste,
       Wunschliste, Bücher, Rezepte, …) statt Einzelbauten
-- [ ] Einfache Wochen-/Monats-Kalenderansicht (kein Time Blocking in dieser Phase)
-- [ ] Suche über Aufgaben + Listen (reiner Textfilter, keine KI nötig)
+- [x] Einfache Wochen-/Monats-Kalenderansicht (kein Time Blocking in dieser Phase)
+- [x] Suche über Aufgaben + Listen (reiner Textfilter, keine KI nötig)
 
 ## Phase 5 — KI-Features (blockiert bis Grundsatzentscheidung)
 

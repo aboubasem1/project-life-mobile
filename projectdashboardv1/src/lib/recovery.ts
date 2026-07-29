@@ -1,5 +1,6 @@
 import type { DashboardEntry } from '../types/DashboardEntry'
 import type { EnergyLevel } from './dayPolicy'
+import { sleepHoursForEntry } from './healthMetrics'
 
 /** Local recovery / readiness score from sleep + energy (Oura-inspired, no wearables). */
 
@@ -8,21 +9,6 @@ export type RecoveryResult = {
   label: string
   suggestSoftMode: boolean
   note: string
-}
-
-function parseSleepHours(raw: string): number | null {
-  const value = String(raw).trim().toLowerCase()
-  if (!value) return null
-  if (value.startsWith('<')) {
-    const n = Number.parseFloat(value.slice(1).replace(',', '.').replace('h', ''))
-    return Number.isFinite(n) ? Math.max(0, n - 0.5) : null
-  }
-  if (value.startsWith('>')) {
-    const n = Number.parseFloat(value.slice(1).replace(',', '.').replace('h', ''))
-    return Number.isFinite(n) ? n + 0.5 : null
-  }
-  const n = Number.parseFloat(value.replace(',', '.').replace('h', ''))
-  return Number.isFinite(n) && n > 0 ? n : null
 }
 
 const SLEEP_QUALITY_POINTS: Record<string, number> = {
@@ -43,7 +29,7 @@ export function calculateRecovery(input: {
   energy?: EnergyLevel
 }): RecoveryResult {
   const quality = SLEEP_QUALITY_POINTS[input.entry.sleepQuality] ?? 25
-  const hours = parseSleepHours(input.entry.sleepDuration)
+  const hours = sleepHoursForEntry(input.entry)
   let durationPoints = 25
   if (hours !== null) {
     if (hours < 5.5) durationPoints = 10

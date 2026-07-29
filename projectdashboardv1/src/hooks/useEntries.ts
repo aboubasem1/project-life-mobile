@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import type { DashboardEntry } from '../types/DashboardEntry'
-import { loadAllEntries, upsertEntry } from '../lib/storage'
+import { ENTRIES_KEY, loadAllEntries, upsertEntry } from '../lib/storage'
 import { calculateScore } from '../lib/score'
 import { awardDailyXP } from '../lib/xp-store'
 
@@ -24,7 +24,6 @@ function todayKeyLocal(): string {
 }
 
 export function useEntries(): UseEntriesReturn {
-  // Synchronous init — instant render, no loading state needed
   const [entries, setEntries]       = useState<DashboardEntry[]>(() => loadAllEntries())
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
   const [isOnline, setIsOnline] = useState(() => navigator.onLine)
@@ -49,7 +48,17 @@ export function useEntries(): UseEntriesReturn {
     }
   }, [])
 
-  // Reload from localStorage (no network call)
+  // Multi-tab: reload when another tab writes entries or XP
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === ENTRIES_KEY || event.key === null) {
+        setEntries(loadAllEntries())
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
   const reloadAll = useCallback(async () => {
     setEntries(loadAllEntries())
   }, [])
@@ -68,10 +77,8 @@ export function useEntries(): UseEntriesReturn {
       return false
     }
 
-    // XP: today drives streak; past days only top up without rewinding streak
     awardDailyXP(scored.dailyScore, scored.date, todayKeyLocal())
 
-    // Per-day backup slot (keeps last entries individually recoverable)
     try {
       localStorage.setItem('project-life-backup-' + scored.date, JSON.stringify(scored))
     } catch { /* storage quota — ignore */ }

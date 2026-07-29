@@ -9,6 +9,8 @@ const DASHBOARD_PLUS_KEY = 'life-os-v1-dashboard-plus'
 const LAST_BACKUP_KEY = 'life-os-v1-last-backup-at'
 export const BACKUP_VERSION = 2
 
+export { ENTRIES_KEY }
+
 export type LifeOsBackupBundle = {
   version: number
   exportedAt: string
@@ -139,6 +141,9 @@ export function importBackupFile(file: File): Promise<ImportResult> {
           return
         }
         if (data && typeof data === 'object' && Array.isArray(data.entries)) {
+          if (typeof data.version === 'number' && data.version > BACKUP_VERSION) {
+            throw new Error(`Backup-Version ${data.version} ist neuer als diese App (v${BACKUP_VERSION}).`)
+          }
           const entries = data.entries.map((item: Record<string, unknown>) => migrateLegacy(item))
           resolve({
             entries,
@@ -212,6 +217,9 @@ function migrateLegacy(raw: Record<string, unknown>): DashboardEntry {
     caloriesReached: Boolean(raw.caloriesReached),
     proteinGrams: Number(raw.proteinGrams) || 0,
     calories: Number(raw.calories) || 0,
+    fatGrams: Number(raw.fatGrams) || 0,
+    carbsGrams: Number(raw.carbsGrams) || 0,
+    fiberGrams: Number(raw.fiberGrams) || 0,
     tasksDone: Number(raw.tasksDone) || 0,
     journalDone: Boolean(raw.journalDone),
     journalText: String(raw.journalText ?? ''),
@@ -219,6 +227,7 @@ function migrateLegacy(raw: Record<string, unknown>): DashboardEntry {
     weightKg: Number(raw.weightKg) || 0,
     waterLiters: Number(raw.waterLiters) || 0,
     deepWorkHours: Number(raw.deepWorkHours) || 0,
+    steps: Number(raw.steps) || 0,
     dailyScore: Number(raw.dailyScore) || 0,
     breathingDone: Boolean(raw.breathingDone),
     energyLevel: raw.energyLevel === 'low' || raw.energyLevel === 'okay' || raw.energyLevel === 'high'
@@ -228,6 +237,8 @@ function migrateLegacy(raw: Record<string, unknown>): DashboardEntry {
     anchorsDone: Array.isArray(raw.anchorsDone) ? raw.anchorsDone.map(Boolean) : undefined,
     dreamed: typeof raw.dreamed === 'boolean' ? raw.dreamed : undefined,
     dreamQuality,
+    bedTime: typeof raw.bedTime === 'string' ? raw.bedTime : undefined,
+    wakeTime: typeof raw.wakeTime === 'string' ? raw.wakeTime : undefined,
   }
 }
 

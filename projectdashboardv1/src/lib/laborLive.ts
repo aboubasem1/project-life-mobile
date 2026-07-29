@@ -1,5 +1,6 @@
 import type { DashboardEntry } from '../types/DashboardEntry'
 import { calculateScore, type ScoreGoals } from './score'
+import { averageSleepHours, buildWeightInsights } from './healthMetrics'
 
 export type LaborLiveOverview = {
   dateLabel: string
@@ -18,6 +19,8 @@ export type LaborLiveStats = {
   best: number
   rhythm: number
   weight: number
+  weightDelta7: number | null
+  avgSleepHours: number | null
   weeklyBars: number[]
   weekDates: string[]
 }
@@ -94,12 +97,15 @@ export function deriveLaborStats(input: {
   const withWeight = [...input.entries]
     .filter(entry => entry.weightKg > 0)
     .sort((a, b) => b.date.localeCompare(a.date))
+  const weightInsights = buildWeightInsights(input.entries, input.today)
 
   return {
     average,
     best,
     rhythm,
     weight: withWeight[0]?.weightKg ?? 0,
+    weightDelta7: weightInsights.delta7,
+    avgSleepHours: averageSleepHours(input.entries, input.today, 7),
     weeklyBars,
     weekDates,
   }

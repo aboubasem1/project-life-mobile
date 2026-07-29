@@ -49,6 +49,7 @@ import {
   Plus,
   Receipt,
   RotateCcw,
+  Search,
   Settings,
   ShoppingBag,
   ShoppingCart,
@@ -62,11 +63,15 @@ import {
   X,
 } from 'lucide-react'
 import { useEntries } from './hooks/useEntries'
+import { SwipeableRow } from './components/SwipeableRow'
+import { ContextMenu, type ContextMenuItem } from './components/ContextMenu'
 import type { DashboardEntry } from './types/DashboardEntry'
 import { createDefaultEntry } from './types/DashboardEntry'
 import { getDayPolicy, pickNextStep } from './lib/dayPolicy'
 import { buildWeekInsights } from './lib/insights'
 import { deriveLaborOverview, deriveLaborStats, smartLaborHints } from './lib/laborLive'
+import { searchLabor } from './lib/laborSearch'
+import { buildMonthGrid, monthLabel } from './lib/calendarGrid'
 import { hashFromView, navigateHash, viewFromHash } from './lib/routing'
 import { calculateScore, calculateStreakForHabit, getScoreBreakdown } from './lib/score'
 import { calculateHabitStrength, habitStrengthLabel } from './lib/habitStrength'
@@ -79,6 +84,14 @@ import {
   type HabitScheduleMap,
 } from './lib/habitSchedule'
 import { buildYearHeatmap, eveningPromptForDate } from './lib/heatmap'
+import { buildWeeklyReview, buildWeightSeries } from './lib/weeklyReview'
+import {
+  averageSleepHours,
+  buildWeightInsights,
+  formatSleepHoursLabel,
+  hoursBetweenTimes,
+  macroProgress,
+} from './lib/healthMetrics'
 import type { HabitKey } from './types/DashboardEntry'
 import {
   applyBackupExtras,
@@ -106,6 +119,11 @@ type AppSettings = {
   focusMinutes: number
   proteinGoal: number
   calorieGoal: number
+  fatGoal: number
+  carbsGoal: number
+  fiberGoal: number
+  /** For BMI; 0 = nicht gesetzt. */
+  heightCm: number
   activeHabits: string[]
   /** Empty / missing = every day. Values 0=Mo … 6=So. */
   habitSchedules: HabitScheduleMap
@@ -337,6 +355,30 @@ function billStatusLabel(status: DashboardPlusBillStatus): string {
   }
 }
 
+type DashboardPlusListKind = 'pack' | 'wishlist' | 'books' | 'recipes' | 'custom'
+
+type DashboardPlusListItem = {
+  id: string
+  title: string
+  note: string
+  done: boolean
+}
+
+type DashboardPlusList = {
+  id: string
+  title: string
+  kind: DashboardPlusListKind
+  items: DashboardPlusListItem[]
+}
+
+const LIST_KIND_LABELS: Record<DashboardPlusListKind, string> = {
+  pack: 'Packliste',
+  wishlist: 'Wunschliste',
+  books: 'Bücher',
+  recipes: 'Rezepte',
+  custom: 'Liste',
+}
+
 type DashboardPlusState = {
   overview: {
     dateLabel: string
@@ -356,6 +398,7 @@ type DashboardPlusState = {
     total: number
     items: DashboardPlusShoppingItem[]
   }
+  lists: DashboardPlusList[]
   stats: {
     average: number
     best: number
@@ -377,6 +420,7 @@ type DashboardPlusState = {
 const DASHBOARD_PLUS_TABS = [
   { id: 'overview', label: 'Übersicht', icon: LayoutGrid },
   { id: 'todos', label: 'Todos', icon: ListTodo },
+  { id: 'lists', label: 'Listen', icon: BookOpen },
   { id: 'stock', label: 'Bestände', icon: Package },
   { id: 'medications', label: 'Medis', icon: Pill },
   { id: 'goals', label: 'Ziele', icon: Target },
@@ -458,108 +502,44 @@ function createDashboardPlusSeed(): DashboardPlusState {
       todos: 0,
       projects: 0,
     },
-    focusTodos: [
-      { id: 'focus-1', title: 'Creatine bestellen (Lager fast leer)', tag: 'DRINGEND', time: 'heute', done: false, priority: 'p1' },
-      { id: 'focus-2', title: 'Morning Routine abschließen', tag: 'PERSONAL', time: '08:15', done: true, priority: 'p2' },
-      { id: 'focus-3', title: 'Landing Page copy finalisieren', tag: 'MONDAS', time: '14:00', done: false, priority: 'p3' },
-    ],
-    supplements: [
-      { id: 'supp-1', name: 'Hüttenkäse', brand: '500g Becher', stock: 400, unit: 'g', dailyUse: 200, dailyUnit: 'g' },
-      { id: 'supp-2', name: 'Creatine Monohydrate', brand: 'BulkPowders · 500g', stock: 60, unit: 'g', dailyUse: 10, dailyUnit: 'g' },
-      { id: 'supp-3', name: 'Haferflocken', brand: 'Naturgut · 1kg', stock: 600, unit: 'g', dailyUse: 80, dailyUnit: 'g' },
-      { id: 'supp-4', name: 'Omega-3', brand: 'Optimum · 180 Caps', stock: 63, unit: 'Caps', dailyUse: 2, dailyUnit: 'Caps' },
-      { id: 'supp-5', name: 'Vitamin D3 + K2', brand: 'Now Foods · 365 Caps', stock: 299, unit: 'Caps', dailyUse: 1, dailyUnit: 'Caps' },
-    ],
-    medications: [
-      { id: 'med-1', name: 'Magnesium Bisglycinate', dosage: '400 mg', time: '21:00', notes: 'Mit Abendessen', effect: 'Bessere Schlafqualität', sideEffects: '—', taken: false, color: 'var(--accent)' },
-      { id: 'med-2', name: 'Vitamin D3', dosage: '2000 IE', time: '08:00', notes: 'Zum Frühstück', effect: 'Stimmung, Immunsystem', sideEffects: '—', taken: true, color: 'var(--blue)' },
-    ],
-    goals: [
-      { id: 'goal-1', title: '80kg Zielgewicht erreichen', timeframe: 'Quartal', percent: 45, dueDate: '2026-09-30', color: 'var(--accent)' },
-      { id: 'goal-2', title: 'Mondas Relaunch abschließen', timeframe: 'Monat', percent: 70, dueDate: '2026-08-15', color: 'var(--blue)' },
-      { id: 'goal-3', title: '4x Training diese Woche', timeframe: 'Woche', percent: 50, dueDate: '2026-07-26', color: 'var(--sage)' },
-    ],
+    focusTodos: [],
+    supplements: [],
+    medications: [],
+    goals: [],
     boards: [
-      {
-        id: 'personal',
-        label: 'Personal',
-        count: 4,
-        tasks: [
-          { id: 'personal-1', title: 'Morning Routine', tag: '', time: '08:15', done: true, priority: 'p3' },
-          { id: 'personal-2', title: 'Training absolviert', tag: '', time: '09:45', done: true, priority: 'p2' },
-          { id: 'personal-3', title: 'Creatine bestellen', tag: 'HEUTE', time: '', done: false, priority: 'p1' },
-          { id: 'personal-4', title: 'Arzttermin vereinbaren', tag: 'DIESE WOCHE', time: '', done: false, priority: 'p3' },
-        ],
-      },
-      {
-        id: 'mondas',
-        label: 'Mondas',
-        count: 6,
-        tasks: [
-          { id: 'mondas-1', title: 'Social Media Post geplant', tag: '', time: '10:30', done: true, priority: 'p3' },
-          { id: 'mondas-2', title: 'Landing Page copy finalisieren', tag: 'DEADLINE', time: '14:00', done: false, priority: 'p1' },
-          { id: 'mondas-3', title: 'Speisekarte für Sommer aktualisieren', tag: 'DIESE WOCHE', time: '', done: false, priority: 'p2' },
-          { id: 'mondas-4', title: 'Dienstplan KW 24 erstellen', tag: '', time: '', done: false, priority: 'p3' },
-        ],
-      },
-      {
-        id: 'health',
-        label: 'Health',
-        count: 3,
-        tasks: [
-          { id: 'health-1', title: 'Training — Brust/Trizeps', tag: '', time: '', done: true, priority: 'p3' },
-          { id: 'health-2', title: 'Creatine + Omega-3 nehmen', tag: 'TÄGLICH', time: '', done: false, priority: 'p2' },
-          { id: 'health-3', title: 'Protein-Ziel 180g erreichen', tag: '', time: '', done: false, priority: 'p3' },
-        ],
-      },
-      {
-        id: 'coding',
-        label: 'Coding',
-        count: 5,
-        tasks: [],
-      },
+      { id: 'personal', label: 'Personal', count: 0, tasks: [] },
+      { id: 'work', label: 'Arbeit', count: 0, tasks: [] },
+      { id: 'health', label: 'Health', count: 0, tasks: [] },
     ],
-    shopping: {
-      total: 89.90,
-      items: [
-        { id: 'shop-1', icon: 'flask', name: 'Creatine Monohydrate 1kg', note: 'BulkPowders · Bestand kritisch', price: 24.99, done: false, lowStock: true },
-        { id: 'shop-2', icon: 'fish', name: 'Omega-3 Nachfüllpack', note: 'Optimum · 300 Caps', price: 34.90, done: false },
-        { id: 'shop-3', icon: 'pill', name: 'Magnesium Bisglycinate', note: 'Bioptimizers · 240 Caps', price: 34.00, done: false },
-      ],
-    },
+    shopping: { total: 0, items: [] },
+    lists: [
+      { id: 'pack', title: 'Packliste', kind: 'pack', items: [] },
+      { id: 'wishlist', title: 'Wunschliste', kind: 'wishlist', items: [] },
+    ],
     stats: {
-      average: 74,
-      best: 12,
-      rhythm: 9,
-      weight: 76.2,
-      weeklyBars: [55, 72, 48, 85, 91, 63, 76],
-      heatmap: [1, 2, 3, 4, 3, 2, 1, 0, 2, 3, 4, 4, 3, 2, 2, 3, 1, 0, 1, 3, 4, 3, 2, 1, 0, 2, 3, 4],
-      projects: [
-        { id: 'proj-personal', name: 'Personal', percent: 50, color: 'var(--accent)' },
-        { id: 'proj-mondas', name: 'Mondas', percent: 17, color: 'var(--warning)' },
-        { id: 'proj-health', name: 'Health', percent: 33, color: 'var(--sage)' },
-      ],
+      average: 0,
+      best: 0,
+      rhythm: 0,
+      weight: 0,
+      weeklyBars: [0, 0, 0, 0, 0, 0, 0],
+      heatmap: [],
+      projects: [],
     },
     finances: {
-      monthlyFixed: 847,
-      open: 340,
-      overdue: 89,
-      recurring: [
-        { id: 'bill-rent', name: 'Miete', subtitle: 'Monatlich · 1. jeden Monat', amount: 520, due: 'nächste: 01.06', status: 'open', color: 'var(--accent)' },
-        { id: 'bill-power', name: 'Strom · Vattenfall', subtitle: 'Monatlich · 15. jeden Monat', amount: 89, due: 'nächste: 15.06', status: 'open', color: 'var(--blue)' },
-        { id: 'bill-internet', name: 'Internet · Telekom', subtitle: 'Monatlich · 20. jeden Monat', amount: 44, due: 'nächste: 20.06', status: 'open', color: 'var(--sage)' },
-        { id: 'bill-streaming', name: 'Spotify + Netflix', subtitle: 'Monatlich · 5. jeden Monat', amount: 28, due: 'nächste: 05.06', status: 'open', color: 'var(--lilac)' },
-        { id: 'bill-gym', name: 'Gym · McFit', subtitle: 'Monatlich · 1. jeden Monat', amount: 24, due: 'nächste: 01.06', status: 'open', color: 'var(--warning)' },
-        { id: 'bill-icloud', name: 'iCloud 200GB', subtitle: 'Monatlich · 12. jeden Monat', amount: 3, due: 'nächste: 12.06', status: 'open', color: 'var(--blue)' },
-      ],
-      openBills: [
-        { id: 'bill-tax', name: 'Steuerberater', subtitle: 'Fällig: 15.05.2026', amount: 89, due: '16 Tage überfällig', status: 'overdue', color: 'var(--danger)' },
-        { id: 'bill-design', name: 'Lieferant Design-Assets', subtitle: 'Fällig: 05.06.2026', amount: 149, due: 'in 5 Tagen', status: 'open', color: 'var(--warning)' },
-        { id: 'bill-figma', name: 'Software-Lizenz Figma', subtitle: 'Fällig: 15.06.2026', amount: 102, due: 'in 15 Tagen', status: 'open', color: 'var(--warning)' },
-        { id: 'bill-vercel', name: 'Hosting · Vercel Pro', subtitle: 'Bezahlt am 01.05.2026', amount: 20, due: 'erledigt', status: 'paid', color: 'var(--success)' },
-      ],
+      monthlyFixed: 0,
+      open: 0,
+      overdue: 0,
+      recurring: [],
+      openBills: [],
     },
   }
+}
+
+function syncBoardCounts(boards: DashboardPlusBoard[]): DashboardPlusBoard[] {
+  return boards.map(board => ({
+    ...board,
+    count: board.tasks.filter(task => !task.done).length,
+  }))
 }
 
 function stripEmojis(value: string): string {
@@ -616,10 +596,10 @@ function normalizeDashboardPlusState(parsed: Partial<DashboardPlusState> | null 
     medications: Array.isArray(parsed.medications) ? parsed.medications : seed.medications,
     goals: Array.isArray(parsed.goals) ? parsed.goals : seed.goals,
     boards: Array.isArray(parsed.boards)
-      ? parsed.boards.map(board => ({
+      ? syncBoardCounts(parsed.boards.map(board => ({
         ...board,
         tasks: Array.isArray(board.tasks) ? board.tasks.map(normalizeTaskPriority) : [],
-      }))
+      })))
       : seed.boards,
     shopping: {
       total: typeof parsed.shopping?.total === 'number' ? parsed.shopping.total : seed.shopping.total,
@@ -630,6 +610,23 @@ function normalizeDashboardPlusState(parsed: Partial<DashboardPlusState> | null 
         }))
         : seed.shopping.items,
     },
+    lists: Array.isArray(parsed.lists) && parsed.lists.length > 0
+      ? parsed.lists.map(list => ({
+        id: String(list.id || crypto.randomUUID()),
+        title: String(list.title || 'Liste'),
+        kind: (['pack', 'wishlist', 'books', 'recipes', 'custom'] as const).includes(list.kind as DashboardPlusListKind)
+          ? list.kind as DashboardPlusListKind
+          : 'custom',
+        items: Array.isArray(list.items)
+          ? list.items.map(item => ({
+            id: String(item.id || crypto.randomUUID()),
+            title: String(item.title || ''),
+            note: String(item.note || ''),
+            done: Boolean(item.done),
+          }))
+          : [],
+      }))
+      : seed.lists,
     stats: {
       ...seed.stats,
       ...parsed.stats,
@@ -672,6 +669,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   focusMinutes: 25,
   proteinGoal: 150,
   calorieGoal: 3500,
+  fatGoal: 70,
+  carbsGoal: 250,
+  fiberGoal: 30,
+  heightCm: 0,
   activeHabits: DEFAULT_ACTIVE_HABITS,
   habitSchedules: {},
   dashboardPlusLayout: DEFAULT_DASHBOARD_PLUS_LAYOUT,
@@ -848,6 +849,10 @@ function loadSettings(): AppSettings {
       focusMinutes: clampNumber(Number(stored.focusMinutes) || DEFAULT_SETTINGS.focusMinutes, 5, 120),
       proteinGoal: clampNumber(Number(stored.proteinGoal) || DEFAULT_SETTINGS.proteinGoal, 50, 400),
       calorieGoal: clampNumber(Number(stored.calorieGoal) || DEFAULT_SETTINGS.calorieGoal, 1000, 8000),
+      fatGoal: clampNumber(Number(stored.fatGoal) || DEFAULT_SETTINGS.fatGoal, 20, 200),
+      carbsGoal: clampNumber(Number(stored.carbsGoal) || DEFAULT_SETTINGS.carbsGoal, 50, 500),
+      fiberGoal: clampNumber(Number(stored.fiberGoal) || DEFAULT_SETTINGS.fiberGoal, 10, 80),
+      heightCm: clampNumber(Number(stored.heightCm) || 0, 0, 250),
       activeHabits: Array.isArray(stored.activeHabits) ? stored.activeHabits : DEFAULT_ACTIVE_HABITS,
       habitSchedules: normalizeHabitSchedules(stored.habitSchedules),
       dashboardPlusLayout: normalizeDashboardPlusLayout(stored.dashboardPlusLayout),
@@ -1563,7 +1568,17 @@ function App() {
           )}
 
           {view === 'progress' && (
-            <ProgressView entries={entries} today={today} scoreGoals={scoreGoals} />
+            <ProgressView
+              entries={entries}
+              today={today}
+              selectedDate={selectedDate}
+              scoreGoals={scoreGoals}
+              heightCm={settings.heightCm}
+              onSelectDate={date => {
+                setSelectedDate(date)
+                navigateTo('today')
+              }}
+            />
           )}
 
           {view === 'dashboardPlus' && (
@@ -1640,6 +1655,11 @@ function App() {
           onChange={setSettings}
           onExport={handleExport}
           onImport={handleImport}
+          onResetLabor={() => {
+            if (!window.confirm('Labor auf leeren Start zurücksetzen? Todos, Medis, Boards und Finanzen gehen verloren.')) return
+            setDashboardPlus(createDashboardPlusSeed())
+            showToast('Labor zurückgesetzt.')
+          }}
           onClose={() => setSettingsOpen(false)}
         />
       )}
@@ -1907,6 +1927,9 @@ function TodayView({
             {nextStep?.streakHint && (
               <span className="streak-hint">{nextStep.streakHint}</span>
             )}
+            {nextStep?.stackHint && (
+              <span className="stack-hint">{nextStep.stackHint}</span>
+            )}
             {dayMode === 'morning' && !energy && (
               <span className="mode-hint">Morgenmodus: erst Energie, dann ein Anker.</span>
             )}
@@ -2034,24 +2057,33 @@ function TodayView({
               {anchors.map((task, index) => {
                 const done = Boolean(anchorsDone[index])
                 return (
-                  <div className={done ? 'task-row is-done' : 'task-row'} key={`${task}-${index}`}>
-                    <button
-                      type="button"
-                      className="task-check"
-                      onClick={() => onToggleAnchor(index)}
-                      aria-label={done ? `${task} als offen markieren` : `${task} erledigen`}
-                      aria-pressed={done}
-                    >
-                      {done ? <Check size={16} /> : <Circle size={16} />}
-                    </button>
-                    <button type="button" className="task-title" onClick={() => onOpenFocus(task, index, undefined, policy.focusMinutes)}>
-                      <strong>{task}</strong>
-                      <span>{done ? 'Erledigt' : `${policy.focusMinutes} Minuten Fokus`}</span>
-                    </button>
-                    <IconButton label={`${task} bearbeiten`} onClick={() => onEditTask(index, task)}>
-                      <Pencil size={15} />
-                    </IconButton>
-                  </div>
+                  <SwipeableRow
+                    key={`${task}-${index}`}
+                    leftLabel={done ? 'Offen' : 'Erledigt'}
+                    rightLabel="Plan"
+                    onSwipeLeft={() => onToggleAnchor(index)}
+                    onSwipeRight={() => onOpenPlan()}
+                    onLongPress={() => onEditTask(index, task)}
+                  >
+                    <div className={done ? 'task-row is-done' : 'task-row'}>
+                      <button
+                        type="button"
+                        className="task-check"
+                        onClick={() => onToggleAnchor(index)}
+                        aria-label={done ? `${task} als offen markieren` : `${task} erledigen`}
+                        aria-pressed={done}
+                      >
+                        {done ? <Check size={16} /> : <Circle size={16} />}
+                      </button>
+                      <button type="button" className="task-title" onClick={() => onOpenFocus(task, index, undefined, policy.focusMinutes)}>
+                        <strong>{task}</strong>
+                        <span>{done ? 'Erledigt' : `${policy.focusMinutes} Minuten Fokus`}</span>
+                      </button>
+                      <IconButton label={`${task} bearbeiten`} onClick={() => onEditTask(index, task)}>
+                        <Pencil size={15} />
+                      </IconButton>
+                    </div>
+                  </SwipeableRow>
                 )
               })}
             </div>
@@ -2305,38 +2337,47 @@ function PlanView({
               {anchors.map((task, index) => {
                 const isDone = Boolean(anchorsDone[index])
                 return (
-                  <div className={isDone ? 'editable-task is-done' : 'editable-task'} key={`${task}-${index}`}>
-                    <button
-                      type="button"
-                      className="task-check"
-                      onClick={() => onToggleTask(index)}
-                      aria-pressed={isDone}
-                      aria-label={isDone ? `${task} als offen markieren` : `${task} erledigen`}
-                    >
-                      {isDone ? <Check size={17} /> : <Circle size={17} />}
-                    </button>
-                    <div className="editable-task__content">
-                      <strong>{task}</strong>
-                      <span>Position {index + 1}</span>
+                  <SwipeableRow
+                    key={`${task}-${index}`}
+                    leftLabel={isDone ? 'Offen' : 'Erledigt'}
+                    rightLabel="Verschieben"
+                    onSwipeLeft={() => onToggleTask(index)}
+                    onSwipeRight={() => onMoveTask(index, index === anchors.length - 1 ? -1 : 1)}
+                    onLongPress={() => onEditTask(index, task)}
+                  >
+                    <div className={isDone ? 'editable-task is-done' : 'editable-task'}>
+                      <button
+                        type="button"
+                        className="task-check"
+                        onClick={() => onToggleTask(index)}
+                        aria-pressed={isDone}
+                        aria-label={isDone ? `${task} als offen markieren` : `${task} erledigen`}
+                      >
+                        {isDone ? <Check size={17} /> : <Circle size={17} />}
+                      </button>
+                      <div className="editable-task__content">
+                        <strong>{task}</strong>
+                        <span>Position {index + 1} · Wischen oder lange drücken</span>
+                      </div>
+                      <div className="editable-task__actions">
+                        <IconButton label="Nach oben" onClick={() => onMoveTask(index, -1)} disabled={index === 0}>
+                          <ChevronUp size={15} />
+                        </IconButton>
+                        <IconButton label="Nach unten" onClick={() => onMoveTask(index, 1)} disabled={index === anchors.length - 1}>
+                          <ChevronDown size={15} />
+                        </IconButton>
+                        <IconButton label="Fokus starten" onClick={() => onOpenFocus(task, index)}>
+                          <Play size={15} />
+                        </IconButton>
+                        <IconButton label="Bearbeiten" onClick={() => onEditTask(index, task)}>
+                          <Pencil size={15} />
+                        </IconButton>
+                        <IconButton label="Löschen" onClick={() => onDeleteTask(index)} className="icon-button--danger">
+                          <Trash2 size={15} />
+                        </IconButton>
+                      </div>
                     </div>
-                    <div className="editable-task__actions">
-                      <IconButton label="Nach oben" onClick={() => onMoveTask(index, -1)} disabled={index === 0}>
-                        <ChevronUp size={15} />
-                      </IconButton>
-                      <IconButton label="Nach unten" onClick={() => onMoveTask(index, 1)} disabled={index === anchors.length - 1}>
-                        <ChevronDown size={15} />
-                      </IconButton>
-                      <IconButton label="Fokus starten" onClick={() => onOpenFocus(task, index)}>
-                        <Play size={15} />
-                      </IconButton>
-                      <IconButton label="Bearbeiten" onClick={() => onEditTask(index, task)}>
-                        <Pencil size={15} />
-                      </IconButton>
-                      <IconButton label="Löschen" onClick={() => onDeleteTask(index)} className="icon-button--danger">
-                        <Trash2 size={15} />
-                      </IconButton>
-                    </div>
-                  </div>
+                  </SwipeableRow>
                 )
               })}
             </div>
@@ -2491,7 +2532,43 @@ function CheckinView({
           </div>
 
           {/* Sleep duration — CollectUI soft duration interaction */}
-          <p className="field-hint" style={{ marginBottom: 8 }}>Dauer</p>
+          <p className="field-hint" style={{ marginBottom: 8 }}>Bettzeit & Aufstehen</p>
+          <div className="sleep-times">
+            <label className="text-field">
+              <span>Bett</span>
+              <input
+                type="time"
+                value={entry.bedTime ?? ''}
+                onChange={event => {
+                  const bedTime = event.target.value || undefined
+                  const wakeTime = entry.wakeTime
+                  const hours = bedTime && wakeTime ? hoursBetweenTimes(bedTime, wakeTime) : null
+                  onUpdate({
+                    bedTime,
+                    ...(hours !== null ? { sleepDuration: formatSleepHoursLabel(hours) } : {}),
+                  })
+                }}
+              />
+            </label>
+            <label className="text-field">
+              <span>Aufstehen</span>
+              <input
+                type="time"
+                value={entry.wakeTime ?? ''}
+                onChange={event => {
+                  const wakeTime = event.target.value || undefined
+                  const bedTime = entry.bedTime
+                  const hours = bedTime && wakeTime ? hoursBetweenTimes(bedTime, wakeTime) : null
+                  onUpdate({
+                    wakeTime,
+                    ...(hours !== null ? { sleepDuration: formatSleepHoursLabel(hours) } : {}),
+                  })
+                }}
+              />
+            </label>
+          </div>
+
+          <p className="field-hint" style={{ margin: '14px 0 8px' }}>Dauer</p>
           <SoftDurationInput
             value={entry.sleepDuration}
             onChange={next => onUpdate({ sleepDuration: next })}
@@ -2583,6 +2660,7 @@ function CheckinView({
                     />
                   </div>
                 ) : (
+                  <>
                   <div className="form-grid">
                     <NumberField
                       label={`Protein · Ziel ${settings.proteinGoal}`}
@@ -2607,6 +2685,30 @@ function CheckinView({
                       })}
                     />
                     <NumberField
+                      label={`Fett · Ziel ${settings.fatGoal}`}
+                      value={entry.fatGrams}
+                      unit="g"
+                      step={5}
+                      max={300}
+                      onChange={fatGrams => onUpdate({ fatGrams })}
+                    />
+                    <NumberField
+                      label={`Kohlenhydrate · Ziel ${settings.carbsGoal}`}
+                      value={entry.carbsGrams}
+                      unit="g"
+                      step={5}
+                      max={600}
+                      onChange={carbsGrams => onUpdate({ carbsGrams })}
+                    />
+                    <NumberField
+                      label={`Ballaststoffe · Ziel ${settings.fiberGoal}`}
+                      value={entry.fiberGrams}
+                      unit="g"
+                      step={1}
+                      max={100}
+                      onChange={fiberGrams => onUpdate({ fiberGrams })}
+                    />
+                    <NumberField
                       label="Gewicht"
                       value={entry.weightKg}
                       unit="kg"
@@ -2626,6 +2728,15 @@ function CheckinView({
                       onChange={waterLiters => onUpdate({ waterLiters })}
                     />
                     <NumberField
+                      label="Schritte"
+                      value={entry.steps}
+                      unit=""
+                      step={500}
+                      max={100000}
+                      placeholder="z. B. 8000"
+                      onChange={steps => onUpdate({ steps })}
+                    />
+                    <NumberField
                       label="Deep Work"
                       value={entry.deepWorkHours}
                       unit="Std."
@@ -2643,6 +2754,29 @@ function CheckinView({
                       onChange={meditationMinutes => onUpdate({ meditationMinutes })}
                     />
                   </div>
+                  <div className="macro-rings" aria-label="Makro-Fortschritt">
+                    {[
+                      { label: 'Protein', value: entry.proteinGrams, goal: settings.proteinGoal },
+                      { label: 'Fett', value: entry.fatGrams, goal: settings.fatGoal },
+                      { label: 'KH', value: entry.carbsGrams, goal: settings.carbsGoal },
+                      { label: 'Ballast', value: entry.fiberGrams, goal: settings.fiberGoal },
+                    ].map(item => {
+                      const pct = macroProgress(item.value, item.goal)
+                      return (
+                        <div className="macro-ring" key={item.label}>
+                          <div
+                            className="radial-mini"
+                            style={{ '--value': `${(pct / 100) * 360}deg` } as CSSProperties}
+                          >
+                            <span>{pct}%</span>
+                          </div>
+                          <strong>{item.label}</strong>
+                          <small>{item.value}/{item.goal}g</small>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  </>
                 )}
               </>
             )
@@ -2672,14 +2806,175 @@ function CheckinView({
   )
 }
 
+function WeightSparkline({
+  points,
+  insights,
+}: {
+  points: { date: string; kg: number }[]
+  insights: ReturnType<typeof buildWeightInsights>
+}) {
+  if (points.length === 0) {
+    return <p className="field-hint">Noch keine Gewichtseinträge — im Check-in eintragen.</p>
+  }
+
+  const latest = points[points.length - 1]
+  const first = points[0]
+  const formatDelta = (value: number | null) => {
+    if (value === null) return null
+    if (value === 0) return '±0'
+    return `${value > 0 ? '+' : ''}${value}`
+  }
+
+  const chart = points.length >= 2 ? (() => {
+    const width = 320
+    const height = 72
+    const pad = 6
+    const kgs = points.map(point => point.kg)
+    const min = Math.min(...kgs)
+    const max = Math.max(...kgs)
+    const range = Math.max(max - min, 0.2)
+    const polyline = points
+      .map((point, index) => {
+        const x = pad + (index / (points.length - 1)) * (width - pad * 2)
+        const y = height - pad - ((point.kg - min) / range) * (height - pad * 2)
+        return `${x.toFixed(1)},${y.toFixed(1)}`
+      })
+      .join(' ')
+    return (
+      <svg
+        className="weight-spark__chart"
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label={`Gewicht von ${first.kg} auf ${latest.kg} kg`}
+      >
+        <polyline
+          fill="none"
+          stroke="var(--accent)"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          points={polyline}
+        />
+      </svg>
+    )
+  })() : null
+
+  return (
+    <div className="weight-spark">
+      <div className="weight-spark__meta">
+        <strong>{latest.kg.toFixed(1)} kg</strong>
+        <span>{insights.trendLabel} · {points.length} Einträge</span>
+      </div>
+      <div className="weight-spark__stats">
+        <span>7T {formatDelta(insights.delta7) ?? '—'}</span>
+        <span>30T {formatDelta(insights.delta30) ?? '—'}</span>
+        <span>
+          BMI {insights.bmi !== null ? `${insights.bmi}` : '—'}
+          {insights.bmiLabel ? ` · ${insights.bmiLabel}` : ''}
+        </span>
+      </div>
+      {chart}
+      {insights.bmi === null && (
+        <p className="field-hint">Körpergröße in den Einstellungen setzen für BMI.</p>
+      )}
+    </div>
+  )
+}
+
+function MonthCalendar({
+  today,
+  selected,
+  entries,
+  onSelect,
+}: {
+  today: string
+  selected: string
+  entries: DashboardEntry[]
+  onSelect: (date: string) => void
+}) {
+  const initial = fromDateKey(selected)
+  const [year, setYear] = useState(initial.getFullYear())
+  const [monthIndex, setMonthIndex] = useState(initial.getMonth())
+
+  useEffect(() => {
+    const date = fromDateKey(selected)
+    setYear(date.getFullYear())
+    setMonthIndex(date.getMonth())
+  }, [selected])
+
+  const entryDates = useMemo(() => new Set(entries.map(entry => entry.date)), [entries])
+  const scoresByDate = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const entry of entries) map[entry.date] = Math.round(entry.dailyScore || 0)
+    return map
+  }, [entries])
+
+  const cells = buildMonthGrid({ year, monthIndex, today, selected, entryDates, scoresByDate })
+
+  const shiftMonth = (delta: number) => {
+    const next = new Date(year, monthIndex + delta, 1)
+    setYear(next.getFullYear())
+    setMonthIndex(next.getMonth())
+  }
+
+  return (
+    <section className="card calendar-card">
+      <div className="calendar-card__head">
+        <SectionTitle eyebrow="Kalender" title={monthLabel(year, monthIndex)} />
+        <div className="calendar-card__nav">
+          <IconButton label="Vorheriger Monat" onClick={() => shiftMonth(-1)}>
+            <ChevronLeft size={16} />
+          </IconButton>
+          <IconButton label="Nächster Monat" onClick={() => shiftMonth(1)}>
+            <ChevronRight size={16} />
+          </IconButton>
+        </div>
+      </div>
+      <div className="month-calendar__weekdays" aria-hidden="true">
+        {['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map(label => (
+          <span key={label}>{label}</span>
+        ))}
+      </div>
+      <div className="month-calendar" role="grid" aria-label="Monatskalender">
+        {cells.map(cell => (
+          <button
+            type="button"
+            key={cell.date}
+            className={[
+              'month-calendar__cell',
+              cell.inMonth ? '' : 'is-outside',
+              cell.isToday ? 'is-today' : '',
+              cell.isSelected ? 'is-selected' : '',
+              cell.hasEntry ? 'has-entry' : '',
+            ].filter(Boolean).join(' ')}
+            onClick={() => onSelect(cell.date)}
+            aria-pressed={cell.isSelected}
+            aria-label={`${formatLongDate(cell.date)}${cell.hasEntry ? `, Score ${cell.score}` : ''}`}
+          >
+            <strong>{fromDateKey(cell.date).getDate()}</strong>
+            {cell.hasEntry && <span className="month-calendar__dot" />}
+          </button>
+        ))}
+      </div>
+      <p className="field-hint">Tippe einen Tag an, um ihn im Tageskern zu öffnen.</p>
+    </section>
+  )
+}
+
 function ProgressView({
   entries,
   today,
+  selectedDate,
   scoreGoals,
+  heightCm,
+  onSelectDate,
 }: {
   entries: DashboardEntry[]
   today: string
+  selectedDate: string
   scoreGoals: { proteinGoal: number; activeHabits: string[] }
+  heightCm: number
+  onSelectDate: (date: string) => void
 }) {
   const lastSeven = Array.from({ length: 7 }, (_, index) => addDays(today, index - 6)).map(date => {
     const entry = entries.find(item => item.date === date) ?? createDefaultEntry(date)
@@ -2711,6 +3006,10 @@ function ProgressView({
   const todayEntry = entries.find(item => item.date === today) ?? createDefaultEntry(today)
   const breakdown = getScoreBreakdown(todayEntry, scoreGoals)
   const heatmap = buildYearHeatmap(entries, today, e => calculateScore(e, scoreGoals))
+  const review = buildWeeklyReview(entries, today, scoreGoals)
+  const weightSeries = buildWeightSeries(entries, today, 30)
+  const weightInsights = buildWeightInsights(entries, today, heightCm)
+  const sleepAvg = averageSleepHours(entries, today, 7)
   const strengthStats = (['proteinShake', 'gratitudeDone', 'focusDone', 'breathingDone'] as const).map(key => {
     const strength = calculateHabitStrength(entries, key, today)
     const habit = DAILY_HABITS.find(item => item.id === key)
@@ -2740,6 +3039,42 @@ function ProgressView({
         <div className="kpi-card"><span>Bester Tag</span><strong>{best}%</strong><small>diese Woche</small></div>
         <div className="kpi-card"><span>Rhythmus</span><strong>{xp.streakDays}</strong><small>{plural(xp.streakDays, 'Tag', 'Tage')} · {levelName(xp.level)}</small></div>
       </div>
+
+      <MonthCalendar
+        today={today}
+        selected={selectedDate}
+        entries={entries}
+        onSelect={onSelectDate}
+      />
+
+      <section className={`card weekly-review-card${review.isReviewDay ? ' is-review-day' : ''}`}>
+        <SectionTitle
+          eyebrow={review.isReviewDay ? 'Ritual · So / Mo' : 'Woche'}
+          title="Weekly Review"
+        />
+        <p className="field-hint" style={{ marginTop: -8, marginBottom: 12 }}>
+          {review.weekLabel} · Schnitt {review.averageScore}%
+          {review.bestScore > 0 ? ` · Best ${review.bestDay} (${review.bestScore}%)` : ''}
+        </p>
+        <div className="weekly-review-grid">
+          <div className="weekly-review-block">
+            <span className="eyebrow">Win</span>
+            <p>{review.win}</p>
+          </div>
+          <div className="weekly-review-block">
+            <span className="eyebrow">Behalten</span>
+            <p>{review.keep}</p>
+          </div>
+        </div>
+        <div className="weekly-review-anchors">
+          <span className="eyebrow">Nächste Woche</span>
+          <ul>
+            {review.nextAnchors.map(item => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      </section>
 
       <section className="card insight-card">
         <SectionTitle eyebrow="Muster" title="Was die Woche dir sagt" />
@@ -2799,6 +3134,24 @@ function ProgressView({
               </div>
             )
           })}
+        </div>
+      </section>
+
+      <section className="card weight-spark-card">
+        <SectionTitle eyebrow="Körper" title="Gewicht · 30 Tage" />
+        <WeightSparkline points={weightSeries} insights={weightInsights} />
+      </section>
+
+      <section className="card">
+        <SectionTitle eyebrow="Schlaf" title="Wochenrhythmus" />
+        <div className="sleep-week-summary">
+          <div>
+            <strong>{sleepAvg !== null ? `${sleepAvg}h` : '—'}</strong>
+            <span>Schnitt · 7 Tage</span>
+          </div>
+          <p className="field-hint">
+            Bettzeit und Aufstehen im Check-in setzen die Dauer automatisch.
+          </p>
         </div>
       </section>
 
@@ -2914,6 +3267,15 @@ function DashboardPlusView({
     ? activeSection
     : tabsToRender[0].id
   const [activeBoardId, setActiveBoardId] = useState(dashboard.boards[0]?.id ?? 'personal')
+  const [activeListId, setActiveListId] = useState(dashboard.lists[0]?.id ?? 'pack')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [taskMenu, setTaskMenu] = useState<{
+    x: number
+    y: number
+    kind: 'focus' | 'board'
+    index: number
+    title: string
+  } | null>(null)
   const openFocusTodos = dashboard.focusTodos.filter(task => !task.done).length
   const lowStockCount = dashboard.supplements.filter(item => item.dailyUse > 0 && item.stock <= item.dailyUse * 7).length
   const hints = smartLaborHints({
@@ -2922,6 +3284,17 @@ function DashboardPlusView({
     openTodos: openFocusTodos,
     lowStockCount,
   })
+  const searchHits = useMemo(() => searchLabor({
+    query: searchQuery,
+    focusTodos: dashboard.focusTodos,
+    boards: dashboard.boards,
+    shopping: dashboard.shopping.items,
+    lists: dashboard.lists,
+    supplements: dashboard.supplements,
+    medications: dashboard.medications,
+    goals: dashboard.goals,
+    bills: [...dashboard.finances.recurring, ...dashboard.finances.openBills],
+  }), [searchQuery, dashboard])
 
   useEffect(() => {
     if (!dashboard.boards.some(board => board.id === activeBoardId)) {
@@ -2929,7 +3302,14 @@ function DashboardPlusView({
     }
   }, [activeBoardId, dashboard.boards])
 
+  useEffect(() => {
+    if (!dashboard.lists.some(list => list.id === activeListId)) {
+      setActiveListId(dashboard.lists[0]?.id ?? 'pack')
+    }
+  }, [activeListId, dashboard.lists])
+
   const activeBoard = dashboard.boards.find(board => board.id === activeBoardId) ?? dashboard.boards[0]
+  const activeList = dashboard.lists.find(list => list.id === activeListId) ?? dashboard.lists[0]
   const financeSummary = useMemo(() => deriveFinanceSummary(dashboard.finances), [dashboard.finances])
   const formatMoney = (value: number) => value.toLocaleString('de-DE', { maximumFractionDigits: 2, minimumFractionDigits: 0 })
 
@@ -2952,6 +3332,39 @@ function DashboardPlusView({
       ...current,
       focusTodos: current.focusTodos.filter((_, itemIndex) => itemIndex !== index),
     }))
+  }
+
+  const moveFocusToBoard = (index: number) => {
+    onChange(current => {
+      const task = current.focusTodos[index]
+      if (!task) return current
+      return {
+        ...current,
+        focusTodos: current.focusTodos.filter((_, itemIndex) => itemIndex !== index),
+        boards: syncBoardCounts(current.boards.map(board => (
+          board.id === activeBoardId
+            ? { ...board, tasks: [...board.tasks, task] }
+            : board
+        ))),
+      }
+    })
+  }
+
+  const moveBoardToFocus = (boardId: string, index: number) => {
+    onChange(current => {
+      const board = current.boards.find(item => item.id === boardId)
+      const task = board?.tasks[index]
+      if (!task) return current
+      return {
+        ...current,
+        focusTodos: [...current.focusTodos, task],
+        boards: syncBoardCounts(current.boards.map(item => (
+          item.id === boardId
+            ? { ...item, tasks: item.tasks.filter((_, itemIndex) => itemIndex !== index) }
+            : item
+        ))),
+      }
+    })
   }
 
   const updateSupplement = (index: number, patch: Partial<DashboardPlusSupplement>) => {
@@ -3020,33 +3433,33 @@ function DashboardPlusView({
   const updateBoardTask = (boardId: string, taskIndex: number, patch: Partial<DashboardPlusTask>) => {
     onChange(current => ({
       ...current,
-      boards: current.boards.map(board => (
+      boards: syncBoardCounts(current.boards.map(board => (
         board.id === boardId
           ? { ...board, tasks: board.tasks.map((task, itemIndex) => (itemIndex === taskIndex ? { ...task, ...patch } : task)) }
           : board
-      )),
+      ))),
     }))
   }
 
   const addBoardTask = (boardId: string) => {
     onChange(current => ({
       ...current,
-      boards: current.boards.map(board => (
+      boards: syncBoardCounts(current.boards.map(board => (
         board.id === boardId
           ? { ...board, tasks: [...board.tasks, { id: crypto.randomUUID(), title: 'Neue Board-Aufgabe', tag: '', time: '', done: false, priority: 'p3' }] }
           : board
-      )),
+      ))),
     }))
   }
 
   const removeBoardTask = (boardId: string, taskIndex: number) => {
     onChange(current => ({
       ...current,
-      boards: current.boards.map(board => (
+      boards: syncBoardCounts(current.boards.map(board => (
         board.id === boardId
           ? { ...board, tasks: board.tasks.filter((_, itemIndex) => itemIndex !== taskIndex) }
           : board
-      )),
+      ))),
     }))
   }
 
@@ -3087,6 +3500,62 @@ function DashboardPlusView({
         ...current.shopping,
         items: current.shopping.items.filter((_, itemIndex) => itemIndex !== index),
       },
+    }))
+  }
+
+  const addList = (kind: DashboardPlusListKind = 'custom') => {
+    const id = crypto.randomUUID()
+    onChange(current => ({
+      ...current,
+      lists: [...current.lists, { id, title: LIST_KIND_LABELS[kind], kind, items: [] }],
+    }))
+    setActiveListId(id)
+  }
+
+  const updateList = (listId: string, patch: Partial<Pick<DashboardPlusList, 'title' | 'kind'>>) => {
+    onChange(current => ({
+      ...current,
+      lists: current.lists.map(list => (list.id === listId ? { ...list, ...patch } : list)),
+    }))
+  }
+
+  const removeList = (listId: string) => {
+    onChange(current => ({
+      ...current,
+      lists: current.lists.filter(list => list.id !== listId),
+    }))
+  }
+
+  const updateListItem = (listId: string, index: number, patch: Partial<DashboardPlusListItem>) => {
+    onChange(current => ({
+      ...current,
+      lists: current.lists.map(list => (
+        list.id === listId
+          ? { ...list, items: list.items.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)) }
+          : list
+      )),
+    }))
+  }
+
+  const addListItem = (listId: string) => {
+    onChange(current => ({
+      ...current,
+      lists: current.lists.map(list => (
+        list.id === listId
+          ? { ...list, items: [...list.items, { id: crypto.randomUUID(), title: 'Neuer Eintrag', note: '', done: false }] }
+          : list
+      )),
+    }))
+  }
+
+  const removeListItem = (listId: string, index: number) => {
+    onChange(current => ({
+      ...current,
+      lists: current.lists.map(list => (
+        list.id === listId
+          ? { ...list, items: list.items.filter((_, itemIndex) => itemIndex !== index) }
+          : list
+      )),
     }))
   }
 
@@ -3192,6 +3661,45 @@ function DashboardPlusView({
         </div>
       </section>
 
+      <label className="labor-search">
+        <Search size={16} aria-hidden="true" />
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={event => setSearchQuery(event.target.value)}
+          placeholder="Suche in Todos, Listen, Medis…"
+          aria-label="Labor durchsuchen"
+        />
+      </label>
+
+      {searchQuery.trim() && (
+        <section className="card labor-search-results">
+          <SectionTitle eyebrow="Suche" title={`${searchHits.length} Treffer`} />
+          {searchHits.length === 0 ? (
+            <p className="field-hint">Nichts gefunden.</p>
+          ) : (
+            <div className="labor-search-list">
+              {searchHits.map(hit => (
+                <button
+                  type="button"
+                  key={`${hit.section}-${hit.id}`}
+                  className="labor-search-hit"
+                  onClick={() => {
+                    setActiveSection(hit.section)
+                    if (hit.boardId) setActiveBoardId(hit.boardId)
+                    if (hit.listId) setActiveListId(hit.listId)
+                    setSearchQuery('')
+                  }}
+                >
+                  <strong>{hit.title}</strong>
+                  <span>{hit.source}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
       <nav className="dashboard-plus-tabbar" role="tablist" aria-label="Dashboard+ Bereiche">
         {tabsToRender.map(tab => (
           <button
@@ -3252,46 +3760,55 @@ function DashboardPlusView({
           />
           <div className="editable-task-list">
             {dashboard.focusTodos.map((task, index) => (
-              <div className={task.done ? 'editable-task is-done' : 'editable-task'} key={task.id}>
-                <button
-                  type="button"
-                  className="task-check"
-                  onClick={() => updateFocusTask(index, { done: !task.done })}
-                  aria-pressed={task.done}
-                >
-                  {task.done ? <Check size={17} /> : <Circle size={17} />}
-                </button>
-                <div className="editable-task__content dashboard-plus-editable-content">
-                  <input
-                    className="dashboard-plus-input dashboard-plus-input--title"
-                    value={task.title}
-                    onChange={event => updateFocusTask(index, { title: event.target.value })}
-                    aria-label="Aufgabe"
-                  />
-                  <div className="dashboard-plus-inline-row">
+              <SwipeableRow
+                key={task.id}
+                leftLabel={task.done ? 'Offen' : 'Erledigt'}
+                rightLabel="Zum Board"
+                onSwipeLeft={() => updateFocusTask(index, { done: !task.done })}
+                onSwipeRight={() => moveFocusToBoard(index)}
+                onLongPress={point => setTaskMenu({ x: point.x, y: point.y, kind: 'focus', index, title: task.title })}
+              >
+                <div className={task.done ? 'editable-task is-done' : 'editable-task'}>
+                  <button
+                    type="button"
+                    className="task-check"
+                    onClick={() => updateFocusTask(index, { done: !task.done })}
+                    aria-pressed={task.done}
+                  >
+                    {task.done ? <Check size={17} /> : <Circle size={17} />}
+                  </button>
+                  <div className="editable-task__content dashboard-plus-editable-content">
                     <input
-                      className="dashboard-plus-input"
-                      value={task.tag}
-                      onChange={event => updateFocusTask(index, { tag: event.target.value })}
-                      placeholder="Tag"
-                      aria-label="Tag"
+                      className="dashboard-plus-input dashboard-plus-input--title"
+                      value={task.title}
+                      onChange={event => updateFocusTask(index, { title: event.target.value })}
+                      aria-label="Aufgabe"
                     />
-                    <input
-                      className="dashboard-plus-input"
-                      value={task.time}
-                      onChange={event => updateFocusTask(index, { time: event.target.value })}
-                      placeholder="Zeit"
-                      aria-label="Zeit"
-                    />
+                    <div className="dashboard-plus-inline-row">
+                      <input
+                        className="dashboard-plus-input"
+                        value={task.tag}
+                        onChange={event => updateFocusTask(index, { tag: event.target.value })}
+                        placeholder="Tag"
+                        aria-label="Tag"
+                      />
+                      <input
+                        className="dashboard-plus-input"
+                        value={task.time}
+                        onChange={event => updateFocusTask(index, { time: event.target.value })}
+                        placeholder="Zeit"
+                        aria-label="Zeit"
+                      />
+                    </div>
+                  </div>
+                  <div className="editable-task__actions">
+                    <PriorityBadge priority={task.priority} onCycle={() => updateFocusTask(index, { priority: nextPriority(task.priority) })} />
+                    <button type="button" className="icon-button" onClick={() => removeFocusTask(index)} aria-label="Löschen">
+                      <Trash2 size={15} />
+                    </button>
                   </div>
                 </div>
-                <div className="editable-task__actions">
-                  <PriorityBadge priority={task.priority} onCycle={() => updateFocusTask(index, { priority: nextPriority(task.priority) })} />
-                  <button type="button" className="icon-button" onClick={() => removeFocusTask(index)} aria-label="Löschen">
-                    <Trash2 size={15} />
-                  </button>
-                </div>
-              </div>
+              </SwipeableRow>
             ))}
           </div>
         </section>
@@ -3328,24 +3845,33 @@ function DashboardPlusView({
               </div>
               <div className="editable-task-list">
                 {activeBoard.tasks.map((task, index) => (
-                  <div className={task.done ? 'editable-task is-done' : 'editable-task'} key={task.id}>
-                    <button type="button" className="task-check" onClick={() => updateBoardTask(activeBoard.id, index, { done: !task.done })} aria-pressed={task.done}>
-                      {task.done ? <Check size={17} /> : <Circle size={17} />}
-                    </button>
-                    <div className="editable-task__content dashboard-plus-editable-content">
-                      <input className="dashboard-plus-input dashboard-plus-input--title" value={task.title} onChange={event => updateBoardTask(activeBoard.id, index, { title: event.target.value })} aria-label="Board Aufgabe" />
-                      <div className="dashboard-plus-inline-row">
-                        <input className="dashboard-plus-input" value={task.tag} onChange={event => updateBoardTask(activeBoard.id, index, { tag: event.target.value })} placeholder="Tag" />
-                        <input className="dashboard-plus-input" value={task.time} onChange={event => updateBoardTask(activeBoard.id, index, { time: event.target.value })} placeholder="Zeit" />
+                  <SwipeableRow
+                    key={task.id}
+                    leftLabel={task.done ? 'Offen' : 'Erledigt'}
+                    rightLabel="Zum Fokus"
+                    onSwipeLeft={() => updateBoardTask(activeBoard.id, index, { done: !task.done })}
+                    onSwipeRight={() => moveBoardToFocus(activeBoard.id, index)}
+                    onLongPress={point => setTaskMenu({ x: point.x, y: point.y, kind: 'board', index, title: task.title })}
+                  >
+                    <div className={task.done ? 'editable-task is-done' : 'editable-task'}>
+                      <button type="button" className="task-check" onClick={() => updateBoardTask(activeBoard.id, index, { done: !task.done })} aria-pressed={task.done}>
+                        {task.done ? <Check size={17} /> : <Circle size={17} />}
+                      </button>
+                      <div className="editable-task__content dashboard-plus-editable-content">
+                        <input className="dashboard-plus-input dashboard-plus-input--title" value={task.title} onChange={event => updateBoardTask(activeBoard.id, index, { title: event.target.value })} aria-label="Board Aufgabe" />
+                        <div className="dashboard-plus-inline-row">
+                          <input className="dashboard-plus-input" value={task.tag} onChange={event => updateBoardTask(activeBoard.id, index, { tag: event.target.value })} placeholder="Tag" />
+                          <input className="dashboard-plus-input" value={task.time} onChange={event => updateBoardTask(activeBoard.id, index, { time: event.target.value })} placeholder="Zeit" />
+                        </div>
+                      </div>
+                      <div className="editable-task__actions">
+                        <PriorityBadge priority={task.priority} onCycle={() => updateBoardTask(activeBoard.id, index, { priority: nextPriority(task.priority) })} />
+                        <button type="button" className="icon-button" onClick={() => removeBoardTask(activeBoard.id, index)} aria-label="Löschen">
+                          <Trash2 size={15} />
+                        </button>
                       </div>
                     </div>
-                    <div className="editable-task__actions">
-                      <PriorityBadge priority={task.priority} onCycle={() => updateBoardTask(activeBoard.id, index, { priority: nextPriority(task.priority) })} />
-                      <button type="button" className="icon-button" onClick={() => removeBoardTask(activeBoard.id, index)} aria-label="Löschen">
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </div>
+                  </SwipeableRow>
                 ))}
               </div>
               <button type="button" className="secondary-button secondary-button--full" onClick={() => addBoardTask(activeBoard.id)}>
@@ -3354,6 +3880,108 @@ function DashboardPlusView({
             </>
             )
           })()}
+        </section>
+      </div>
+      )}
+
+      {currentSection === 'lists' && (
+      <div className="dashboard-plus-grid">
+        <section className="card dashboard-plus-card dashboard-plus-card--wide">
+          <SectionTitle
+            eyebrow="Listen"
+            title="Packen, Wünschen, Merken"
+            action={(
+              <button type="button" className="small-button" onClick={() => addList('custom')}>
+                <Plus size={14} /> Liste
+              </button>
+            )}
+          />
+          <div className="project-tabs dashboard-plus-tabs">
+            {dashboard.lists.map(list => (
+              <button
+                type="button"
+                key={list.id}
+                className={list.id === activeListId ? 'project-tab active' : 'project-tab'}
+                onClick={() => setActiveListId(list.id)}
+              >
+                {list.title} <span className="tab-count">{list.items.filter(item => !item.done).length}</span>
+              </button>
+            ))}
+          </div>
+          {activeList && (
+            <>
+              <div className="dashboard-plus-inline-row" style={{ marginBottom: 12 }}>
+                <input
+                  className="dashboard-plus-input dashboard-plus-input--title"
+                  value={activeList.title}
+                  onChange={event => updateList(activeList.id, { title: event.target.value })}
+                  aria-label="Listenname"
+                />
+                <select
+                  className="dashboard-plus-input"
+                  value={activeList.kind}
+                  onChange={event => updateList(activeList.id, { kind: event.target.value as DashboardPlusListKind })}
+                  aria-label="Listentyp"
+                >
+                  {(Object.keys(LIST_KIND_LABELS) as DashboardPlusListKind[]).map(kind => (
+                    <option key={kind} value={kind}>{LIST_KIND_LABELS[kind]}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={() => removeList(activeList.id)}
+                  aria-label="Liste löschen"
+                  disabled={dashboard.lists.length <= 1}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+              <div className="editable-task-list">
+                {activeList.items.map((item, index) => (
+                  <SwipeableRow
+                    key={item.id}
+                    leftLabel={item.done ? 'Offen' : 'Erledigt'}
+                    onSwipeLeft={() => updateListItem(activeList.id, index, { done: !item.done })}
+                  >
+                    <div className={item.done ? 'editable-task is-done' : 'editable-task'}>
+                      <button
+                        type="button"
+                        className="task-check"
+                        onClick={() => updateListItem(activeList.id, index, { done: !item.done })}
+                        aria-pressed={item.done}
+                      >
+                        {item.done ? <Check size={17} /> : <Circle size={17} />}
+                      </button>
+                      <div className="editable-task__content dashboard-plus-editable-content">
+                        <input
+                          className="dashboard-plus-input dashboard-plus-input--title"
+                          value={item.title}
+                          onChange={event => updateListItem(activeList.id, index, { title: event.target.value })}
+                          aria-label="Listeneintrag"
+                        />
+                        <input
+                          className="dashboard-plus-input"
+                          value={item.note}
+                          onChange={event => updateListItem(activeList.id, index, { note: event.target.value })}
+                          placeholder="Notiz"
+                          aria-label="Notiz"
+                        />
+                      </div>
+                      <div className="editable-task__actions">
+                        <button type="button" className="icon-button" onClick={() => removeListItem(activeList.id, index)} aria-label="Löschen">
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  </SwipeableRow>
+                ))}
+              </div>
+              <button type="button" className="secondary-button secondary-button--full" onClick={() => addListItem(activeList.id)}>
+                <Plus size={15} /> Eintrag hinzufügen
+              </button>
+            </>
+          )}
         </section>
       </div>
       )}
@@ -3584,7 +4212,20 @@ function DashboardPlusView({
             <div className="kpi-card"><span>Schnitt</span><strong>{liveStats.average}%</strong></div>
             <div className="kpi-card"><span>Best</span><strong>{liveStats.best}%</strong></div>
             <div className="kpi-card"><span>Rhythmus</span><strong>{liveStats.rhythm}</strong><small>Tage</small></div>
-            <div className="kpi-card"><span>Gewicht</span><strong>{liveStats.weight ? liveStats.weight.toFixed(1) : '—'}</strong><small>kg</small></div>
+            <div className="kpi-card">
+              <span>Gewicht</span>
+              <strong>{liveStats.weight ? liveStats.weight.toFixed(1) : '—'}</strong>
+              <small>
+                {liveStats.weightDelta7 === null
+                  ? 'kg'
+                  : `kg · ${liveStats.weightDelta7 > 0 ? '+' : ''}${liveStats.weightDelta7} 7T`}
+              </small>
+            </div>
+            <div className="kpi-card">
+              <span>Schlaf</span>
+              <strong>{liveStats.avgSleepHours !== null ? `${liveStats.avgSleepHours}h` : '—'}</strong>
+              <small>7-Tage-Schnitt</small>
+            </div>
           </div>
           <div className="labor-week-bars" aria-hidden="true">
             {liveStats.weeklyBars.map((value, index) => (
@@ -3683,8 +4324,46 @@ function DashboardPlusView({
 
       <div className="dashboard-plus-footer">
         <span>Snapshot: {today}</span>
-        <span>Alles ist direkt editierbar und wird in deinem Browser gesichert.</span>
+        <span>Wischen: links erledigen, rechts verschieben · lange drücken: Menü</span>
       </div>
+
+      {taskMenu && (() => {
+        const items: ContextMenuItem[] = [
+          { id: 'toggle', label: 'Erledigt umschalten' },
+          { id: 'priority', label: 'Priorität wechseln' },
+          {
+            id: 'move',
+            label: taskMenu.kind === 'focus' ? 'Zum aktiven Board' : 'Zum Fokus',
+          },
+          { id: 'delete', label: 'Löschen', danger: true },
+        ]
+        return (
+          <ContextMenu
+            x={taskMenu.x}
+            y={taskMenu.y}
+            title={taskMenu.title || 'Aufgabe'}
+            items={items}
+            onClose={() => setTaskMenu(null)}
+            onSelect={id => {
+              if (taskMenu.kind === 'focus') {
+                const task = dashboard.focusTodos[taskMenu.index]
+                if (!task) return
+                if (id === 'toggle') updateFocusTask(taskMenu.index, { done: !task.done })
+                if (id === 'priority') updateFocusTask(taskMenu.index, { priority: nextPriority(task.priority) })
+                if (id === 'move') moveFocusToBoard(taskMenu.index)
+                if (id === 'delete') removeFocusTask(taskMenu.index)
+                return
+              }
+              const task = activeBoard?.tasks[taskMenu.index]
+              if (!task || !activeBoard) return
+              if (id === 'toggle') updateBoardTask(activeBoard.id, taskMenu.index, { done: !task.done })
+              if (id === 'priority') updateBoardTask(activeBoard.id, taskMenu.index, { priority: nextPriority(task.priority) })
+              if (id === 'move') moveBoardToFocus(activeBoard.id, taskMenu.index)
+              if (id === 'delete') removeBoardTask(activeBoard.id, taskMenu.index)
+            }}
+          />
+        )
+      })()}
     </div>
   )
 }
@@ -3886,6 +4565,7 @@ function SettingsModal({
   onChange,
   onExport,
   onImport,
+  onResetLabor,
   onClose,
 }: {
   settings: AppSettings
@@ -3893,6 +4573,7 @@ function SettingsModal({
   onChange: (settings: AppSettings) => void
   onExport: () => void
   onImport: (file: File) => Promise<void>
+  onResetLabor: () => void
   onClose: () => void
 }) {
   useModalBehavior(onClose)
@@ -4040,6 +4721,22 @@ function SettingsModal({
           <label className="text-field"><span>Standard-Fokus</span><input type="number" min="5" max="120" step="5" value={settings.focusMinutes} onChange={event => onChange({ ...settings, focusMinutes: clampNumber(Number(event.target.value) || 25, 5, 120) })} /></label>
           <label className="text-field"><span>Proteinziel in g</span><input type="number" min="50" max="400" step="5" value={settings.proteinGoal} onChange={event => onChange({ ...settings, proteinGoal: clampNumber(Number(event.target.value) || 150, 50, 400) })} /></label>
           <label className="text-field"><span>Kalorienziel</span><input type="number" min="1000" max="8000" step="50" value={settings.calorieGoal} onChange={event => onChange({ ...settings, calorieGoal: clampNumber(Number(event.target.value) || 3500, 1000, 8000) })} /></label>
+          <label className="text-field"><span>Fettziel in g</span><input type="number" min="20" max="200" step="5" value={settings.fatGoal} onChange={event => onChange({ ...settings, fatGoal: clampNumber(Number(event.target.value) || 70, 20, 200) })} /></label>
+          <label className="text-field"><span>KH-Ziel in g</span><input type="number" min="50" max="500" step="5" value={settings.carbsGoal} onChange={event => onChange({ ...settings, carbsGoal: clampNumber(Number(event.target.value) || 250, 50, 500) })} /></label>
+          <label className="text-field"><span>Ballaststoffe in g</span><input type="number" min="10" max="80" step="1" value={settings.fiberGoal} onChange={event => onChange({ ...settings, fiberGoal: clampNumber(Number(event.target.value) || 30, 10, 80) })} /></label>
+          <label className="text-field"><span>Körpergröße in cm</span><input type="number" min="0" max="250" step="1" value={settings.heightCm || ''} placeholder="für BMI" onChange={event => onChange({ ...settings, heightCm: clampNumber(Number(event.target.value) || 0, 0, 250) })} /></label>
+        </div>
+
+        <div className="settings-section">
+          <h3>Labor</h3>
+          <p className="settings-help">
+            Alte Demo-Daten (Medis, Boards, Finanzen) entfernen und mit leerem Labor neu starten. Tages-Einträge bleiben.
+          </p>
+          <div className="settings-actions">
+            <button type="button" className="secondary-button" onClick={onResetLabor}>
+              <RotateCcw size={16} /> Labor zurücksetzen
+            </button>
+          </div>
         </div>
 
         <div className="settings-section">

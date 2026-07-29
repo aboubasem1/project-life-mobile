@@ -13,6 +13,9 @@ export interface DashboardEntry {
   mood: string
   sleepQuality: string
   sleepDuration: string
+  /** Optional clock times "HH:MM" — preferred over free-text duration when both set. */
+  bedTime?: string
+  wakeTime?: string
   meditationMinutes: number
 
   // Habits
@@ -33,6 +36,9 @@ export interface DashboardEntry {
   caloriesReached: boolean
   proteinGrams: number
   calories: number
+  fatGrams: number
+  carbsGrams: number
+  fiberGrams: number
   tasksDone: number
   journalDone: boolean
   journalText: string
@@ -42,6 +48,7 @@ export interface DashboardEntry {
   weightKg: number
   waterLiters: number
   deepWorkHours: number
+  steps: number
 
   // Computed
   dailyScore: number
@@ -76,6 +83,9 @@ export const createDefaultEntry = (date: string): DashboardEntry => ({
   caloriesReached: false,
   proteinGrams: 0,
   calories: 0,
+  fatGrams: 0,
+  carbsGrams: 0,
+  fiberGrams: 0,
   tasksDone: 0,
   journalDone: false,
   journalText: '',
@@ -83,6 +93,7 @@ export const createDefaultEntry = (date: string): DashboardEntry => ({
   weightKg: 0,
   waterLiters: 0,
   deepWorkHours: 0,
+  steps: 0,
   dailyScore: 0,
   breathingDone: false,
 })
