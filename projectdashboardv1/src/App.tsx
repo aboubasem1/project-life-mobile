@@ -12,11 +12,14 @@ import {
 import {
   Activity,
   AlertCircle,
+  ArrowDownRight,
+  ArrowUpRight,
   BarChart3,
   BatteryLow,
   Bell,
   BookOpen,
   Brain,
+  CalendarPlus,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -51,6 +54,7 @@ import {
   RotateCcw,
   Search,
   Settings,
+  Share2,
   ShoppingBag,
   ShoppingCart,
   Snowflake,
@@ -72,7 +76,10 @@ import { buildWeekInsights } from './lib/insights'
 import { deriveLaborOverview, deriveLaborStats, smartLaborHints } from './lib/laborLive'
 import { searchLabor } from './lib/laborSearch'
 import { buildMonthGrid, monthLabel } from './lib/calendarGrid'
-import { hashFromView, navigateHash, viewFromHash } from './lib/routing'
+import { hashFromView, hashPathOnly, navigateHash, takeAppActionFromLocation, viewFromHash, buildActionUrl, SHORTCUT_RECIPES, type AppAction } from './lib/routing'
+import { shareOrDownloadIcs } from './lib/ics'
+import { copyText, shareText } from './lib/share'
+import { releaseScreenWakeLock, requestScreenWakeLock } from './lib/wakeLock'
 import { calculateScore, calculateStreakForHabit, getScoreBreakdown } from './lib/score'
 import { calculateHabitStrength, habitStrengthLabel } from './lib/habitStrength'
 import { calculateRecovery } from './lib/recovery'
@@ -90,7 +97,6 @@ import {
   buildWeightInsights,
   formatSleepHoursLabel,
   hoursBetweenTimes,
-  macroProgress,
 } from './lib/healthMetrics'
 import type { HabitKey } from './types/DashboardEntry'
 import {
@@ -111,6 +117,17 @@ import './launch.css'
 
 type View = 'today' | 'plan' | 'checkin' | 'progress' | 'dashboardPlus'
 type ThemePreference = 'light' | 'dark' | 'system'
+type AccentPreference = 'terracotta' | 'sage' | 'ocean' | 'lilac' | 'amber'
+
+const ACCENT_OPTIONS: Array<{ id: AccentPreference; label: string; swatch: string }> = [
+  { id: 'terracotta', label: 'Terrakotta', swatch: '#c77f6b' },
+  { id: 'sage', label: 'Salbei', swatch: '#6f8f7d' },
+  { id: 'ocean', label: 'Ozean', swatch: '#6e8db1' },
+  { id: 'lilac', label: 'Flieder', swatch: '#a08cb8' },
+  { id: 'amber', label: 'Bernstein', swatch: '#b68c4c' },
+]
+
+const ACCENT_IDS = ACCENT_OPTIONS.map(option => option.id)
 type EnergyLevel = NonNullable<DashboardEntry['energyLevel']>
 type RoutineKey =
   | 'breathingDone' | 'coldShower' | 'proteinShake'
@@ -121,6 +138,7 @@ type RoutineKey =
 type AppSettings = {
   name: string
   theme: ThemePreference
+  accent: AccentPreference
   focusMinutes: number
   proteinGoal: number
   calorieGoal: number
@@ -506,6 +524,9 @@ const DASHBOARD_PLUS_TABS = [
 type DashboardPlusSection = (typeof DASHBOARD_PLUS_TABS)[number]['id']
 
 const SETTINGS_KEY = 'life-os-v1-settings'
+/** Stores the date of the last splash so the intro animation only plays on the first open of a day. */
+const SPLASH_KEY = 'life-os-splash-day'
+const QUICK_NOTE_KEY = 'life-os-quick-note'
 const DASHBOARD_PLUS_KEY = 'life-os-v1-dashboard-plus'
 
 // ── Data from projectbaby ────────────────────────────────────────────────────
@@ -742,6 +763,7 @@ const DEFAULT_DASHBOARD_PLUS_LAYOUT: DashboardPlusLayout = {
 const DEFAULT_SETTINGS: AppSettings = {
   name: '',
   theme: 'system',
+  accent: 'terracotta',
   focusMinutes: 25,
   proteinGoal: 150,
   calorieGoal: 3500,
@@ -801,7 +823,7 @@ function storageStatusLabel(syncStatus: string, isOnline: boolean): string {
   return 'Nur dieses Gerät'
 }
 
-const MOODS = ['Ruhig', 'Gut', 'Neutral', 'Müde', 'Gestresst']
+const MOODS = ['Sehr schlecht', 'Schlecht', 'Okay', 'Gut', 'Sehr gut']
 const SLEEP_QUALITY = ['Schlecht', 'Okay', 'Gut', 'Sehr gut']
 const SLEEP_DURATION_PRESETS = ['<5h', '6h', '7h', '7.5h', '8h', '>8h']
 
@@ -920,9 +942,14 @@ function loadSettings(): AppSettings {
       ? stored.theme as ThemePreference
       : DEFAULT_SETTINGS.theme
 
+    const accent: AccentPreference = ACCENT_IDS.includes(stored.accent as AccentPreference)
+      ? stored.accent as AccentPreference
+      : DEFAULT_SETTINGS.accent
+
     return {
       name: typeof stored.name === 'string' ? stored.name.slice(0, 40) : DEFAULT_SETTINGS.name,
       theme,
+      accent,
       focusMinutes: clampNumber(Number(stored.focusMinutes) || DEFAULT_SETTINGS.focusMinutes, 5, 120),
       proteinGoal: clampNumber(Number(stored.proteinGoal) || DEFAULT_SETTINGS.proteinGoal, 50, 400),
       calorieGoal: clampNumber(Number(stored.calorieGoal) || DEFAULT_SETTINGS.calorieGoal, 1000, 8000),
@@ -1019,6 +1046,21 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
 
+const TASK_FOCUS_DURATIONS = [10, 15, 25, 45, 60] as const
+
+function normalizeAnchorMinutes(
+  minutes: unknown,
+  length: number,
+  fallback: number,
+): number[] {
+  const raw = Array.isArray(minutes) ? minutes : []
+  const safeFallback = clampNumber(Number(fallback) || 25, 5, 120)
+  return Array.from({ length }, (_, index) => {
+    const value = Number(raw[index])
+    return Number.isFinite(value) && value >= 5 ? clampNumber(value, 5, 120) : safeFallback
+  })
+}
+
 function plural(count: number, singular: string, pluralWord: string): string {
   return count === 1 ? singular : pluralWord
 }
@@ -1061,30 +1103,6 @@ function IconButton({
       title={label}
       onClick={onClick}
       disabled={disabled}
-    >
-      {children}
-    </button>
-  )
-}
-
-function BadgeButton({
-  label,
-  children,
-  onClick,
-  className = '',
-}: {
-  label: string
-  children: ReactNode
-  onClick: () => void
-  className?: string
-}) {
-  return (
-    <button
-      type="button"
-      className={`badge-button ${className}`.trim()}
-      aria-label={label}
-      title={label}
-      onClick={onClick}
     >
       {children}
     </button>
@@ -1176,11 +1194,22 @@ function App() {
   const [settings, setSettings] = useState<AppSettings>(loadSettings)
   const [dashboardPlus, setDashboardPlus] = useState<DashboardPlusState>(loadDashboardPlusState)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [taskEditor, setTaskEditor] = useState<{ index: number | null; value: string } | null>(null)
+  const [taskEditor, setTaskEditor] = useState<{ index: number | null; value: string; minutes: number } | null>(null)
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [focusSession, setFocusSession] = useState<FocusSession | null>(null)
   const [toast, setToast] = useState<ToastState>(null)
+  const [highlightQuickNote, setHighlightQuickNote] = useState(false)
+  const actionBridgeRef = useRef<{
+    applyAction: (action: AppAction) => void
+  } | null>(null)
   const [lastBackupAt, setLastBackupAt] = useState<string | null>(() => getLastBackupAt())
+  const [splashPhase, setSplashPhase] = useState<'visible' | 'leaving' | 'done'>(() => {
+    try {
+      return localStorage.getItem(SPLASH_KEY) === dateKey(new Date()) ? 'done' : 'visible'
+    } catch {
+      return 'visible'
+    }
+  })
 
   const today = dateKey(new Date())
   const nowHour = new Date().getHours()
@@ -1196,6 +1225,7 @@ function App() {
   const score = clampNumber(calculateScore(entry, scoreGoals), 0, 100)
   const anchors = entry.anchors ?? []
   const anchorsDone = entry.anchorsDone ?? []
+  const anchorMinutes = normalizeAnchorMinutes(entry.anchorMinutes, anchors.length, settings.focusMinutes)
   const completedAnchors = anchors.filter((_, index) => Boolean(anchorsDone[index])).length
   const habitsDueToday = useMemo(
     () => filterHabitsForDate(settings.activeHabits, selectedDate, settings.habitSchedules),
@@ -1241,14 +1271,25 @@ function App() {
   )
 
   useEffect(() => {
-    const onHash = () => setView(viewFromHash())
+    const consumeAction = () => {
+      const action = takeAppActionFromLocation()
+      if (!action) return
+      window.setTimeout(() => actionBridgeRef.current?.applyAction(action), 0)
+    }
+
+    const onHash = () => {
+      setView(viewFromHash())
+      consumeAction()
+    }
+
     window.addEventListener('hashchange', onHash)
     if (!window.location.hash) navigateHash(view, true)
+    else consumeAction()
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
   useEffect(() => {
-    if (hashFromView(view) !== window.location.hash) navigateHash(view, true)
+    if (hashPathOnly(window.location.hash) !== hashFromView(view)) navigateHash(view, true)
   }, [view])
 
   useEffect(() => {
@@ -1273,6 +1314,28 @@ function App() {
     media.addEventListener('change', applyTheme)
     return () => media.removeEventListener('change', applyTheme)
   }, [settings.theme])
+
+  useEffect(() => {
+    document.documentElement.dataset.accent = settings.accent
+  }, [settings.accent])
+
+  useEffect(() => {
+    if (splashPhase === 'visible') {
+      const timer = window.setTimeout(() => setSplashPhase('leaving'), 2100)
+      return () => window.clearTimeout(timer)
+    }
+    if (splashPhase === 'leaving') {
+      const timer = window.setTimeout(() => {
+        setSplashPhase('done')
+        safeLocalStorageSetItem(SPLASH_KEY, today)
+      }, 550)
+      return () => window.clearTimeout(timer)
+    }
+  }, [splashPhase, today])
+
+  const dismissSplash = () => {
+    if (splashPhase === 'visible') setSplashPhase('leaving')
+  }
 
   useEffect(() => {
     if (!toast) return
@@ -1401,11 +1464,13 @@ function App() {
     }
   }
 
-  const setAnchors = (nextAnchors: string[], nextDone: boolean[]) => {
+  const setAnchors = (nextAnchors: string[], nextDone: boolean[], nextMinutes?: number[]) => {
     const normalizedDone = nextAnchors.map((_, index) => Boolean(nextDone[index]))
+    const sourceMinutes = nextMinutes ?? nextAnchors.map((_, index) => anchorMinutes[index] ?? settings.focusMinutes)
     updateEntry({
       anchors: nextAnchors,
       anchorsDone: normalizedDone,
+      anchorMinutes: normalizeAnchorMinutes(sourceMinutes, nextAnchors.length, settings.focusMinutes),
       tasksDone: normalizedDone.filter(Boolean).length,
     })
   }
@@ -1414,12 +1479,13 @@ function App() {
     const nextDone = anchors.map((_, itemIndex) =>
       itemIndex === index ? !anchorsDone[itemIndex] : !!anchorsDone[itemIndex],
     )
-    setAnchors(anchors, nextDone)
+    setAnchors(anchors, nextDone, anchorMinutes)
   }
 
-  const saveTask = (value: string, index: number | null) => {
+  const saveTask = (value: string, index: number | null, minutes?: number) => {
     const clean = value.trim()
     if (!clean) return
+    const taskMinutes = clampNumber(minutes ?? dayPolicy.focusMinutes, 5, 120)
 
     if (index === null) {
       if (anchors.length >= dayPolicy.maxAnchors) {
@@ -1432,11 +1498,12 @@ function App() {
         )
         return
       }
-      setAnchors([...anchors, clean], [...anchorsDone, false])
+      setAnchors([...anchors, clean], [...anchorsDone, false], [...anchorMinutes, taskMinutes])
       showToast('Aufgabe hinzugefügt.')
     } else {
       const next = anchors.map((item, itemIndex) => (itemIndex === index ? clean : item))
-      setAnchors(next, anchors.map((_, itemIndex) => Boolean(anchorsDone[itemIndex])))
+      const nextMinutes = anchorMinutes.map((item, itemIndex) => (itemIndex === index ? taskMinutes : item))
+      setAnchors(next, anchors.map((_, itemIndex) => Boolean(anchorsDone[itemIndex])), nextMinutes)
       showToast('Aufgabe aktualisiert.')
     }
     setTaskEditor(null)
@@ -1468,15 +1535,19 @@ function App() {
   const deleteTask = (index: number) => {
     const deleted = anchors[index]
     const wasDone = Boolean(anchorsDone[index])
+    const deletedMinutes = anchorMinutes[index] ?? settings.focusMinutes
     const nextAnchors = anchors.filter((_, itemIndex) => itemIndex !== index)
     const nextDone = anchorsDone.filter((_, itemIndex) => itemIndex !== index)
-    setAnchors(nextAnchors, nextDone)
+    const nextMinutes = anchorMinutes.filter((_, itemIndex) => itemIndex !== index)
+    setAnchors(nextAnchors, nextDone, nextMinutes)
     showToast('Aufgabe entfernt.', 'Rückgängig', () => {
       const restoredAnchors = [...nextAnchors]
       const restoredDone = [...nextDone]
+      const restoredMinutes = [...nextMinutes]
       restoredAnchors.splice(index, 0, deleted)
       restoredDone.splice(index, 0, wasDone)
-      setAnchors(restoredAnchors, restoredDone)
+      restoredMinutes.splice(index, 0, deletedMinutes)
+      setAnchors(restoredAnchors, restoredDone, restoredMinutes)
     })
   }
 
@@ -1485,9 +1556,11 @@ function App() {
     if (target < 0 || target >= anchors.length) return
     const nextAnchors = [...anchors]
     const nextDone = anchors.map((_, itemIndex) => Boolean(anchorsDone[itemIndex]))
+    const nextMinutes = [...anchorMinutes]
     ;[nextAnchors[index], nextAnchors[target]] = [nextAnchors[target], nextAnchors[index]]
     ;[nextDone[index], nextDone[target]] = [nextDone[target], nextDone[index]]
-    setAnchors(nextAnchors, nextDone)
+    ;[nextMinutes[index], nextMinutes[target]] = [nextMinutes[target], nextMinutes[index]]
+    setAnchors(nextAnchors, nextDone, nextMinutes)
   }
 
   const openFocus = (title: string, taskIndex?: number, routineKey?: RoutineKey, overrideMinutes?: number) => {
@@ -1506,7 +1579,7 @@ function App() {
       const nextDone = anchors.map((_, itemIndex) =>
         itemIndex === index ? true : Boolean(anchorsDone[itemIndex]),
       )
-      setAnchors(anchors, nextDone)
+      setAnchors(anchors, nextDone, anchorMinutes)
       updateEntry({ focusDone: true } as Partial<DashboardEntry>)
     } else if (focusSession.routineKey) {
       updateEntry({
@@ -1532,6 +1605,76 @@ function App() {
     setView(nextView)
     navigateHash(nextView)
     if (nextView === 'today' || nextView === 'dashboardPlus') setSelectedDate(today)
+  }
+
+  const exportTaskToCalendar = async (title: string, minutes: number) => {
+    const result = await shareOrDownloadIcs({
+      title,
+      minutes,
+      description: `Tagesanker aus Life OS · ${minutes} Min. Fokus`,
+    })
+    if (result === 'shared') showToast('Kalender-Share geöffnet — in Kalender sichern.')
+    else if (result === 'downloaded') showToast('Kalenderdatei gespeichert (.ics).')
+    else showToast('Kalender-Export abgebrochen.')
+  }
+
+  actionBridgeRef.current = {
+    applyAction: (action: AppAction) => {
+      switch (action.kind) {
+        case 'today':
+          navigateTo('today')
+          showToast('Kurzbefehl: Heute')
+          break
+        case 'checkin':
+          navigateTo('checkin')
+          showToast('Kurzbefehl: Check-in')
+          break
+        case 'plan':
+          navigateTo('plan')
+          showToast('Kurzbefehl: Plan')
+          break
+        case 'note':
+          navigateTo('today')
+          setHighlightQuickNote(true)
+          window.setTimeout(() => {
+            document.getElementById('life-os-quick-note')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }, 80)
+          showToast('Kurzbefehl: Kurznotiz')
+          break
+        case 'add-task':
+          navigateTo('plan')
+          window.setTimeout(() => {
+            setTaskEditor({
+              index: null,
+              value: '',
+              minutes: dayPolicy.focusMinutes,
+            })
+          }, 60)
+          showToast('Kurzbefehl: Aufgabe')
+          break
+        case 'focus': {
+          navigateTo('today')
+          const nextIndex = anchors.findIndex((_, index) => !anchorsDone[index])
+          const title = action.title?.trim()
+            || (nextIndex >= 0 ? anchors[nextIndex] : 'Fokusblock')
+          const minutes = action.minutes
+            ?? (nextIndex >= 0 ? anchorMinutes[nextIndex] : dayPolicy.focusMinutes)
+          openFocus(
+            title,
+            nextIndex >= 0 ? nextIndex : undefined,
+            undefined,
+            minutes,
+          )
+          showToast('Kurzbefehl: Fokus')
+          break
+        }
+        default: {
+          const _exhaustive: never = action.kind
+          void _exhaustive
+          break
+        }
+      }
+    },
   }
 
   return (
@@ -1599,9 +1742,6 @@ function App() {
             <strong>Life OS</strong>
           </div>
           <div className="mobile-header__actions">
-            <BadgeButton label="Dashboard+ öffnen" onClick={() => navigateTo('dashboardPlus')} className="badge-button--icon">
-              <Crown size={16} />
-            </BadgeButton>
             <IconButton label="Theme wechseln" onClick={quickToggleTheme}>
               {resolvedTheme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </IconButton>
@@ -1622,9 +1762,6 @@ function App() {
                 <Cloud size={14} />
                 {storageStatusLabel(syncStatus, isOnline)}
               </span>
-              <BadgeButton label="Dashboard+ öffnen" onClick={() => navigateTo('dashboardPlus')} className="badge-button--icon">
-                <Crown size={16} />
-              </BadgeButton>
               <IconButton label="Einstellungen öffnen" onClick={() => setSettingsOpen(true)}>
                 <Settings size={18} />
               </IconButton>
@@ -1640,13 +1777,23 @@ function App() {
               settings={settings}
               anchors={anchors}
               anchorsDone={anchorsDone}
+              anchorMinutes={anchorMinutes}
               streakByKey={streakByKey}
               onDateChange={setSelectedDate}
               onUpdate={updateEntry}
               onToggleAnchor={toggleAnchor}
-              onEditTask={(index, value) => setTaskEditor({ index, value })}
-              onAddTask={() => setTaskEditor({ index: null, value: '' })}
+              onEditTask={(index, value) => setTaskEditor({
+                index,
+                value,
+                minutes: anchorMinutes[index] ?? dayPolicy.focusMinutes,
+              })}
+              onAddTask={() => setTaskEditor({
+                index: null,
+                value: '',
+                minutes: dayPolicy.focusMinutes,
+              })}
               onOpenFocus={openFocus}
+              onExportToCalendar={exportTaskToCalendar}
               onReorderHabits={ids => setSettings(current => ({ ...current, activeHabits: ids }))}
               onOpenPlan={() => navigateTo('plan')}
               onOpenCheckin={() => navigateTo('checkin')}
@@ -1662,13 +1809,21 @@ function App() {
                   showToast('Schon als Morgen-Anker geplant.')
                   return
                 }
+                const tomorrowMinutes = normalizeAnchorMinutes(
+                  tomorrowEntry.anchorMinutes,
+                  nextAnchors.length,
+                  settings.focusMinutes,
+                )
                 await saveEntryForDate(tomorrow, {
                   anchors: [...nextAnchors, text],
                   anchorsDone: [...(tomorrowEntry.anchorsDone ?? []).slice(0, nextAnchors.length), false],
+                  anchorMinutes: [...tomorrowMinutes, dayPolicy.focusMinutes],
                 })
                 showToast('Als Morgen-Anker gespeichert.')
               }}
               showToast={showToast}
+              highlightQuickNote={highlightQuickNote}
+              onQuickNoteHighlightHandled={() => setHighlightQuickNote(false)}
             />
           )}
 
@@ -1678,18 +1833,27 @@ function App() {
               today={today}
               anchors={anchors}
               anchorsDone={anchorsDone}
+              anchorMinutes={anchorMinutes}
               focusMinutes={dayPolicy.focusMinutes}
               maxAnchors={dayPolicy.maxAnchors}
               energy={entry.energyLevel}
               onDateChange={setSelectedDate}
-              onAddTask={() => setTaskEditor({ index: null, value: '' })}
+              onAddTask={() => setTaskEditor({
+                index: null,
+                value: '',
+                minutes: dayPolicy.focusMinutes,
+              })}
               onAddSuggestion={text => saveTask(text, null)}
-              onEditTask={(index, value) => setTaskEditor({ index, value })}
+              onEditTask={(index, value) => setTaskEditor({
+                index,
+                value,
+                minutes: anchorMinutes[index] ?? dayPolicy.focusMinutes,
+              })}
               onDeleteTask={deleteTask}
               onMoveTask={moveTask}
               onToggleTask={toggleAnchor}
               onOpenFocus={openFocus}
-              onFocusMinutesChange={minutes => setSettings(current => ({ ...current, focusMinutes: minutes }))}
+              onExportToCalendar={exportTaskToCalendar}
             />
           )}
 
@@ -1698,7 +1862,6 @@ function App() {
               entry={entry}
               date={selectedDate}
               today={today}
-              settings={settings}
               onDateChange={setSelectedDate}
               onUpdate={updateEntry}
               showToast={showToast}
@@ -1762,9 +1925,10 @@ function App() {
       {taskEditor && (
         <TaskEditor
           initialValue={taskEditor.value}
+          initialMinutes={taskEditor.minutes}
           isEditing={taskEditor.index !== null}
           onClose={() => setTaskEditor(null)}
-          onSave={value => saveTask(value, taskEditor.index)}
+          onSave={(value, minutes) => saveTask(value, taskEditor.index, minutes)}
         />
       )}
 
@@ -1784,6 +1948,9 @@ function App() {
           onChangeMinutes={minutes => setFocusSession(current => current ? { ...current, minutes } : current)}
           onClose={() => setFocusSession(null)}
           onFinish={finishFocus}
+          onExportToCalendar={() => {
+            void exportTaskToCalendar(focusSession.title, focusSession.minutes)
+          }}
         />
       )}
 
@@ -1817,6 +1984,30 @@ function App() {
               {toast.actionLabel}
             </button>
           )}
+        </div>
+      )}
+
+      {splashPhase !== 'done' && (
+        <div
+          className={splashPhase === 'leaving' ? 'splash-screen is-leaving' : 'splash-screen'}
+          role="presentation"
+          aria-hidden="true"
+          onClick={dismissSplash}
+        >
+          <div className="splash-screen__orbs">
+            <span className="splash-screen__orb splash-screen__orb--one" />
+            <span className="splash-screen__orb splash-screen__orb--two" />
+            <span className="splash-screen__orb splash-screen__orb--three" />
+          </div>
+          <div className="splash-screen__content">
+            <div className="brand__mark splash-screen__mark"><span /></div>
+            <strong className="splash-screen__title">Life OS</strong>
+            <p className="splash-screen__greeting">
+              {greeting()}{settings.name.trim() ? `, ${settings.name.trim()}` : ''}.
+            </p>
+            <span className="splash-screen__date">{formatLongDate(today)}</span>
+            <div className="splash-screen__loader"><span /></div>
+          </div>
         </div>
       )}
     </div>
@@ -1874,6 +2065,103 @@ function DateStrip({
   )
 }
 
+type QuickNoteState = { text: string; updatedAt: string | null }
+
+function loadQuickNote(): QuickNoteState {
+  try {
+    const stored = JSON.parse(localStorage.getItem(QUICK_NOTE_KEY) ?? 'null') as Partial<QuickNoteState> | null
+    if (!stored || typeof stored.text !== 'string') return { text: '', updatedAt: null }
+    return {
+      text: stored.text.slice(0, 600),
+      updatedAt: typeof stored.updatedAt === 'string' ? stored.updatedAt : null,
+    }
+  } catch {
+    return { text: '', updatedAt: null }
+  }
+}
+
+/** Sticky-note style scratchpad — persists locally, independent of daily entries. */
+function QuickNoteWidget({
+  highlighted = false,
+  onHighlightHandled,
+  onToast,
+}: {
+  highlighted?: boolean
+  onHighlightHandled?: () => void
+  onToast?: (message: string) => void
+}) {
+  const [note, setNote] = useState<QuickNoteState>(loadQuickNote)
+
+  useEffect(() => {
+    if (!highlighted) return
+    const timer = window.setTimeout(() => onHighlightHandled?.(), 1800)
+    return () => window.clearTimeout(timer)
+  }, [highlighted, onHighlightHandled])
+
+  const save = (text: string) => {
+    const next: QuickNoteState = {
+      text: text.slice(0, 600),
+      updatedAt: text.trim() ? new Date().toISOString() : null,
+    }
+    setNote(next)
+    safeLocalStorageSetItem(QUICK_NOTE_KEY, JSON.stringify(next))
+  }
+
+  const shareNote = async () => {
+    const result = await shareText({
+      title: 'Life OS Kurznotiz',
+      text: note.text.trim(),
+    })
+    if (result === 'shared') onToast?.('Share Sheet — z. B. in Notizen sichern.')
+    else if (result === 'copied') onToast?.('Kurznotiz kopiert.')
+    else onToast?.('Teilen nicht verfügbar.')
+  }
+
+  const updatedLabel = note.updatedAt
+    ? new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' }).format(new Date(note.updatedAt))
+    : null
+
+  return (
+    <section
+      id="life-os-quick-note"
+      className={highlighted ? 'card quick-note-card is-highlighted' : 'card quick-note-card'}
+    >
+      <span className="quick-note-card__pin" aria-hidden="true" />
+      <SectionTitle
+        eyebrow="Merkzettel"
+        title="Kurznotiz"
+        action={(
+          <div className="quick-note-card__actions">
+            {note.text.trim() ? (
+              <button type="button" className="text-button" onClick={() => void shareNote()}>
+                <Share2 size={14} /> Teilen
+              </button>
+            ) : null}
+            {note.text.trim() ? (
+              <button type="button" className="text-button" onClick={() => save('')}>
+                Leeren
+              </button>
+            ) : null}
+          </div>
+        )}
+      />
+      <textarea
+        className="quick-note-card__input"
+        value={note.text}
+        onChange={event => save(event.target.value)}
+        placeholder="Was du nicht vergessen willst …"
+        rows={3}
+        maxLength={600}
+        aria-label="Kurznotiz"
+      />
+      <div className="quick-note-card__foot">
+        <span>{updatedLabel ? `Zuletzt ${updatedLabel} Uhr` : 'Bleibt hier, bis du sie leerst'}</span>
+        <span className="quick-note-card__hint">Teilen → Notizen / Kurzbefehle</span>
+      </div>
+    </section>
+  )
+}
+
 function TodayView({
   entry,
   date,
@@ -1882,6 +2170,7 @@ function TodayView({
   settings,
   anchors,
   anchorsDone,
+  anchorMinutes,
   onDateChange,
   onUpdate,
   onToggleAnchor,
@@ -1894,6 +2183,9 @@ function TodayView({
   onPromoteThoughtToTomorrow,
   streakByKey,
   showToast,
+  highlightQuickNote = false,
+  onQuickNoteHighlightHandled,
+  onExportToCalendar,
 }: {
   entry: DashboardEntry
   date: string
@@ -1902,6 +2194,7 @@ function TodayView({
   settings: AppSettings
   anchors: string[]
   anchorsDone: boolean[]
+  anchorMinutes: number[]
   streakByKey: Record<string, number>
   onDateChange: (date: string) => void
   onUpdate: (patch: Partial<DashboardEntry>) => void
@@ -1914,6 +2207,9 @@ function TodayView({
   onOpenCheckin: () => void
   onPromoteThoughtToTomorrow: (text: string) => Promise<void>
   showToast: (message: string, actionLabel?: string, onAction?: () => void) => void
+  highlightQuickNote?: boolean
+  onQuickNoteHighlightHandled?: () => void
+  onExportToCalendar: (title: string, minutes: number) => Promise<void>
 }) {
   const [capture, setCapture] = useState('')
   const [dragIdx,     setDragIdx]     = useState<number | null>(null)
@@ -2010,7 +2306,9 @@ function TodayView({
   const nextTaskIndex = nextStep?.kind === 'anchor' ? nextStep.index : -1
   const focusMinutesForNext = nextStep?.kind === 'habit'
     ? (nextStep.minutes ?? policy.focusMinutes)
-    : policy.focusMinutes
+    : nextStep?.kind === 'anchor'
+      ? (anchorMinutes[nextStep.index] ?? policy.focusMinutes)
+      : policy.focusMinutes
 
   const completeNext = () => {
     if (nextStep?.kind === 'anchor') {
@@ -2195,6 +2493,7 @@ function TodayView({
             <div className="task-list">
               {anchors.map((task, index) => {
                 const done = Boolean(anchorsDone[index])
+                const taskMinutes = anchorMinutes[index] ?? policy.focusMinutes
                 return (
                   <SwipeableRow
                     key={`${task}-${index}`}
@@ -2214,10 +2513,18 @@ function TodayView({
                       >
                         {done ? <Check size={16} /> : <Circle size={16} />}
                       </button>
-                      <button type="button" className="task-title" onClick={() => onOpenFocus(task, index, undefined, policy.focusMinutes)}>
+                      <button type="button" className="task-title" onClick={() => onOpenFocus(task, index, undefined, taskMinutes)}>
                         <strong>{task}</strong>
-                        <span>{done ? 'Erledigt' : `${policy.focusMinutes} Minuten Fokus`}</span>
+                        <span>{done ? 'Erledigt' : `${taskMinutes} Minuten Fokus`}</span>
                       </button>
+                      {!done && (
+                        <IconButton
+                          label={`${task} in Kalender`}
+                          onClick={() => { void onExportToCalendar(task, taskMinutes) }}
+                        >
+                          <CalendarPlus size={15} />
+                        </IconButton>
+                      )}
                       <IconButton label={`${task} bearbeiten`} onClick={() => onEditTask(index, task)}>
                         <Pencil size={15} />
                       </IconButton>
@@ -2358,10 +2665,6 @@ function TodayView({
               <span>Protein</span>
               <strong>{entry.proteinGrams ? `${entry.proteinGrams} g` : '—'}</strong>
             </div>
-            <div>
-              <span>Kalorien</span>
-              <strong>{entry.calories ? entry.calories.toLocaleString('de-DE') : '—'}</strong>
-            </div>
           </div>
           <button type="button" className="secondary-button secondary-button--full" onClick={onOpenCheckin}>
             <Heart size={16} /> Check-in öffnen
@@ -2384,6 +2687,12 @@ function TodayView({
             </button>
           </form>
         </section>
+
+        <QuickNoteWidget
+          highlighted={highlightQuickNote}
+          onHighlightHandled={onQuickNoteHighlightHandled}
+          onToast={message => showToast(message)}
+        />
       </div>
     </div>
   )
@@ -2394,6 +2703,7 @@ function PlanView({
   today,
   anchors,
   anchorsDone,
+  anchorMinutes,
   focusMinutes,
   maxAnchors,
   energy,
@@ -2405,12 +2715,13 @@ function PlanView({
   onMoveTask,
   onToggleTask,
   onOpenFocus,
-  onFocusMinutesChange,
+  onExportToCalendar,
 }: {
   date: string
   today: string
   anchors: string[]
   anchorsDone: boolean[]
+  anchorMinutes: number[]
   focusMinutes: number
   maxAnchors: number
   energy?: EnergyLevel
@@ -2421,8 +2732,8 @@ function PlanView({
   onDeleteTask: (index: number) => void
   onMoveTask: (index: number, direction: -1 | 1) => void
   onToggleTask: (index: number) => void
-  onOpenFocus: (title: string, taskIndex?: number) => void
-  onFocusMinutesChange: (minutes: number) => void
+  onOpenFocus: (title: string, taskIndex?: number, routineKey?: RoutineKey, overrideMinutes?: number) => void
+  onExportToCalendar: (title: string, minutes: number) => Promise<void>
 }) {
   const done = anchors.filter((_, index) => Boolean(anchorsDone[index])).length
   const availableSuggestions = DEF_TASKS.filter(t => !anchors.includes(t))
@@ -2475,6 +2786,7 @@ function PlanView({
             <div className="editable-task-list">
               {anchors.map((task, index) => {
                 const isDone = Boolean(anchorsDone[index])
+                const taskMinutes = anchorMinutes[index] ?? focusMinutes
                 return (
                   <SwipeableRow
                     key={`${task}-${index}`}
@@ -2495,7 +2807,7 @@ function PlanView({
                       </button>
                       <div className="editable-task__content">
                         <strong>{task}</strong>
-                        <span>Position {index + 1}</span>
+                        <span>{taskMinutes} Min. Fokus · Position {index + 1}</span>
                       </div>
                       <div className="editable-task__actions">
                         <IconButton label="Nach oben" onClick={() => onMoveTask(index, -1)} disabled={index === 0}>
@@ -2504,9 +2816,17 @@ function PlanView({
                         <IconButton label="Nach unten" onClick={() => onMoveTask(index, 1)} disabled={index === anchors.length - 1}>
                           <ChevronDown size={15} />
                         </IconButton>
-                        <IconButton label="Fokus starten" onClick={() => onOpenFocus(task, index)}>
+                        <IconButton label="Fokus starten" onClick={() => onOpenFocus(task, index, undefined, taskMinutes)}>
                           <Play size={15} />
                         </IconButton>
+                        {!isDone && (
+                          <IconButton
+                            label="In Kalender"
+                            onClick={() => { void onExportToCalendar(task, taskMinutes) }}
+                          >
+                            <CalendarPlus size={15} />
+                          </IconButton>
+                        )}
                         <IconButton label="Bearbeiten" onClick={() => onEditTask(index, task)}>
                           <Pencil size={15} />
                         </IconButton>
@@ -2523,30 +2843,10 @@ function PlanView({
         </section>
 
         <aside className="plan-side">
-          <section className="card focus-settings-card">
-            <div className="soft-icon"><Focus size={20} /></div>
-            <h3>Fokusdauer</h3>
-            <p>Wähle eine Dauer, die sich leicht genug zum Starten anfühlt.</p>
-            <div className="duration-grid">
-              {[10, 25, 45].map(minutes => (
-                <button
-                  type="button"
-                  key={minutes}
-                  className={focusMinutes === minutes ? 'duration-button is-active' : 'duration-button'}
-                  onClick={() => onFocusMinutesChange(minutes)}
-                  aria-pressed={focusMinutes === minutes}
-                >
-                  <strong>{minutes}</strong>
-                  <span>Min.</span>
-                </button>
-              ))}
-            </div>
-          </section>
-
           <section className="card calming-note">
             <div className="calming-note__art" aria-hidden="true"><span /></div>
             <h3>Weniger Reibung</h3>
-            <p>Eine Aufgabe darf klein formuliert sein. „10 Minuten anfangen“ zählt.</p>
+            <p>Eine Aufgabe darf klein formuliert sein. „10 Minuten anfangen“ zählt. Standard-Fokus stellst du in den Einstellungen ein.</p>
           </section>
         </aside>
       </div>
@@ -2596,7 +2896,6 @@ function CheckinView({
   entry,
   date,
   today,
-  settings,
   onDateChange,
   onUpdate,
   showToast,
@@ -2604,7 +2903,6 @@ function CheckinView({
   entry: DashboardEntry
   date: string
   today: string
-  settings: AppSettings
   onDateChange: (date: string) => void
   onUpdate: (patch: Partial<DashboardEntry>) => void
   showToast: (message: string) => void
@@ -2775,116 +3073,18 @@ function CheckinView({
                   eyebrow="Werte"
                   title={isMorning ? 'Morgen-Protokoll' : 'Körper & Fokus'}
                 />
-                {isMorning ? (
-                  <div className="form-grid">
-                    <NumberField
-                      label="Gewicht"
-                      value={entry.weightKg}
-                      unit="kg"
-                      step={0.1}
-                      min={35}
-                      max={200}
-                      placeholder="z. B. 65,0"
-                      onChange={weightKg => onUpdate({ weightKg })}
-                    />
-                    <NumberField
-                      label="Meditation"
-                      value={entry.meditationMinutes}
-                      unit="Min."
-                      step={1}
-                      max={180}
-                      placeholder="z. B. 10"
-                      onChange={meditationMinutes => onUpdate({ meditationMinutes })}
-                    />
-                  </div>
-                ) : (
-                  <>
-                  <div className="form-grid">
-                    <NumberField
-                      label={`Fett · Ziel ${settings.fatGoal}`}
-                      value={entry.fatGrams}
-                      unit="g"
-                      step={5}
-                      max={300}
-                      onChange={fatGrams => onUpdate({ fatGrams })}
-                    />
-                    <NumberField
-                      label={`Kohlenhydrate · Ziel ${settings.carbsGoal}`}
-                      value={entry.carbsGrams}
-                      unit="g"
-                      step={5}
-                      max={600}
-                      onChange={carbsGrams => onUpdate({ carbsGrams })}
-                    />
-                    <NumberField
-                      label={`Ballaststoffe · Ziel ${settings.fiberGoal}`}
-                      value={entry.fiberGrams}
-                      unit="g"
-                      step={1}
-                      max={100}
-                      onChange={fiberGrams => onUpdate({ fiberGrams })}
-                    />
-                    <NumberField
-                      label="Gewicht"
-                      value={entry.weightKg}
-                      unit="kg"
-                      step={0.1}
-                      min={35}
-                      max={200}
-                      placeholder="z. B. 65,0"
-                      onChange={weightKg => onUpdate({ weightKg })}
-                    />
-                    <NumberField
-                      label="Wasser"
-                      value={entry.waterLiters}
-                      unit="L"
-                      step={0.1}
-                      max={10}
-                      placeholder="z. B. 2,5"
-                      onChange={waterLiters => onUpdate({ waterLiters })}
-                    />
-                    <NumberField
-                      label="Schritte"
-                      value={entry.steps}
-                      unit=""
-                      step={500}
-                      max={100000}
-                      placeholder="z. B. 8000"
-                      onChange={steps => onUpdate({ steps })}
-                    />
-                    <NumberField
-                      label="Meditation"
-                      value={entry.meditationMinutes}
-                      unit="Min."
-                      step={1}
-                      max={180}
-                      placeholder="z. B. 10"
-                      onChange={meditationMinutes => onUpdate({ meditationMinutes })}
-                    />
-                  </div>
-                  <div className="macro-rings" aria-label="Makro-Fortschritt">
-                    {[
-                      { label: 'Fett', value: entry.fatGrams, goal: settings.fatGoal },
-                      { label: 'KH', value: entry.carbsGrams, goal: settings.carbsGoal },
-                      { label: 'Ballast', value: entry.fiberGrams, goal: settings.fiberGoal },
-                    ].map(item => {
-                      const pct = macroProgress(item.value, item.goal)
-                      return (
-                        <div className="macro-ring" key={item.label}>
-                          <div
-                            className="radial-mini"
-                            style={{ '--value': `${(pct / 100) * 360}deg` } as CSSProperties}
-                          >
-                            <span>{pct}%</span>
-                          </div>
-                          <strong>{item.label}</strong>
-                          <small>{item.value}/{item.goal}g</small>
-                        </div>
-                      )
-                    })}
-                  </div>
-                  </>
-                )}
+                <div className="form-grid">
+                  <NumberField
+                    label="Gewicht"
+                    value={entry.weightKg}
+                    unit="kg"
+                    step={0.1}
+                    min={35}
+                    max={200}
+                    placeholder="z. B. 65,0"
+                    onChange={weightKg => onUpdate({ weightKg })}
+                  />
+                </div>
               </>
             )
           })()}
@@ -2892,7 +3092,6 @@ function CheckinView({
 
         <section className="card checkin-card checkin-card--wide">
           <SectionTitle eyebrow="Abschluss" title="Eine kurze Notiz" />
-          <p className="evening-prompt" role="note">{eveningPromptForDate(date)}</p>
           <textarea
             className="journal-field"
             value={journal}
@@ -2903,6 +3102,22 @@ function CheckinView({
           />
           <div className="form-actions">
             <span>{journal.length}/2000</span>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={!journal.trim()}
+              onClick={async () => {
+                const result = await shareText({
+                  title: 'Life OS Notiz',
+                  text: journal.trim(),
+                })
+                if (result === 'shared') showToast('Share Sheet geöffnet — z. B. Notizen.')
+                else if (result === 'copied') showToast('Notiz kopiert.')
+                else showToast('Teilen nicht verfügbar.')
+              }}
+            >
+              <Share2 size={17} /> Teilen
+            </button>
             <button type="button" className="primary-button" onClick={saveJournal}>
               <Check size={17} /> Notiz speichern
             </button>
@@ -3093,6 +3308,12 @@ function ProgressView({
   })
   const average = Math.round(lastSeven.reduce((sum, item) => sum + item.score, 0) / lastSeven.length)
   const best = Math.max(...lastSeven.map(item => item.score))
+  const previousSeven = Array.from({ length: 7 }, (_, index) => addDays(today, index - 13)).map(date => {
+    const entry = entries.find(item => item.date === date) ?? createDefaultEntry(date)
+    return clampNumber(calculateScore(entry, scoreGoals), 0, 100)
+  })
+  const previousAverage = Math.round(previousSeven.reduce((sum, value) => sum + value, 0) / previousSeven.length)
+  const weekDelta = average - previousAverage
   const insights = buildWeekInsights(entries, today)
 
   const xp = loadXP()
@@ -3146,8 +3367,26 @@ function ProgressView({
       </section>
 
       <div className="kpi-grid">
-        <div className="kpi-card"><span>Wochenschnitt</span><strong>{average}%</strong><small>letzte 7 Tage</small></div>
-        <div className="kpi-card"><span>Bester Tag</span><strong>{best}%</strong><small>diese Woche</small></div>
+        <div className="kpi-card kpi-card--trend">
+          <span>Wochenschnitt</span>
+          <div className="kpi-card__value-row">
+            <strong>{average}%</strong>
+            {weekDelta !== 0 && (
+              <span className={weekDelta > 0 ? 'trend-chip trend-chip--up' : 'trend-chip trend-chip--down'}>
+                {weekDelta > 0 ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
+                {Math.abs(weekDelta)}%
+              </span>
+            )}
+          </div>
+          <div className="kpi-progress" aria-hidden="true"><span style={{ width: `${average}%` }} /></div>
+          <small>vs. Vorwoche {previousAverage}%</small>
+        </div>
+        <div className="kpi-card">
+          <span>Bester Tag</span>
+          <strong>{best}%</strong>
+          <div className="kpi-progress" aria-hidden="true"><span style={{ width: `${best}%` }} /></div>
+          <small>diese Woche</small>
+        </div>
         <div className="kpi-card"><span>Rhythmus</span><strong>{xp.streakDays}</strong><small>{plural(xp.streakDays, 'Tag', 'Tage')} · {levelName(xp.level)}</small></div>
       </div>
 
@@ -4600,21 +4839,24 @@ function DashboardPlusView({
 
 function TaskEditor({
   initialValue,
+  initialMinutes,
   isEditing,
   onClose,
   onSave,
 }: {
   initialValue: string
+  initialMinutes: number
   isEditing: boolean
   onClose: () => void
-  onSave: (value: string) => void
+  onSave: (value: string, minutes: number) => void
 }) {
   const [value, setValue] = useState(initialValue)
+  const [minutes, setMinutes] = useState(() => clampNumber(initialMinutes, 5, 120))
   useModalBehavior(onClose)
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    onSave(value)
+    onSave(value, minutes)
   }
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}>
@@ -4630,6 +4872,34 @@ function TaskEditor({
           <span>Aufgabe</span>
           <input autoFocus value={value} onChange={event => setValue(event.target.value)} maxLength={120} placeholder="Zum Beispiel: Creatine bestellen" />
         </label>
+        <div className="task-editor-duration">
+          <span className="task-editor-duration__label">Fokusdauer</span>
+          <div className="duration-grid">
+            {TASK_FOCUS_DURATIONS.map(option => (
+              <button
+                type="button"
+                key={option}
+                className={minutes === option ? 'duration-button is-active' : 'duration-button'}
+                onClick={() => setMinutes(option)}
+                aria-pressed={minutes === option}
+              >
+                <strong>{option}</strong>
+                <span>Min.</span>
+              </button>
+            ))}
+          </div>
+          <label className="text-field">
+            <span>Eigene Minuten</span>
+            <input
+              type="number"
+              min={5}
+              max={120}
+              step={5}
+              value={minutes}
+              onChange={event => setMinutes(clampNumber(Number(event.target.value) || 25, 5, 120))}
+            />
+          </label>
+        </div>
         <p className="field-hint">Formuliere so klein, dass du ohne Nachdenken anfangen kannst.</p>
         <div className="modal-actions">
           <button type="button" className="secondary-button" onClick={onClose}>Abbrechen</button>
@@ -4702,15 +4972,21 @@ function FocusModal({
   onChangeMinutes,
   onClose,
   onFinish,
+  onExportToCalendar,
 }: {
   session: FocusSession
   onChangeMinutes: (minutes: number) => void
   onClose: () => void
   onFinish: () => void
+  onExportToCalendar: () => void
 }) {
   const [secondsLeft, setSecondsLeft] = useState(session.minutes * 60)
   const [running, setRunning] = useState(false)
+  const [editingDuration, setEditingDuration] = useState(false)
+  const [draftMinutes, setDraftMinutes] = useState(String(session.minutes))
   const finishedRef = useRef(false)
+  const wakeLockRef = useRef<Awaited<ReturnType<typeof requestScreenWakeLock>>>(null)
+  const durationInputRef = useRef<HTMLInputElement | null>(null)
   useModalBehavior(onClose)
 
   useEffect(() => {
@@ -4719,7 +4995,47 @@ function FocusModal({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setRunning(false)
     finishedRef.current = false
+    setDraftMinutes(String(session.minutes))
+    setEditingDuration(false)
   }, [session.minutes])
+
+  useEffect(() => {
+    if (!editingDuration) return
+    durationInputRef.current?.focus()
+    durationInputRef.current?.select()
+  }, [editingDuration])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const syncWakeLock = async () => {
+      if (!running) {
+        await releaseScreenWakeLock(wakeLockRef.current)
+        wakeLockRef.current = null
+        return
+      }
+      const sentinel = await requestScreenWakeLock()
+      if (cancelled) {
+        await releaseScreenWakeLock(sentinel)
+        return
+      }
+      wakeLockRef.current = sentinel
+    }
+
+    void syncWakeLock()
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible' && running) void syncWakeLock()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+
+    return () => {
+      cancelled = true
+      document.removeEventListener('visibilitychange', onVisibility)
+      void releaseScreenWakeLock(wakeLockRef.current)
+      wakeLockRef.current = null
+    }
+  }, [running])
 
   useEffect(() => {
     if (!running) return
@@ -4743,9 +5059,35 @@ function FocusModal({
     return () => window.clearInterval(timer)
   }, [running, session.title, onFinish])
 
-  const minutes = Math.floor(secondsLeft / 60)
-  const seconds = secondsLeft % 60
+  const commitDraftMinutes = () => {
+    const next = clampNumber(Number(draftMinutes) || session.minutes, 5, 120)
+    setEditingDuration(false)
+    if (next !== session.minutes) onChangeMinutes(next)
+    else setDraftMinutes(String(session.minutes))
+  }
+
+  const adjustMinutes = (delta: number) => {
+    if (running) return
+    setEditingDuration(false)
+    onChangeMinutes(clampNumber(session.minutes + delta, 5, 120))
+  }
+
+  const startEditing = () => {
+    if (running) return
+    setDraftMinutes(String(session.minutes))
+    setEditingDuration(true)
+  }
+
+  const displayMinutes = Math.floor(secondsLeft / 60)
+  const displaySeconds = secondsLeft % 60
   const progress = 1 - secondsLeft / (session.minutes * 60)
+  const statusLabel = running
+    ? 'Bleib bei diesem Schritt'
+    : secondsLeft === 0
+      ? 'Zeit ist um'
+      : editingDuration
+        ? 'Minuten eingeben · Enter'
+        : 'Tippen oder ± zum Anpassen'
 
   return (
     <div className="focus-overlay" role="dialog" aria-modal="true" aria-labelledby="focus-title">
@@ -4758,16 +5100,78 @@ function FocusModal({
         <span className="eyebrow">Nur jetzt</span>
         <h1 id="focus-title">{session.title}</h1>
         <div
-          className="focus-timer"
+          className={running ? 'focus-timer' : 'focus-timer focus-timer--editable'}
           style={{ '--focus-progress': `${progress * 360}deg` } as CSSProperties}
         >
-          <div>
-            <strong>{String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}</strong>
-            <span>{running ? 'Bleib bei diesem Schritt' : secondsLeft === 0 ? 'Zeit ist um' : 'Bereit, wenn du es bist'}</span>
+          <div className="focus-timer__inner">
+            {!running && (
+              <button
+                type="button"
+                className="focus-timer__step"
+                onClick={() => adjustMinutes(-5)}
+                aria-label="5 Minuten weniger"
+                disabled={session.minutes <= 5}
+              >
+                −
+              </button>
+            )}
+            <div className="focus-timer__readout">
+              {editingDuration ? (
+                <form
+                  className="focus-timer__edit"
+                  onSubmit={event => {
+                    event.preventDefault()
+                    commitDraftMinutes()
+                  }}
+                >
+                  <input
+                    ref={durationInputRef}
+                    type="number"
+                    min={5}
+                    max={120}
+                    step={1}
+                    inputMode="numeric"
+                    aria-label="Fokusdauer in Minuten"
+                    value={draftMinutes}
+                    onChange={event => setDraftMinutes(event.target.value)}
+                    onBlur={commitDraftMinutes}
+                    onKeyDown={event => {
+                      if (event.key === 'Escape') {
+                        setEditingDuration(false)
+                        setDraftMinutes(String(session.minutes))
+                      }
+                    }}
+                  />
+                  <span className="focus-timer__unit">Min.</span>
+                </form>
+              ) : (
+                <button
+                  type="button"
+                  className="focus-timer__time"
+                  onClick={startEditing}
+                  disabled={running}
+                  aria-label={running ? 'Verbleibende Zeit' : 'Fokusdauer anpassen'}
+                >
+                  <strong>{String(displayMinutes).padStart(2, '0')}:{String(displaySeconds).padStart(2, '0')}</strong>
+                </button>
+              )}
+              <span>{statusLabel}</span>
+            </div>
+            {!running && (
+              <button
+                type="button"
+                className="focus-timer__step"
+                onClick={() => adjustMinutes(5)}
+                aria-label="5 Minuten mehr"
+                disabled={session.minutes >= 120}
+              >
+                +
+              </button>
+            )}
           </div>
         </div>
         <div className="focus-duration-row">
-          {[10, 25, 45].map(value => (
+          {[10, 15, 25, 45, 60].map(value => (
             <button type="button" key={value} className={session.minutes === value ? 'is-active' : ''} onClick={() => onChangeMinutes(value)} disabled={running}>
               {value} Min.
             </button>
@@ -4777,13 +5181,23 @@ function FocusModal({
           <button type="button" className="secondary-button" onClick={() => { setRunning(false); setSecondsLeft(session.minutes * 60) }}>
             <RotateCcw size={17} /> Reset
           </button>
-          <button type="button" className="focus-play" onClick={() => setRunning(current => !current)}>
+          <button
+            type="button"
+            className="focus-play"
+            onClick={() => {
+              setEditingDuration(false)
+              setRunning(current => !current)
+            }}
+          >
             {running ? <Pause size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" />}
           </button>
           <button type="button" className="primary-button" onClick={onFinish}>
             <Check size={17} /> Fertig
           </button>
         </div>
+        <button type="button" className="text-button focus-calendar-link" onClick={onExportToCalendar}>
+          <CalendarPlus size={15} /> In Kalender legen
+        </button>
       </div>
     </div>
   )
@@ -4809,6 +5223,7 @@ function SettingsModal({
   useModalBehavior(onClose)
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const layout = settings.dashboardPlusLayout
+  const [copiedShortcut, setCopiedShortcut] = useState<string | null>(null)
 
   const moveDashboardTab = (index: number, direction: -1 | 1) => {
     const target = index + direction
@@ -4944,11 +5359,62 @@ function SettingsModal({
               </button>
             ))}
           </div>
+          <p className="settings-help" style={{ marginTop: 14 }}>Akzentfarbe</p>
+          <div className="accent-swatch-row" role="group" aria-label="Akzentfarbe">
+            {ACCENT_OPTIONS.map(option => (
+              <button
+                type="button"
+                key={option.id}
+                className={settings.accent === option.id ? 'accent-swatch is-active' : 'accent-swatch'}
+                style={{ ['--swatch' as string]: option.swatch }}
+                onClick={() => onChange({ ...settings, accent: option.id })}
+                aria-pressed={settings.accent === option.id}
+                aria-label={`Akzentfarbe ${option.label}`}
+                title={option.label}
+              >
+                {settings.accent === option.id && <Check size={14} />}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="settings-section">
+          <h3>Standard-Fokus</h3>
+          <p className="settings-help">
+            Fallback für neue Anker und wenn keine eigene Dauer gesetzt ist. Pro Aufgabe kannst du die Dauer beim Bearbeiten überschreiben.
+          </p>
+          <div className="duration-grid settings-focus-duration">
+            {[10, 25, 45].map(minutes => (
+              <button
+                type="button"
+                key={minutes}
+                className={settings.focusMinutes === minutes ? 'duration-button is-active' : 'duration-button'}
+                onClick={() => onChange({ ...settings, focusMinutes: minutes })}
+                aria-pressed={settings.focusMinutes === minutes}
+              >
+                <strong>{minutes}</strong>
+                <span>Min.</span>
+              </button>
+            ))}
+          </div>
+          <label className="text-field" style={{ marginTop: 12 }}>
+            <span>Eigene Minuten</span>
+            <input
+              type="number"
+              min={5}
+              max={120}
+              step={5}
+              value={settings.focusMinutes}
+              onChange={event => onChange({
+                ...settings,
+                focusMinutes: clampNumber(Number(event.target.value) || 25, 5, 120),
+              })}
+            />
+          </label>
         </div>
 
         <div className="settings-section settings-grid">
           <label className="text-field"><span>Name</span><input value={settings.name} placeholder="Dein Name" onChange={event => onChange({ ...settings, name: event.target.value })} /></label>
-          <label className="text-field"><span>Standard-Fokus</span><input type="number" min="5" max="120" step="5" value={settings.focusMinutes} onChange={event => onChange({ ...settings, focusMinutes: clampNumber(Number(event.target.value) || 25, 5, 120) })} /></label>
           <label className="text-field"><span>Proteinziel in g</span><input type="number" min="50" max="400" step="5" value={settings.proteinGoal} onChange={event => onChange({ ...settings, proteinGoal: clampNumber(Number(event.target.value) || 150, 50, 400) })} /></label>
           <label className="text-field"><span>Kalorienziel</span><input type="number" min="1000" max="8000" step="50" value={settings.calorieGoal} onChange={event => onChange({ ...settings, calorieGoal: clampNumber(Number(event.target.value) || 3500, 1000, 8000) })} /></label>
           <label className="text-field"><span>Fettziel in g</span><input type="number" min="20" max="200" step="5" value={settings.fatGoal} onChange={event => onChange({ ...settings, fatGoal: clampNumber(Number(event.target.value) || 70, 20, 200) })} /></label>
@@ -4967,6 +5433,42 @@ function SettingsModal({
               <RotateCcw size={16} /> Labor zurücksetzen
             </button>
           </div>
+        </div>
+
+        <div className="settings-section">
+          <h3>iPhone · Kurzbefehle</h3>
+          <p className="settings-help">
+            In Kurzbefehle → „URL öffnen“. Life OS als PWA auf dem Home Screen speichern (Teilen → Zum Home-Bildschirm), dann bleiben Daten stabiler.
+          </p>
+          <div className="shortcut-recipe-list">
+            {SHORTCUT_RECIPES.map(recipe => {
+              const url = buildActionUrl(recipe.kind)
+              return (
+                <div key={recipe.kind} className="shortcut-recipe">
+                  <div>
+                    <strong>{recipe.label}</strong>
+                    <span>{recipe.hint}</span>
+                    <code>{url.replace(/^https?:\/\/[^/]+/, '')}</code>
+                  </div>
+                  <button
+                    type="button"
+                    className="small-button"
+                    onClick={async () => {
+                      const ok = await copyText(url)
+                      if (!ok) return
+                      setCopiedShortcut(recipe.kind)
+                      window.setTimeout(() => setCopiedShortcut(current => (current === recipe.kind ? null : current)), 1600)
+                    }}
+                  >
+                    {copiedShortcut === recipe.kind ? 'Kopiert' : 'URL kopieren'}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+          <p className="settings-help">
+            Fokus mit Dauer: <code>?action=focus&amp;min=25</code> an die Heute-URL hängen.
+          </p>
         </div>
 
         <div className="settings-section">
