@@ -2,11 +2,10 @@ import { pushSyncSnapshot, readSyncJson, syncError, syncJson } from '../../serve
 import type { SyncSnapshot } from '../../server/sync-store'
 
 export const config = {
-  runtime: 'nodejs',
   maxDuration: 15,
 }
 
-export default async function handler(request: Request): Promise<Response> {
+async function handle(request: Request): Promise<Response> {
   try {
     if (request.method === 'OPTIONS') return syncJson({ ok: true })
     if (request.method !== 'POST') return syncJson({ error: 'Methode nicht erlaubt.' }, 405)
@@ -25,3 +24,5 @@ export default async function handler(request: Request): Promise<Response> {
     return syncError(error)
   }
 }
+
+export default { fetch: handle }

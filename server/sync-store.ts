@@ -82,6 +82,20 @@ function abortSignalAfter(ms: number): AbortSignal {
   return controller.signal
 }
 
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} Timeout (${ms}ms).`)), ms)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 async function upstashFetch(command: unknown[]): Promise<unknown> {
   const url = process.env.UPSTASH_REDIS_REST_URL?.trim()
   const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim()
@@ -93,15 +107,19 @@ async function upstashFetch(command: unknown[]): Promise<unknown> {
 
   let response: Response
   try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(command),
-      signal: abortSignalAfter(8_000),
-    })
+    response = await withTimeout(
+      fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(command),
+        signal: abortSignalAfter(8_000),
+      }),
+      8_500,
+      'Upstash',
+    )
   } catch (error) {
     if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
       throw new Error('Upstash Timeout — Redis antwortet nicht (8s).')
