@@ -4656,7 +4656,27 @@ button.status-chip.status-chip--good {
   word-break: break-all;
 }
 
+.sync-pair-code {
+  display: grid;
+  gap: 4px;
+  margin: 12px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-soft);
+  text-align: center;
+}
 
+.sync-pair-code strong {
+  font-size: 28px;
+  letter-spacing: 0.28em;
+  font-variant-numeric: tabular-nums;
+}
+
+.sync-pair-code span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
 
 /* ---------- Stats polish: KPI trend + progress ---------- */
 

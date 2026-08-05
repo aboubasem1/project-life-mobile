@@ -107,6 +107,16 @@ import {
   mergeEntriesByDate,
   saveAllEntries,
 } from './lib/storage'
+import {
+  clearSyncCredentials,
+  createDevicePairing,
+  isDeviceSyncEnabled,
+  joinDevicePairing,
+  loadSyncCredentials,
+  pushDeviceSync,
+  refreshPairCode,
+  type DeviceSyncCredentials,
+} from './lib/deviceSync'
 import { levelProgress, loadXP, recomputeXPFromEntries, xpToNextLevel } from './lib/xp-store'
 import {
   dueMedicationReminders,
@@ -815,12 +825,12 @@ const ENERGY_OPTIONS: Array<{
   { value: 'high', label: 'Gut', description: 'Platz für tieferen Fokus' },
 ]
 
-function storageStatusLabel(syncStatus: string, isOnline: boolean): string {
-  if (syncStatus === 'error') return 'Speichern fehlgeschlagen'
+function storageStatusLabel(syncStatus: string, isOnline: boolean, deviceSync = false): string {
+  if (syncStatus === 'error') return deviceSync ? 'Sync fehlgeschlagen' : 'Speichern fehlgeschlagen'
   if (!isOnline || syncStatus === 'offline') return 'Offline · lokal'
-  if (syncStatus === 'syncing') return 'Speichert lokal …'
-  if (syncStatus === 'synced') return 'Lokal gespeichert'
-  return 'Nur dieses Gerät'
+  if (syncStatus === 'syncing') return deviceSync ? 'Synchronisiert …' : 'Speichert lokal …'
+  if (syncStatus === 'synced') return deviceSync ? 'Geräte synchron' : 'Lokal gespeichert'
+  return deviceSync ? 'Geräte-Sync an' : 'Nur dieses Gerät'
 }
 
 const MOODS = ['Sehr schlecht', 'Schlecht', 'Okay', 'Gut', 'Sehr gut']
@@ -1188,7 +1198,7 @@ function EmptyState({
 }
 
 function App() {
-  const { entries, syncStatus, isOnline, saveEntry, reloadAll } = useEntries()
+  const { entries, syncStatus, isOnline, saveEntry, reloadAll, syncNow } = useEntries()
   const [view, setView] = useState<View>(() => viewFromHash())
   const [selectedDate, setSelectedDate] = useState(() => dateKey(new Date()))
   const [settings, setSettings] = useState<AppSettings>(loadSettings)
@@ -1199,6 +1209,7 @@ function App() {
   const [focusSession, setFocusSession] = useState<FocusSession | null>(null)
   const [toast, setToast] = useState<ToastState>(null)
   const [highlightQuickNote, setHighlightQuickNote] = useState(false)
+  const [deviceSyncCreds, setDeviceSyncCreds] = useState<DeviceSyncCredentials | null>(() => loadSyncCredentials())
   const actionBridgeRef = useRef<{
     applyAction: (action: AppAction) => void
   } | null>(null)
@@ -1294,10 +1305,20 @@ function App() {
 
   useEffect(() => {
     safeLocalStorageSetItem(SETTINGS_KEY, JSON.stringify(settings))
+    if (isDeviceSyncEnabled()) {
+      window.setTimeout(() => {
+        void pushDeviceSync().catch(() => {})
+      }, 500)
+    }
   }, [settings])
 
   useEffect(() => {
     safeLocalStorageSetItem(DASHBOARD_PLUS_KEY, JSON.stringify(dashboardPlus))
+    if (isDeviceSyncEnabled()) {
+      window.setTimeout(() => {
+        void pushDeviceSync().catch(() => {})
+      }, 500)
+    }
   }, [dashboardPlus])
 
   useEffect(() => {
@@ -1758,9 +1779,12 @@ function App() {
               <h1>{greeting()}{settings.name.trim() ? `, ${settings.name.trim()}` : ''}.</h1>
             </div>
             <div className="topbar-actions">
-              <span className={`sync-pill sync-pill--${syncStatus}`} title="Daten bleiben in diesem Browser">
+              <span
+                className={`sync-pill sync-pill--${syncStatus}`}
+                title={deviceSyncCreds ? 'Automatischer Sync zwischen gekoppelten Geräten' : 'Daten bleiben in diesem Browser'}
+              >
                 <Cloud size={14} />
-                {storageStatusLabel(syncStatus, isOnline)}
+                {storageStatusLabel(syncStatus, isOnline, Boolean(deviceSyncCreds))}
               </span>
               <IconButton label="Einstellungen öffnen" onClick={() => setSettingsOpen(true)}>
                 <Settings size={18} />
@@ -1958,6 +1982,7 @@ function App() {
         <SettingsModal
           settings={settings}
           lastBackupAt={lastBackupAt}
+          deviceSync={deviceSyncCreds}
           onChange={setSettings}
           onExport={handleExport}
           onImport={handleImport}
@@ -1966,6 +1991,14 @@ function App() {
             setDashboardPlus(createDashboardPlusSeed())
             showToast('Labor zurückgesetzt.')
           }}
+          onDeviceSyncChange={creds => {
+            setDeviceSyncCreds(creds)
+            if (creds) void syncNow()
+          }}
+          onSyncNow={() => {
+            void syncNow().then(() => showToast('Sync aktualisiert.'))
+          }}
+          showToast={showToast}
           onClose={() => setSettingsOpen(false)}
         />
       )}
@@ -2105,6 +2138,11 @@ function QuickNoteWidget({
     }
     setNote(next)
     safeLocalStorageSetItem(QUICK_NOTE_KEY, JSON.stringify(next))
+    if (isDeviceSyncEnabled()) {
+      window.setTimeout(() => {
+        void pushDeviceSync().catch(() => {})
+      }, 800)
+    }
   }
 
   const shareNote = async () => {
@@ -5206,24 +5244,36 @@ function FocusModal({
 function SettingsModal({
   settings,
   lastBackupAt,
+  deviceSync,
   onChange,
   onExport,
   onImport,
   onResetLabor,
+  onDeviceSyncChange,
+  onSyncNow,
+  showToast,
   onClose,
 }: {
   settings: AppSettings
   lastBackupAt: string | null
+  deviceSync: DeviceSyncCredentials | null
   onChange: (settings: AppSettings) => void
   onExport: () => void
   onImport: (file: File) => Promise<void>
   onResetLabor: () => void
+  onDeviceSyncChange: (creds: DeviceSyncCredentials | null) => void
+  onSyncNow: () => void
+  showToast: (message: string) => void
   onClose: () => void
 }) {
   useModalBehavior(onClose)
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const layout = settings.dashboardPlusLayout
   const [copiedShortcut, setCopiedShortcut] = useState<string | null>(null)
+  const [pairCode, setPairCode] = useState<string | null>(null)
+  const [pairExpiresAt, setPairExpiresAt] = useState<string | null>(null)
+  const [joinCode, setJoinCode] = useState('')
+  const [syncBusy, setSyncBusy] = useState(false)
 
   const moveDashboardTab = (index: number, direction: -1 | 1) => {
     const target = index + direction
@@ -5472,6 +5522,140 @@ function SettingsModal({
         </div>
 
         <div className="settings-section">
+          <h3>Geräte-Sync</h3>
+          <p className="settings-help">
+            Einmal koppeln, danach automatisch: Speichern lädt hoch, Öffnen/alle 60s holt Updates.
+          </p>
+          {deviceSync ? (
+            <>
+              <p className="settings-help">
+                Verbunden seit {new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(deviceSync.pairedAt))}
+                {deviceSync.lastSyncedAt
+                  ? ` · zuletzt ${new Intl.DateTimeFormat('de-DE', { timeStyle: 'short' }).format(new Date(deviceSync.lastSyncedAt))} Uhr`
+                  : ''}
+              </p>
+              {pairCode && (
+                <div className="sync-pair-code" aria-live="polite">
+                  <strong>{pairCode}</strong>
+                  <span>
+                    Code gültig bis{' '}
+                    {pairExpiresAt
+                      ? new Intl.DateTimeFormat('de-DE', { timeStyle: 'short' }).format(new Date(pairExpiresAt))
+                      : '—'}{' '}
+                    Uhr
+                  </span>
+                </div>
+              )}
+              <div className="settings-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={syncBusy}
+                  onClick={async () => {
+                    setSyncBusy(true)
+                    try {
+                      const result = await refreshPairCode()
+                      setPairCode(result.pairCode)
+                      setPairExpiresAt(result.expiresAt)
+                      showToast('Code erzeugt — auf dem anderen Gerät eingeben.')
+                    } catch (error) {
+                      showToast(error instanceof Error ? error.message : 'Code fehlgeschlagen.')
+                    } finally {
+                      setSyncBusy(false)
+                    }
+                  }}
+                >
+                  Weiteres Gerät koppeln
+                </button>
+                <button type="button" className="secondary-button" disabled={syncBusy} onClick={onSyncNow}>
+                  Jetzt synchronisieren
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={syncBusy}
+                  onClick={() => {
+                    if (!window.confirm('Sync auf diesem Gerät trennen? Daten bleiben lokal.')) return
+                    clearSyncCredentials()
+                    setPairCode(null)
+                    setPairExpiresAt(null)
+                    onDeviceSyncChange(null)
+                    showToast('Sync getrennt.')
+                  }}
+                >
+                  Sync trennen
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="settings-actions">
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={syncBusy}
+                  onClick={async () => {
+                    setSyncBusy(true)
+                    try {
+                      const result = await createDevicePairing()
+                      setPairCode(result.pairCode)
+                      setPairExpiresAt(result.expiresAt)
+                      onDeviceSyncChange(loadSyncCredentials())
+                      showToast('Code erzeugt — auf dem anderen Gerät eingeben.')
+                    } catch (error) {
+                      showToast(error instanceof Error ? error.message : 'Koppeln fehlgeschlagen.')
+                    } finally {
+                      setSyncBusy(false)
+                    }
+                  }}
+                >
+                  Dieses Gerät als Start koppeln
+                </button>
+              </div>
+              {pairCode && (
+                <div className="sync-pair-code" aria-live="polite">
+                  <strong>{pairCode}</strong>
+                  <span>Auf dem anderen Gerät unten eingeben</span>
+                </div>
+              )}
+              <label className="text-field" style={{ marginTop: 12 }}>
+                <span>Code von anderem Gerät</span>
+                <input
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  placeholder="6-stelliger Code"
+                  value={joinCode}
+                  onChange={event => setJoinCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                />
+              </label>
+              <div className="settings-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={syncBusy || joinCode.length !== 6}
+                  onClick={async () => {
+                    setSyncBusy(true)
+                    try {
+                      const creds = await joinDevicePairing(joinCode)
+                      setJoinCode('')
+                      onDeviceSyncChange(creds)
+                      showToast('Gerät gekoppelt — Sync läuft automatisch.')
+                    } catch (error) {
+                      showToast(error instanceof Error ? error.message : 'Beitritt fehlgeschlagen.')
+                    } finally {
+                      setSyncBusy(false)
+                    }
+                  }}
+                >
+                  Mit Code verbinden
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="settings-section">
           <h3>Medis-Erinnerungen</h3>
           <p className="settings-help">
             Nur mit Opt-in. Pro Medikament „Erinnern“ setzen und Uhrzeit eintragen. System-Benachrichtigungen nur, wenn du sie hier erlaubst.
@@ -5502,7 +5686,7 @@ function SettingsModal({
         <div className="settings-section">
           <h3>Backup</h3>
           <p className="settings-help">
-            Vollbackup enthält Tage, Settings, Labor und XP. Kein Cloud-Sync — nur dieser Browser.
+            Vollbackup enthält Tage, Settings, Labor und XP. Zusätzlich kannst du Geräte-Sync nutzen.
           </p>
           <p className="settings-help">
             Letztes Backup: {lastBackupAt
@@ -5532,7 +5716,7 @@ function SettingsModal({
 
         <div className="settings-note">
           <Bell size={18} />
-          <p>Benachrichtigungen werden nie ungefragt angefordert. Timer-Hinweise nur mit bestehender Berechtigung. Daten bleiben lokal — Export regelmäßig machen.</p>
+          <p>Benachrichtigungen werden nie ungefragt angefordert. Timer-Hinweise nur mit bestehender Berechtigung. Mit Geräte-Sync laufen Daten nach dem Koppeln automatisch mit.</p>
         </div>
         <div className="modal-actions"><button type="button" className="primary-button" onClick={onClose}><Check size={17} /> Fertig</button></div>
       </div>
