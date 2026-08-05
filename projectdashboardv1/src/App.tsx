@@ -316,6 +316,8 @@ type FinanceSummary = {
   openCount: number
   overdueSum: number
   overdueCount: number
+  pressure: number
+  nextDue: { name: string; due: string; amount: number } | null
   hints: string[]
 }
 
@@ -323,14 +325,64 @@ function sumBillAmounts(bills: DashboardPlusBill[]): number {
   return bills.reduce((total, bill) => total + (Number.isFinite(bill.amount) ? bill.amount : 0), 0)
 }
 
+function parseBillDueDate(due: string): string | null {
+  const value = String(due ?? '').trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
+  return null
+}
+
+function cycleBillStatus(status: DashboardPlusBillStatus): DashboardPlusBillStatus {
+  switch (status) {
+    case 'open':
+      return 'paid'
+    case 'paid':
+      return 'overdue'
+    case 'overdue':
+      return 'open'
+    default: {
+      const _exhaustive: never = status
+      return _exhaustive
+    }
+  }
+}
+
+function createBillDraft(
+  kind: 'recurring' | 'open',
+  today: string,
+  index: number,
+): DashboardPlusBill {
+  return {
+    id: crypto.randomUUID(),
+    name: kind === 'recurring' ? 'Neue Fixkosten' : 'Neue Rechnung',
+    subtitle: kind === 'recurring' ? 'monatlich' : '',
+    amount: 0,
+    due: today,
+    status: 'open',
+    color: SUPPLEMENT_ACCENTS[index % SUPPLEMENT_ACCENTS.length],
+  }
+}
+
 function deriveFinanceSummary(finances: DashboardPlusState['finances']): FinanceSummary {
-  const openBills = finances.openBills.filter(bill => bill.status === 'open')
+  const unpaidOpen = finances.openBills.filter(bill => bill.status === 'open')
   const overdueBills = [...finances.recurring, ...finances.openBills].filter(bill => bill.status === 'overdue')
   const monthlyFixed = sumBillAmounts(finances.recurring)
-  const openSum = sumBillAmounts(openBills)
+  const openSum = sumBillAmounts(unpaidOpen)
   const overdueSum = sumBillAmounts(overdueBills)
-  const hints: string[] = []
+  const pressure = monthlyFixed > 0
+    ? Math.round(((openSum + overdueSum) / monthlyFixed) * 100)
+    : 0
 
+  const nextCandidates = [...finances.recurring, ...finances.openBills]
+    .filter(bill => bill.status === 'open' || bill.status === 'overdue')
+    .map(bill => {
+      const due = parseBillDueDate(bill.due)
+      return due ? { name: bill.name || 'Rechnung', due, amount: bill.amount } : null
+    })
+    .filter((item): item is { name: string; due: string; amount: number } => Boolean(item))
+    .sort((a, b) => a.due.localeCompare(b.due))
+  const nextDue = nextCandidates[0] ?? null
+
+  const hints: string[] = []
   if (overdueBills.length > 0) {
     hints.push(
       overdueBills.length === 1
@@ -342,16 +394,22 @@ function deriveFinanceSummary(finances: DashboardPlusState['finances']): Finance
     hints.push('Offene Beträge sind relativ hoch zum Monatsfix — kurz priorisieren.')
   }
   if (hints.length === 0) {
-    hints.push('Fixkosten und offene Posten im Blick — ohne den Tagesfokus zu stören.')
+    hints.push(
+      nextDue
+        ? `Nächster Posten: ${nextDue.name} am ${nextDue.due}.`
+        : 'Fixkosten und offene Posten im Blick — ohne den Tagesfokus zu stören.',
+    )
   }
 
   return {
     monthlyFixed,
     recurringCount: finances.recurring.length,
     openSum,
-    openCount: openBills.length,
+    openCount: unpaidOpen.length,
     overdueSum,
     overdueCount: overdueBills.length,
+    pressure,
+    nextDue,
     hints: hints.slice(0, 2),
   }
 }
@@ -2743,28 +2801,6 @@ function CheckinView({
                   <>
                   <div className="form-grid">
                     <NumberField
-                      label={`Protein · Ziel ${settings.proteinGoal}`}
-                      value={entry.proteinGrams}
-                      unit="g"
-                      step={5}
-                      max={500}
-                      onChange={proteinGrams => onUpdate({
-                        proteinGrams,
-                        proteinReached: proteinGrams >= settings.proteinGoal,
-                      })}
-                    />
-                    <NumberField
-                      label={`Kalorien · Ziel ${settings.calorieGoal.toLocaleString('de-DE')}`}
-                      value={entry.calories}
-                      unit="kcal"
-                      step={50}
-                      max={10000}
-                      onChange={calories => onUpdate({
-                        calories,
-                        caloriesReached: calories >= settings.calorieGoal,
-                      })}
-                    />
-                    <NumberField
                       label={`Fett · Ziel ${settings.fatGoal}`}
                       value={entry.fatGrams}
                       unit="g"
@@ -2817,14 +2853,6 @@ function CheckinView({
                       onChange={steps => onUpdate({ steps })}
                     />
                     <NumberField
-                      label="Deep Work"
-                      value={entry.deepWorkHours}
-                      unit="Std."
-                      step={0.25}
-                      max={16}
-                      onChange={deepWorkHours => onUpdate({ deepWorkHours })}
-                    />
-                    <NumberField
                       label="Meditation"
                       value={entry.meditationMinutes}
                       unit="Min."
@@ -2836,7 +2864,6 @@ function CheckinView({
                   </div>
                   <div className="macro-rings" aria-label="Makro-Fortschritt">
                     {[
-                      { label: 'Protein', value: entry.proteinGrams, goal: settings.proteinGoal },
                       { label: 'Fett', value: entry.fatGrams, goal: settings.fatGoal },
                       { label: 'KH', value: entry.carbsGrams, goal: settings.carbsGoal },
                       { label: 'Ballast', value: entry.fiberGrams, goal: settings.fiberGoal },
@@ -3666,62 +3693,117 @@ function DashboardPlusView({
     }))
   }
 
-  const renderBillCard = (
+  const addRecurringBill = () => {
+    onChange(current => ({
+      ...current,
+      finances: {
+        ...current.finances,
+        recurring: [
+          ...current.finances.recurring,
+          createBillDraft('recurring', today, current.finances.recurring.length),
+        ],
+      },
+    }))
+  }
+
+  const addOpenBill = () => {
+    onChange(current => ({
+      ...current,
+      finances: {
+        ...current.finances,
+        openBills: [
+          ...current.finances.openBills,
+          createBillDraft('open', today, current.finances.openBills.length),
+        ],
+      },
+    }))
+  }
+
+  const removeRecurringBill = (index: number) => {
+    onChange(current => ({
+      ...current,
+      finances: {
+        ...current.finances,
+        recurring: current.finances.recurring.filter((_, billIndex) => billIndex !== index),
+      },
+    }))
+  }
+
+  const removeOpenBill = (index: number) => {
+    onChange(current => ({
+      ...current,
+      finances: {
+        ...current.finances,
+        openBills: current.finances.openBills.filter((_, billIndex) => billIndex !== index),
+      },
+    }))
+  }
+
+  const renderBillRow = (
     bill: DashboardPlusBill,
     index: number,
     onPatch: (index: number, patch: Partial<DashboardPlusBill>) => void,
+    onRemove: (index: number) => void,
   ) => (
     <div
-      className={`bill-card dashboard-plus-bill-card is-${bill.status}`}
+      className={`finance-bill-row is-${bill.status}`}
       key={bill.id}
     >
-      <div className="bill-dot" style={{ background: bill.color }} aria-hidden="true" />
-      <div className="bill-body dashboard-plus-bill-body">
+      <span className="finance-bill-row__dot" style={{ background: bill.color }} aria-hidden="true" />
+      <div className="finance-bill-row__main">
         <input
           className="dashboard-plus-input dashboard-plus-input--title dashboard-plus-input--ghost"
           value={bill.name}
           onChange={event => onPatch(index, { name: event.target.value })}
-          aria-label="Rechnungsname"
+          aria-label="Name"
+          placeholder="Name"
         />
-        <input
-          className="dashboard-plus-input dashboard-plus-input--ghost"
-          value={bill.subtitle}
-          onChange={event => onPatch(index, { subtitle: event.target.value })}
-          aria-label="Rechnungsdetails"
-        />
-        <div className="dashboard-plus-bill-meta">
-          <select
-            className={`bill-status-select is-${bill.status}`}
-            value={bill.status}
-            onChange={event => onPatch(index, { status: event.target.value as DashboardPlusBillStatus })}
-            aria-label="Status"
-          >
-            <option value="open">Offen</option>
-            <option value="overdue">Überfällig</option>
-            <option value="paid">Bezahlt</option>
-          </select>
+        <div className="finance-bill-row__meta">
           <input
-            className="dashboard-plus-input dashboard-plus-input--ghost dashboard-plus-input--due"
+            className="dashboard-plus-input dashboard-plus-input--ghost finance-bill-row__due"
+            type={parseBillDueDate(bill.due) ? 'date' : 'text'}
             value={bill.due}
             onChange={event => onPatch(index, { due: event.target.value })}
-            aria-label="Fälligkeit"
+            aria-label="Fällig"
+            placeholder="Fällig"
+          />
+          <input
+            className="dashboard-plus-input dashboard-plus-input--ghost"
+            value={bill.subtitle}
+            onChange={event => onPatch(index, { subtitle: event.target.value })}
+            aria-label="Notiz"
+            placeholder="Notiz"
           />
         </div>
       </div>
-      <div className="bill-right dashboard-plus-bill-right">
-        <label className="bill-amount-field">
-          <span className="bill-amount-prefix">€</span>
-          <input
-            className="dashboard-plus-input dashboard-plus-input--money dashboard-plus-input--ghost"
-            type="number"
-            min="0"
-            value={bill.amount}
-            onChange={event => onPatch(index, { amount: Number(event.target.value) || 0 })}
-            aria-label="Betrag"
-          />
-        </label>
-        <span className={`bill-status-pill is-${bill.status}`}>{billStatusLabel(bill.status)}</span>
-      </div>
+      <label className="finance-bill-row__amount">
+        <span aria-hidden="true">€</span>
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          value={bill.amount || ''}
+          onChange={event => onPatch(index, { amount: Number(event.target.value) || 0 })}
+          aria-label="Betrag"
+          placeholder="0"
+        />
+      </label>
+      <button
+        type="button"
+        className={`finance-bill-row__status is-${bill.status}`}
+        onClick={() => onPatch(index, { status: cycleBillStatus(bill.status) })}
+        aria-label={`Status: ${billStatusLabel(bill.status)}`}
+      >
+        {billStatusLabel(bill.status)}
+      </button>
+      <button
+        type="button"
+        className="icon-button"
+        onClick={() => onRemove(index)}
+        aria-label="Löschen"
+      >
+        <Trash2 size={15} />
+      </button>
     </div>
   )
 
@@ -4370,7 +4452,11 @@ function DashboardPlusView({
       {currentSection === 'finance' && (
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
-          <SectionTitle eyebrow="Finanzen" title="Rechnungen" />
+          <SectionTitle eyebrow="Finanzen" title="Verpflichtungen" />
+          <p className="field-hint" style={{ marginTop: -8, marginBottom: 14 }}>
+            Cockpit wie PocketGuard: Fixkosten und offene Posten — lokal, ohne Bank-Sync.
+          </p>
+
           <div className="finance-kpi-row">
             <div className="finance-kpi">
               <span className="finance-kpi__label">Monatlich fix</span>
@@ -4385,9 +4471,24 @@ function DashboardPlusView({
             <div className={`finance-kpi${financeSummary.overdueCount > 0 ? ' is-warning' : ''}`}>
               <span className="finance-kpi__label">Überfällig</span>
               <strong className="finance-kpi__value">€ {formatMoney(financeSummary.overdueSum)}</strong>
-              <small className="finance-kpi__meta">{financeSummary.overdueCount} überfällig</small>
+              <small className="finance-kpi__meta">
+                {financeSummary.overdueCount} überfällig
+                {financeSummary.pressure > 0 ? ` · Druck ${financeSummary.pressure}%` : ''}
+              </small>
             </div>
           </div>
+
+          {financeSummary.nextDue && (
+            <div className="finance-next">
+              <span className="eyebrow">Als Nächstes</span>
+              <div className="finance-next__row">
+                <strong>{financeSummary.nextDue.name}</strong>
+                <span>
+                  € {formatMoney(financeSummary.nextDue.amount)} · {financeSummary.nextDue.due}
+                </span>
+              </div>
+            </div>
+          )}
 
           {financeSummary.hints.length > 0 && (
             <div className="finance-hints">
@@ -4400,25 +4501,51 @@ function DashboardPlusView({
             </div>
           )}
 
-          <div className="dashboard-plus-finance-columns">
-            <div>
-              <div className="fin-section-label">
-                <CreditCard size={14} aria-hidden="true" />
-                <span>Wiederkehrend</span>
+          <div className="finance-lists">
+            <div className="finance-list-block">
+              <div className="finance-list-head">
+                <div className="fin-section-label">
+                  <CreditCard size={14} aria-hidden="true" />
+                  <span>Fixkosten</span>
+                </div>
+                <button type="button" className="small-button" onClick={addRecurringBill}>
+                  <Plus size={14} /> Fixkosten
+                </button>
               </div>
-              <div className="dashboard-plus-bill-list">
-                {dashboard.finances.recurring.map((bill, index) => renderBillCard(bill, index, updateRecurringBill))}
-              </div>
+              {dashboard.finances.recurring.length === 0 ? (
+                <p className="dashboard-plus-empty-hint">
+                  Noch keine Fixkosten — z. B. Miete, Versicherung, Abo.
+                </p>
+              ) : (
+                <div className="dashboard-plus-bill-list">
+                  {dashboard.finances.recurring.map((bill, index) =>
+                    renderBillRow(bill, index, updateRecurringBill, removeRecurringBill),
+                  )}
+                </div>
+              )}
             </div>
 
-            <div>
-              <div className="fin-section-label">
-                <Receipt size={14} aria-hidden="true" />
-                <span>Offene Rechnungen</span>
+            <div className="finance-list-block">
+              <div className="finance-list-head">
+                <div className="fin-section-label">
+                  <Receipt size={14} aria-hidden="true" />
+                  <span>Offene Posten</span>
+                </div>
+                <button type="button" className="small-button" onClick={addOpenBill}>
+                  <Plus size={14} /> Rechnung
+                </button>
               </div>
-              <div className="dashboard-plus-bill-list">
-                {dashboard.finances.openBills.map((bill, index) => renderBillCard(bill, index, updateOpenBill))}
-              </div>
+              {dashboard.finances.openBills.length === 0 ? (
+                <p className="dashboard-plus-empty-hint">
+                  Keine offenen Rechnungen — Einmalposten hier erfassen.
+                </p>
+              ) : (
+                <div className="dashboard-plus-bill-list">
+                  {dashboard.finances.openBills.map((bill, index) =>
+                    renderBillRow(bill, index, updateOpenBill, removeOpenBill),
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </section>

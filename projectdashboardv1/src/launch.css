@@ -2696,8 +2696,8 @@ button.status-chip.status-chip--good {
 .finance-kpi {
   display: grid;
   gap: 4px;
-  padding: 14px 16px;
-  border-radius: 16px;
+  padding: 12px 14px;
+  border-radius: 14px;
   background: var(--surface-soft);
   border: 1px solid transparent;
 }
@@ -2717,7 +2717,7 @@ button.status-chip.status-chip--good {
 
 .finance-kpi__value {
   color: var(--text);
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 560;
   letter-spacing: -0.04em;
   line-height: 1.15;
@@ -2726,6 +2726,32 @@ button.status-chip.status-chip--good {
 .finance-kpi__meta {
   color: var(--text-muted);
   font-size: 11px;
+}
+
+.finance-next {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-soft));
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.finance-next__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.finance-next__row strong {
+  font-size: 15px;
+}
+
+.finance-next__row span {
+  color: var(--text-muted);
+  font-size: 12px;
+  flex-shrink: 0;
 }
 
 .finance-hints {
@@ -2753,11 +2779,25 @@ button.status-chip.status-chip--good {
   color: var(--warning);
 }
 
+.finance-lists {
+  display: grid;
+  gap: 22px;
+  margin-top: 18px;
+}
+
+.finance-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
 .fin-section-label {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin: 0 0 10px;
+  margin: 0;
   color: var(--text-soft);
   font-size: 12px;
   font-weight: 650;
@@ -2770,6 +2810,101 @@ button.status-chip.status-chip--good {
 .dashboard-plus-bill-list {
   display: grid;
   gap: 8px;
+}
+
+.finance-bill-row {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) minmax(72px, 88px) auto auto;
+  gap: 8px 10px;
+  align-items: center;
+  padding: 10px 10px 10px 8px;
+  border-radius: 14px;
+  background: var(--surface-soft);
+  border: 1px solid transparent;
+}
+
+.finance-bill-row.is-overdue {
+  border-color: color-mix(in srgb, var(--warning) 28%, transparent);
+  background: color-mix(in srgb, var(--warning) 8%, var(--surface-soft));
+}
+
+.finance-bill-row.is-paid {
+  opacity: 0.72;
+}
+
+.finance-bill-row__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  align-self: start;
+  margin-top: 12px;
+}
+
+.finance-bill-row__main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.finance-bill-row__meta {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 6px;
+}
+
+.finance-bill-row__due {
+  min-width: 0;
+}
+
+.finance-bill-row__amount {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.finance-bill-row__amount input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  outline: none;
+}
+
+.finance-bill-row__status {
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+.finance-bill-row__status.is-open {
+  background: color-mix(in srgb, var(--blue) 16%, var(--surface));
+  color: var(--text);
+}
+
+.finance-bill-row__status.is-overdue {
+  background: color-mix(in srgb, var(--warning) 22%, var(--surface));
+  color: var(--text);
+}
+
+.finance-bill-row__status.is-paid {
+  background: color-mix(in srgb, var(--sage) 22%, var(--surface));
+  color: var(--text);
 }
 
 .dashboard-plus-bill-card,
@@ -3504,6 +3639,16 @@ button.status-chip.status-chip--good {
   .dashboard-plus-finance-columns,
   .dashboard-plus-stats-grid,
   .finance-kpi-row { grid-template-columns: 1fr; }
+  .finance-bill-row {
+    grid-template-columns: 8px minmax(0, 1fr) auto;
+  }
+  .finance-bill-row__amount { grid-column: 2; }
+  .finance-bill-row__status { justify-self: end; }
+  .finance-next__row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
   .dashboard-plus-card,
   .dashboard-plus-card--wide { grid-column: 1; }
   .dashboard-plus-hero__meta,
