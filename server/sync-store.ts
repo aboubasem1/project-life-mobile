@@ -121,8 +121,13 @@ async function upstashFetch(command: unknown[]): Promise<unknown> {
       'Upstash',
     )
   } catch (error) {
-    if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
-      throw new Error('Upstash Timeout — Redis antwortet nicht (8s).')
+    if (
+      error instanceof Error
+      && (error.name === 'AbortError' || error.name === 'TimeoutError' || /Timeout/i.test(error.message))
+    ) {
+      throw new Error(
+        'Upstash Timeout — Redis antwortet nicht. Prüfe UPSTASH_REDIS_REST_URL/TOKEN auf Vercel (temporäre DB ggf. neu claimen).',
+      )
     }
     throw error
   }
