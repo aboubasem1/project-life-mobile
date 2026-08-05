@@ -3810,23 +3810,23 @@ function DashboardPlusView({
   return (
     <div className="view-stack dashboard-plus-view">
       <section className="page-intro dashboard-plus-intro">
-        <div>
-          <span className="eyebrow">Labor</span>
+        <div className="dashboard-plus-intro__copy">
+          <div className="dashboard-plus-intro__eyebrow">
+            <span className="eyebrow">Labor</span>
+            <span className="sync-pill sync-pill--synced" title="Kein Cloud-Sync">
+              <Cloud size={14} /> Lokal
+            </span>
+          </div>
           <h2>Verwaltung ohne Fokus-Diebstahl.</h2>
-          <p>
-            Bestände, Boards und Listen — angebunden an deinen echten Tageskern. Lokal auf diesem Gerät.
-          </p>
+          <p>Bestände, Boards und Listen — angebunden an deinen Tageskern.</p>
         </div>
         <div className="dashboard-plus-intro__actions">
           <button type="button" className="secondary-button" onClick={onBackToToday}>
-            <ChevronLeft size={16} /> Zum Tageskern
+            <ChevronLeft size={16} /> Tageskern
           </button>
           <button type="button" className="secondary-button" onClick={onOpenSettings}>
-            <LayoutGrid size={16} /> Reiter anpassen
+            <LayoutGrid size={16} /> Reiter
           </button>
-          <span className="sync-pill sync-pill--synced" title="Kein Cloud-Sync">
-            <Cloud size={14} /> Lokal
-          </span>
         </div>
       </section>
 

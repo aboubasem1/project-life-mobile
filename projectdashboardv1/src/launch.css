@@ -2253,15 +2253,53 @@ button.status-chip.status-chip--good {
 }
 
 .dashboard-plus-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 16px 20px;
   margin-bottom: 0;
+  padding: 10px 4px 2px;
+}
+
+.dashboard-plus-intro__copy {
+  min-width: 0;
+}
+
+.dashboard-plus-intro__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.dashboard-plus-intro__eyebrow .eyebrow {
+  margin: 0;
+}
+
+.dashboard-plus-intro h2 {
+  max-width: 18ch;
+  margin: 8px 0 8px;
+  font-size: clamp(26px, 5.5vw, 40px);
+  line-height: 1.08;
+}
+
+.dashboard-plus-intro p {
+  max-width: 36ch;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .dashboard-plus-intro__actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
+}
+
+.dashboard-plus-intro__actions .secondary-button {
+  padding-inline: 12px;
+  white-space: nowrap;
 }
 
 .dashboard-plus-hero {
@@ -3652,8 +3690,19 @@ button.status-chip.status-chip--good {
   .dashboard-plus-card,
   .dashboard-plus-card--wide { grid-column: 1; }
   .dashboard-plus-hero__meta,
-  .dashboard-plus-intro__actions,
   .dashboard-plus-footer { align-items: flex-start; flex-direction: column; }
+  .dashboard-plus-intro {
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 12px;
+  }
+  .dashboard-plus-intro__actions {
+    justify-content: flex-start;
+    flex-direction: row;
+  }
+  .dashboard-plus-intro h2 {
+    max-width: none;
+  }
   .dashboard-plus-bill-card,
   .bill-card { grid-template-columns: 8px minmax(0, 1fr); }
   .dashboard-plus-bill-right {
