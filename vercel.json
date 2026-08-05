@@ -3,7 +3,10 @@
   "buildCommand": "cd projectdashboardv1 && npm install && npm run build",
   "outputDirectory": "projectdashboardv1/dist",
   "installCommand": "echo 'deps installed in buildCommand'",
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" }
-  ]
+  "functions": {
+    "api/**/*.ts": {
+      "maxDuration": 15,
+      "memory": 1024
+    }
+  }
 }

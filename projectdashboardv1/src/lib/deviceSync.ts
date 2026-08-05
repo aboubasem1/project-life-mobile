@@ -84,18 +84,30 @@ export function isDeviceSyncEnabled(): boolean {
 }
 
 async function syncFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {}),
-    },
-  })
-  const data = await response.json().catch(() => ({})) as T & { error?: string }
-  if (!response.ok) {
-    throw new Error(data.error || `Sync fehlgeschlagen (${response.status})`)
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 12_000)
+  try {
+    const response = await fetch(path, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(init?.headers ?? {}),
+      },
+    })
+    const data = await response.json().catch(() => ({})) as T & { error?: string }
+    if (!response.ok) {
+      throw new Error(data.error || `Sync fehlgeschlagen (${response.status})`)
+    }
+    return data
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('Sync-Server antwortet nicht (Timeout). Bitte später erneut versuchen.')
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timeout)
   }
-  return data
 }
 
 export async function createDevicePairing(): Promise<{

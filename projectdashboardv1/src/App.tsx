@@ -5596,12 +5596,13 @@ function SettingsModal({
                   disabled={syncBusy}
                   onClick={async () => {
                     setSyncBusy(true)
+                    setPairCode(null)
                     try {
                       const result = await createDevicePairing()
                       setPairCode(result.pairCode)
                       setPairExpiresAt(result.expiresAt)
                       onDeviceSyncChange(loadSyncCredentials())
-                      showToast('Code erzeugt — auf dem anderen Gerät eingeben.')
+                      showToast(`Code: ${result.pairCode}`)
                     } catch (error) {
                       showToast(error instanceof Error ? error.message : 'Koppeln fehlgeschlagen.')
                     } finally {
@@ -5609,7 +5610,7 @@ function SettingsModal({
                     }
                   }}
                 >
-                  Dieses Gerät als Start koppeln
+                  {syncBusy ? 'Code wird erzeugt …' : 'Dieses Gerät als Start koppeln'}
                 </button>
               </div>
               {pairCode && (
@@ -5617,6 +5618,9 @@ function SettingsModal({
                   <strong>{pairCode}</strong>
                   <span>Auf dem anderen Gerät unten eingeben</span>
                 </div>
+              )}
+              {syncBusy && !pairCode && (
+                <p className="settings-help">Warte auf Sync-Server …</p>
               )}
               <label className="text-field" style={{ marginTop: 12 }}>
                 <span>Code von anderem Gerät</span>

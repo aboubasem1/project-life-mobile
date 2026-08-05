@@ -1,6 +1,11 @@
 import { pushSyncSnapshot, readSyncJson, syncError, syncJson } from '../../server/sync-core'
 import type { SyncSnapshot } from '../../server/sync-store'
 
+export const config = {
+  runtime: 'nodejs',
+  maxDuration: 15,
+}
+
 export default async function handler(request: Request): Promise<Response> {
   try {
     if (request.method === 'OPTIONS') return syncJson({ ok: true })
