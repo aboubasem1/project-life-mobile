@@ -58,6 +58,10 @@ export interface DashboardEntry {
   breathingDone: boolean
   anchors?:        string[]
   anchorsDone?:    boolean[]
+  /** Per-anchor focus duration in minutes; falls back to settings/day policy when missing. */
+  anchorMinutes?:  number[]
+  /** ISO timestamp for multi-device sync (last-write-wins per day). */
+  updatedAt?: string
 
   // Sleep detail
   dreamed?:       boolean

@@ -39,7 +39,7 @@ export function calculateRecovery(input: {
   }
 
   const energyPoints = input.energy ? ENERGY_POINTS[input.energy] : 20
-  const moodBonus = input.entry.mood === 'Ruhig' || input.entry.mood === 'Gut' ? 5 : 0
+  const moodBonus = input.entry.mood === 'Sehr gut' || input.entry.mood === 'Gut' ? 5 : 0
 
   const score = Math.min(100, Math.round(quality * 0.4 + durationPoints * 0.35 + energyPoints * 0.25 + moodBonus))
   const suggestSoftMode = score < 45 || (hours !== null && hours < 6.5) || input.energy === 'low'
