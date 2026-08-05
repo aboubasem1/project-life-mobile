@@ -54,7 +54,11 @@ export type UpsertResult = {
 
 export function upsertEntry(entry: DashboardEntry): UpsertResult {
   const all = loadAllEntries()
-  const scored: DashboardEntry = { ...entry, dailyScore: calculateScore(entry) }
+  const scored: DashboardEntry = {
+    ...entry,
+    dailyScore: calculateScore(entry),
+    updatedAt: new Date().toISOString(),
+  }
   const idx = all.findIndex(e => e.date === scored.date)
   if (idx >= 0) all[idx] = scored
   else all.push(scored)
@@ -235,6 +239,10 @@ function migrateLegacy(raw: Record<string, unknown>): DashboardEntry {
       : undefined,
     anchors: Array.isArray(raw.anchors) ? raw.anchors.map(String) : undefined,
     anchorsDone: Array.isArray(raw.anchorsDone) ? raw.anchorsDone.map(Boolean) : undefined,
+    anchorMinutes: Array.isArray(raw.anchorMinutes)
+      ? raw.anchorMinutes.map(value => Number(value) || 0)
+      : undefined,
+    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : undefined,
     dreamed: typeof raw.dreamed === 'boolean' ? raw.dreamed : undefined,
     dreamQuality,
     bedTime: typeof raw.bedTime === 'string' ? raw.bedTime : undefined,
