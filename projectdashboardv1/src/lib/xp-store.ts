@@ -138,6 +138,58 @@ export function scoreToXP(score: number): number {
   return 0
 }
 
+/**
+ * Rebuild XP + streak from entry scores after a backup import.
+ * Clears prior per-day XP keys, then rewrites from the imported set.
+ */
+export function recomputeXPFromEntries(
+  entries: Array<{ date: string; dailyScore: number }>,
+  today = todayKeyLocal(),
+): XPStore {
+  const sorted = [...entries]
+    .filter(entry => entry.date)
+    .sort((a, b) => a.date.localeCompare(b.date))
+
+  // Drop orphan day keys so awardDailyXP never under-awards against stale history.
+  try {
+    const toRemove: string[] = []
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index)
+      if (key?.startsWith('lifeos-xp-day-')) toRemove.push(key)
+    }
+    for (const key of toRemove) localStorage.removeItem(key)
+  } catch { /* storage blocked */ }
+
+  let totalXP = 0
+  for (const entry of sorted) {
+    const earned = scoreToXP(Math.max(0, Math.min(100, Math.round(entry.dailyScore || 0))))
+    totalXP += earned
+    safeSetItem(`lifeos-xp-day-${entry.date}`, String(earned))
+  }
+
+  let streakDays = 0
+  let cursor = today
+  const byDate = new Map(sorted.map(entry => [entry.date, entry.dailyScore || 0]))
+  while (true) {
+    const score = byDate.get(cursor)
+    if (score === undefined || score < 50) break
+    streakDays += 1
+    cursor = offsetDate(cursor, -1)
+  }
+
+  const lastWithScore = [...sorted].reverse().find(entry => (entry.dailyScore || 0) > 0)
+  const store: XPStore = {
+    totalXP,
+    level: Math.floor(totalXP / XP_PER_LEVEL) + 1,
+    xp: totalXP % XP_PER_LEVEL,
+    lastUpdated: today,
+    streakDays,
+    lastScoreDate: lastWithScore?.date ?? '',
+  }
+  saveXP(store)
+  return store
+}
+
 export function xpToNextLevel(store: XPStore): number {
   return XP_PER_LEVEL - store.xp
 }

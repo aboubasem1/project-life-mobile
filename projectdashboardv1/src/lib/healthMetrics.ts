@@ -119,9 +119,9 @@ function deltaSince(
   days: number,
 ): number | null {
   const cutoff = offsetDate(latestDate, -days)
-  const baseline = [...sorted].reverse().find(entry => entry.date <= cutoff)
-    ?? sorted.find(entry => entry.date < latestDate)
-  if (!baseline || baseline.date === latestDate) return null
+  // Only compare within the window — no fallback to older-than-window baselines.
+  const baseline = [...sorted].reverse().find(entry => entry.date <= cutoff && entry.date < latestDate)
+  if (!baseline) return null
   const latest = sorted[sorted.length - 1]
   return Math.round((latest.weightKg - baseline.weightKg) * 10) / 10
 }

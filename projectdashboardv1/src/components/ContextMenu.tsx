@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 export type ContextMenuItem = {
   id: string
@@ -18,8 +18,15 @@ type ContextMenuProps = {
 
 export function ContextMenu({ x, y, items, onSelect, onClose, title }: ContextMenuProps) {
   const ref = useRef<HTMLDivElement | null>(null)
+  const [armed, setArmed] = useState(false)
 
   useEffect(() => {
+    const armTimer = window.setTimeout(() => setArmed(true), 280)
+    return () => window.clearTimeout(armTimer)
+  }, [])
+
+  useEffect(() => {
+    if (!armed) return
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
     }
@@ -35,7 +42,7 @@ export function ContextMenu({ x, y, items, onSelect, onClose, title }: ContextMe
       window.removeEventListener('mousedown', onPointer)
       window.removeEventListener('touchstart', onPointer)
     }
-  }, [onClose])
+  }, [onClose, armed])
 
   useEffect(() => {
     const node = ref.current
@@ -54,7 +61,7 @@ export function ContextMenu({ x, y, items, onSelect, onClose, title }: ContextMe
         className="context-menu"
         role="menu"
         aria-label={title ?? 'Aktionen'}
-        style={{ left: x, top: y }}
+        style={{ left: x, top: y, pointerEvents: armed ? 'auto' : 'none' }}
       >
         {title && <div className="context-menu__title">{title}</div>}
         {items.map(item => (
@@ -63,9 +70,9 @@ export function ContextMenu({ x, y, items, onSelect, onClose, title }: ContextMe
             type="button"
             role="menuitem"
             className={item.danger ? 'context-menu__item is-danger' : 'context-menu__item'}
-            disabled={item.disabled}
+            disabled={item.disabled || !armed}
             onClick={() => {
-              if (item.disabled) return
+              if (item.disabled || !armed) return
               onSelect(item.id)
               onClose()
             }}

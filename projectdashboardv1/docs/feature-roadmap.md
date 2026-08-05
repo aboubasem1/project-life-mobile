@@ -6,17 +6,9 @@ Aufwand — wir arbeiten sie nacheinander ab und haken hier ab, was fertig ist.
 
 ## Wichtigste Erkenntnisse aus dem Audit
 
-- **Vier Systeme sind bereits fertig programmiert, aber nirgends sichtbar**: das
-  XP/Level-System (`src/lib/xp-store.ts`), der Score-Breakdown und die
-  Streak-/Erfolgsquote-Funktionen (`src/lib/score.ts`). `App.tsx` importiert nur
-  die Schreib-Funktion (`awardDailyXP`), nie die Lese-Funktionen.
-- **Zwei parallele, widersprüchliche Level-Systeme** existieren: ein
-  Score-Summen-basiertes (`getLevelFromScore`, `LVLS`/`XPT` in `App.tsx`) und ein
-  echtes, persistiertes XP-System (`xp-store.ts`). Sie zeigen unterschiedliche
-  Level für denselben Nutzer.
-- **Dashboard+ „Finanzen“ und „Stats“ sind eine manuell ausgefüllte Tabelle**,
-  keine Live-Analytics — alle Zahlen kommen aus `createDashboardPlusSeed()` und
-  werden per Hand editiert, nichts wird aus echten Tageseinträgen berechnet.
+- **Früher:** XP/Score/Streaks waren berechnet, aber kaum sichtbar — **Phase 1 behoben**.
+- **Früher:** zwei parallele Level-Systeme — **vereinheitlicht auf `xp-store.ts`**.
+- **Früher:** Labor-Stats/Finanzen teils Mock — **Phase 3: Stats live; Finanzen aus Rechnungsdaten**.
 - **Keine KI-Infrastruktur vorhanden** — kein LLM-SDK, kein API-Key-Handling,
   kein Backend-Proxy. Jedes KI-Feature braucht zuerst eine Architektur- und
   Kostenentscheidung (siehe Phase 5).
@@ -90,6 +82,15 @@ Aufwand — wir arbeiten sie nacheinander ab und haken hier ab, was fertig ist.
 - [ ] Danach zuerst die zwei günstigsten Bausteine: natürlichsprachiger
       Quick-Add und Wochenzusammenfassung mit Empfehlungen — nicht alle 9
       KI-Punkte gleichzeitig
+
+## Phase 6 — Polish & Ehrlichkeit (nach Phase 4)
+
+**Aufwand: S–M · kein Feature-Overload.**
+
+- [x] README / Docs auf Local-First korrigieren (kein falsches Supabase-Setup)
+- [x] Medis-Erinnerungen opt-in (Uhrzeit + Toast / Notification nur mit Erlaubnis)
+- [x] Anker vs Labor-Todos in der UI klar trennen
+- [x] Backup-Import berechnet XP & Streak aus Einträgen neu
 
 ## Bewusst nicht empfohlen
 

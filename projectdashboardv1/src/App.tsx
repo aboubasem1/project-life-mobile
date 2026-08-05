@@ -101,7 +101,12 @@ import {
   mergeEntriesByDate,
   saveAllEntries,
 } from './lib/storage'
-import { levelProgress, loadXP, xpToNextLevel } from './lib/xp-store'
+import { levelProgress, loadXP, recomputeXPFromEntries, xpToNextLevel } from './lib/xp-store'
+import {
+  dueMedicationReminders,
+  isMedTakenToday,
+  reminderStorageKey,
+} from './lib/medReminders'
 import './launch.css'
 
 type View = 'today' | 'plan' | 'checkin' | 'progress' | 'dashboardPlus'
@@ -128,6 +133,8 @@ type AppSettings = {
   /** Empty / missing = every day. Values 0=Mo … 6=So. */
   habitSchedules: HabitScheduleMap
   dashboardPlusLayout: DashboardPlusLayout
+  /** Opt-in: soft Medis reminders when clock matches (no auto permission ask). */
+  medisRemindersEnabled: boolean
 }
 
 type DashboardPlusLayout = {
@@ -275,11 +282,20 @@ type DashboardPlusMedication = {
   taken: boolean
   /** YYYY-MM-DD when taken; cleared after midnight by comparing to today */
   takenDate?: string
+  /** Soft reminder at `time` when settings.medisRemindersEnabled */
+  remind?: boolean
   color: string
 }
 
 function isMedicationTakenToday(item: DashboardPlusMedication, today: string): boolean {
-  return item.takenDate === today
+  return isMedTakenToday(item, today)
+}
+
+function normalizeMedication(item: DashboardPlusMedication, today: string): DashboardPlusMedication {
+  if (item.taken && !item.takenDate) {
+    return { ...item, takenDate: today, taken: true }
+  }
+  return item
 }
 
 type DashboardPlusGoalTimeframe = 'Jahr' | 'Quartal' | 'Monat' | 'Woche'
@@ -593,7 +609,9 @@ function normalizeDashboardPlusState(parsed: Partial<DashboardPlusState> | null 
     overview: { ...seed.overview, ...parsed.overview },
     focusTodos: Array.isArray(parsed.focusTodos) ? parsed.focusTodos.map(normalizeTaskPriority) : seed.focusTodos,
     supplements: Array.isArray(parsed.supplements) ? parsed.supplements : seed.supplements,
-    medications: Array.isArray(parsed.medications) ? parsed.medications : seed.medications,
+    medications: Array.isArray(parsed.medications)
+      ? parsed.medications.map(item => normalizeMedication(item, dateKey(new Date())))
+      : seed.medications,
     goals: Array.isArray(parsed.goals) ? parsed.goals : seed.goals,
     boards: Array.isArray(parsed.boards)
       ? syncBoardCounts(parsed.boards.map(board => ({
@@ -676,6 +694,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   activeHabits: DEFAULT_ACTIVE_HABITS,
   habitSchedules: {},
   dashboardPlusLayout: DEFAULT_DASHBOARD_PLUS_LAYOUT,
+  medisRemindersEnabled: false,
 }
 
 function normalizeDashboardPlusLayout(raw: unknown): DashboardPlusLayout {
@@ -856,6 +875,7 @@ function loadSettings(): AppSettings {
       activeHabits: Array.isArray(stored.activeHabits) ? stored.activeHabits : DEFAULT_ACTIVE_HABITS,
       habitSchedules: normalizeHabitSchedules(stored.habitSchedules),
       dashboardPlusLayout: normalizeDashboardPlusLayout(stored.dashboardPlusLayout),
+      medisRemindersEnabled: Boolean(stored.medisRemindersEnabled),
     }
   } catch {
     return DEFAULT_SETTINGS
@@ -1206,6 +1226,50 @@ function App() {
     setToast({ message, actionLabel, onAction })
   }
 
+  useEffect(() => {
+    if (!settings.medisRemindersEnabled) return
+
+    const tick = () => {
+      const due = dueMedicationReminders(dashboardPlus.medications, today)
+        .filter(item => {
+          try {
+            return !localStorage.getItem(reminderStorageKey(item.id, today))
+          } catch {
+            return true
+          }
+        })
+      if (due.length === 0) return
+
+      for (const item of due) {
+        try {
+          localStorage.setItem(reminderStorageKey(item.id, today), '1')
+        } catch { /* ignore */ }
+      }
+
+      const label = due.length === 1
+        ? `Medikament: ${due[0].name} (${due[0].time})`
+        : `Medikamente: ${due.map(item => item.name).join(', ')}`
+      setToast({ message: label })
+
+      if ('Notification' in window && Notification.permission === 'granted') {
+        try {
+          new Notification(due.length === 1 ? 'Medikament' : 'Medikamente', { body: label })
+        } catch { /* ignore */ }
+      }
+    }
+
+    tick()
+    const timer = window.setInterval(tick, 60_000)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') tick()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [settings.medisRemindersEnabled, dashboardPlus.medications, today])
+
   const updateEntry = (patch: Partial<DashboardEntry>) => {
     const before = loadXP()
     void saveEntry({ ...entry, ...patch }).then(ok => {
@@ -1243,10 +1307,25 @@ function App() {
   const handleImport = async (file: File) => {
     try {
       const imported = await importBackupFile(file)
-      const normalized = imported.entries.map(item => ({ ...item, dailyScore: calculateScore(item, scoreGoals) }))
       const replaceAll = window.confirm(
         `${imported.entryCount} Tage gefunden (${imported.mode === 'bundle' ? 'Vollbackup' : 'nur Einträge'}).\n\nOK = alles ersetzen\nAbbrechen = nach Datum mergen`,
       )
+
+      // Score with imported goals when present — don't write settings until user confirmed.
+      const importedSettings = imported.settings as Partial<AppSettings> | undefined
+      const goalsForScore = imported.mode === 'bundle' && importedSettings
+        ? {
+            proteinGoal: clampNumber(Number(importedSettings.proteinGoal) || scoreGoals.proteinGoal, 50, 400),
+            activeHabits: Array.isArray(importedSettings.activeHabits)
+              ? importedSettings.activeHabits.map(String)
+              : scoreGoals.activeHabits,
+          }
+        : scoreGoals
+
+      const normalized = imported.entries.map(item => ({
+        ...item,
+        dailyScore: calculateScore(item, goalsForScore),
+      }))
       const finalEntries = replaceAll ? normalized : mergeEntriesByDate(entries, normalized)
 
       if (!saveAllEntries(finalEntries)) throw new Error('localStorage unavailable')
@@ -1255,9 +1334,10 @@ function App() {
         if (imported.settings) setSettings(loadSettings())
         if (imported.dashboardPlus) setDashboardPlus(loadDashboardPlusState())
       }
+      recomputeXPFromEntries(finalEntries, today)
       setLastBackupAt(new Date().toISOString())
       await reloadAll()
-      showToast(imported.mode === 'bundle' ? 'Vollbackup importiert.' : 'Einträge importiert.')
+      showToast(imported.mode === 'bundle' ? 'Vollbackup importiert · XP neu berechnet.' : 'Einträge importiert · XP neu berechnet.')
     } catch {
       showToast('Import fehlgeschlagen.')
     }
@@ -1591,6 +1671,7 @@ function App() {
               liveStats={laborStats}
               energy={entry.energyLevel}
               layout={settings.dashboardPlusLayout}
+              medisRemindersEnabled={settings.medisRemindersEnabled}
               onOpenSettings={() => setSettingsOpen(true)}
             />
           )}
@@ -2340,10 +2421,9 @@ function PlanView({
                   <SwipeableRow
                     key={`${task}-${index}`}
                     leftLabel={isDone ? 'Offen' : 'Erledigt'}
-                    rightLabel="Verschieben"
+                    rightLabel="Nach unten"
                     onSwipeLeft={() => onToggleTask(index)}
-                    onSwipeRight={() => onMoveTask(index, index === anchors.length - 1 ? -1 : 1)}
-                    onLongPress={() => onEditTask(index, task)}
+                    onSwipeRight={index < anchors.length - 1 ? () => onMoveTask(index, 1) : undefined}
                   >
                     <div className={isDone ? 'editable-task is-done' : 'editable-task'}>
                       <button
@@ -2357,7 +2437,7 @@ function PlanView({
                       </button>
                       <div className="editable-task__content">
                         <strong>{task}</strong>
-                        <span>Position {index + 1} · Wischen oder lange drücken</span>
+                        <span>Position {index + 1}</span>
                       </div>
                       <div className="editable-task__actions">
                         <IconButton label="Nach oben" onClick={() => onMoveTask(index, -1)} disabled={index === 0}>
@@ -2885,11 +2965,13 @@ function MonthCalendar({
   today,
   selected,
   entries,
+  scoreGoals,
   onSelect,
 }: {
   today: string
   selected: string
   entries: DashboardEntry[]
+  scoreGoals: { proteinGoal: number; activeHabits: string[] }
   onSelect: (date: string) => void
 }) {
   const initial = fromDateKey(selected)
@@ -2905,9 +2987,11 @@ function MonthCalendar({
   const entryDates = useMemo(() => new Set(entries.map(entry => entry.date)), [entries])
   const scoresByDate = useMemo(() => {
     const map: Record<string, number> = {}
-    for (const entry of entries) map[entry.date] = Math.round(entry.dailyScore || 0)
+    for (const entry of entries) {
+      map[entry.date] = Math.round(calculateScore(entry, scoreGoals))
+    }
     return map
-  }, [entries])
+  }, [entries, scoreGoals])
 
   const cells = buildMonthGrid({ year, monthIndex, today, selected, entryDates, scoresByDate })
 
@@ -3044,6 +3128,7 @@ function ProgressView({
         today={today}
         selected={selectedDate}
         entries={entries}
+        scoreGoals={scoreGoals}
         onSelect={onSelectDate}
       />
 
@@ -3241,6 +3326,7 @@ function DashboardPlusView({
   liveStats,
   energy,
   layout,
+  medisRemindersEnabled,
   onOpenSettings,
 }: {
   dashboard: DashboardPlusState
@@ -3251,6 +3337,7 @@ function DashboardPlusView({
   liveStats: ReturnType<typeof deriveLaborStats>
   energy?: DashboardEntry['energyLevel']
   layout: DashboardPlusLayout
+  medisRemindersEnabled: boolean
   onOpenSettings: () => void
 }) {
   const [activeSection, setActiveSection] = useState<DashboardPlusSection>('overview')
@@ -3754,10 +3841,13 @@ function DashboardPlusView({
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle
-            eyebrow="Tages-Fokus"
-            title="Top Aufgaben"
+            eyebrow="Labor · nicht Tageskern"
+            title="Fokus-Todos"
             action={<button type="button" className="small-button" onClick={addFocusTask}><Plus size={14} /> Aufgabe</button>}
           />
+          <p className="field-hint" style={{ marginTop: -8, marginBottom: 14 }}>
+            Max. 5 Tagesanker bleiben unter Heute / Plan. Rechts wischen verschiebt Fokus ↔ Board.
+          </p>
           <div className="editable-task-list">
             {dashboard.focusTodos.map((task, index) => (
               <SwipeableRow
@@ -4099,8 +4189,21 @@ function DashboardPlusView({
                 </div>
                 <div className="dashboard-plus-inline-row">
                   <input className="dashboard-plus-input" value={item.dosage} onChange={event => updateMedication(index, { dosage: event.target.value })} placeholder="Dosierung" aria-label="Dosierung" />
-                  <input className="dashboard-plus-input" value={item.time} onChange={event => updateMedication(index, { time: event.target.value })} placeholder="Uhrzeit" aria-label="Uhrzeit" />
+                  <input className="dashboard-plus-input" value={item.time} onChange={event => updateMedication(index, { time: event.target.value })} placeholder="Uhrzeit z. B. 08:00" aria-label="Uhrzeit" />
                 </div>
+                <label className={`med-remind-toggle${!medisRemindersEnabled ? ' is-muted' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(item.remind)}
+                    disabled={!medisRemindersEnabled}
+                    onChange={event => updateMedication(index, { remind: event.target.checked })}
+                  />
+                  <span>
+                    {medisRemindersEnabled
+                      ? 'Erinnern zur Uhrzeit'
+                      : 'Erinnern (in Einstellungen anschalten)'}
+                  </span>
+                </label>
                 <input className="dashboard-plus-input" value={item.notes} onChange={event => updateMedication(index, { notes: event.target.value })} placeholder="Notizen" aria-label="Notizen" />
                 <input className="dashboard-plus-input" value={item.effect} onChange={event => updateMedication(index, { effect: event.target.value })} placeholder="Wirkung" aria-label="Wirkung" />
                 <input className="dashboard-plus-input" value={item.sideEffects} onChange={event => updateMedication(index, { sideEffects: event.target.value })} placeholder="Nebenwirkungen" aria-label="Nebenwirkungen" />
@@ -4735,6 +4838,34 @@ function SettingsModal({
           <div className="settings-actions">
             <button type="button" className="secondary-button" onClick={onResetLabor}>
               <RotateCcw size={16} /> Labor zurücksetzen
+            </button>
+          </div>
+        </div>
+
+        <div className="settings-section">
+          <h3>Medis-Erinnerungen</h3>
+          <p className="settings-help">
+            Nur mit Opt-in. Pro Medikament „Erinnern“ setzen und Uhrzeit eintragen. System-Benachrichtigungen nur, wenn du sie hier erlaubst.
+          </p>
+          <div className="settings-actions">
+            <button
+              type="button"
+              className={settings.medisRemindersEnabled ? 'choice-button is-active' : 'choice-button'}
+              aria-pressed={settings.medisRemindersEnabled}
+              onClick={() => onChange({ ...settings, medisRemindersEnabled: !settings.medisRemindersEnabled })}
+            >
+              {settings.medisRemindersEnabled ? 'Erinnerungen an' : 'Erinnerungen aus'}
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={async () => {
+                if (!('Notification' in window)) return
+                if (Notification.permission === 'granted') return
+                await Notification.requestPermission()
+              }}
+            >
+              <Bell size={16} /> System-Hinweis erlauben
             </button>
           </div>
         </div>

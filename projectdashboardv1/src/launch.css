@@ -3748,6 +3748,25 @@ button.status-chip.status-chip--good {
   background: var(--accent);
 }
 
+.med-remind-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.med-remind-toggle.is-muted {
+  opacity: 0.72;
+  cursor: default;
+}
+
+.med-remind-toggle input {
+  accent-color: var(--accent);
+}
+
 .streak-hint,
 .stack-hint,
 .mode-hint {

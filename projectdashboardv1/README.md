@@ -1,46 +1,57 @@
-# Project Life Dashboard
+# Life OS (Project Life)
 
-Persoenliches Gewohnheits- und Produktivitaets-Dashboard mit Supabase Cloud-Sync und PWA-Support.
+Lokales Tages- und Gewohnheits-OS für geringe kognitive Last — ohne Cloud-Sync.
+
+**Live:** https://project-life-mobile.vercel.app/
 
 ## Stack
 
-- **React 19** + **TypeScript 5.9** + **Vite 7**
-- **Supabase** -- Cloud-Sync, offline-kompatibel
-- **Chart.js 4** -- Wochenscore + Verlaufsdiagramme
-- **vite-plugin-pwa** -- Installierbar als App (iOS/Android/Desktop)
+- **React 19** + **TypeScript** + **Vite 7**
+- **lucide-react** für Icons
+- **vite-plugin-pwa** — installierbar als App
+- **localStorage** — einzige Persistenz (Vollbackup per JSON-Export/Import)
 
-## Features
+Kein Supabase, kein Backend, keine Accounts. Frühere Cloud-Docs sind veraltet.
 
-- **Today View** -- Morgens/Abends Tabs: Habits, Schlaf, Ernaehrung, Deep Work, Journal
-- **Stats View** -- KPI-Grid, Wochenchart, Habit-Streaks, Score-Verlauf
-- **Score-System** -- 100 Punkte taeglich (76 Habit-Punkte + 24 Numeric-Thresholds)
-- **Offline-First** -- LocalStorage als Fallback, Sync-Queue fuer offline Aenderungen
-- **PWA** -- Installierbar, Service Worker mit Supabase Network-First Caching
+## Was die App macht
+
+| Bereich | Inhalt |
+|---|---|
+| **Heute** | Energie, Next-Step, Tagesanker, Habits, Soft-Mode / Recovery |
+| **Plan** | Anker ordnen (max. 5), Fokusdauer |
+| **Check-in** | Schlaf (Bett/Aufstehen), Makros, Gewicht, Wasser, Schritte, Journal |
+| **Verlauf** | Wochenreview, Heatmap, Habit Strength, Gewicht/BMI, Monatskalender |
+| **Labor** | Todos/Boards, Listen, Bestände, Medis, Ziele, Kaufliste, Stats, Finanzen |
+
+**Tagesanker** = der schlanke Tageskern (Heute/Plan).  
+**Labor-Todos/Boards** = Verwaltung daneben — bewusst getrennt, damit die Startseite nicht überlädt.
 
 ## Setup
 
-### 1. Dependencies installieren
-
 ```bash
+cd projectdashboardv1
 npm install
-```
-
-### 2. Umgebungsvariablen
-
-Erstelle `.env.local` im Projektordner:
-
-```env
-VITE_SUPABASE_URL=https://dein-projekt.supabase.co
-VITE_SUPABASE_ANON_KEY=dein-VITE_SUPABASE_ANON_KEY=dein-VITE_DatenbVITE_SUPABASE_ANON_KEY=dein-VITE_SUPABASE_ANON_KEY=dein-VITE_DatenbVITE_SUPABASE_ANON_KE# 4. LokaleV Dev-Server
-
-```bash
 npm run dev
 ```
 
-Oeffne http://Oeffne http://Oeffne http://Oeffne http://Obash
-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnneviennnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnneviennnnnnnnnn ist fertig konfigurnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnneviennnnnnnnnnnnnnnnnnnnnnnnnnnnnnr Setnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnneviennnnnnnnnnnnnnn
-src/
-  types/         DashboardEntry.ts -- Alle Typen, HABITS-Array
-  lib/           sc  lib/           sc  lib/           sc  lib/           sc  lib/           supabase+Loc  lib/           sc  lib/           sc  lib/           sc  lib/          rts/      ScoreG  lib/           sc  lib/   views/  lib/   DashboardView.tsx, StatsView.tsx
-  App.tsx        -- View-Routing, TopBar
-  App.css        -- Alle Sty  App.css        ```
+Öffne http://localhost:5173/
+
+Build:
+
+```bash
+npm run build
+npm run preview
+```
+
+## Daten & Backup
+
+- Einträge: `project-life-entries`
+- Settings: `life-os-v1-settings`
+- Labor: `life-os-v1-dashboard-plus`
+- XP: `lifeos-xp-v1`
+
+Einstellungen → **Backup exportieren / importieren**. Vollbackup enthält Tage, Settings, Labor und XP. Neuere Backup-Versionen als die App werden abgelehnt.
+
+## Roadmap
+
+Siehe [`docs/feature-roadmap.md`](docs/feature-roadmap.md). Phasen 1–4 sind umgesetzt. Phase 5 (KI) bleibt bewusst blockiert, bis Anbieter/Kosten geklärt sind.
