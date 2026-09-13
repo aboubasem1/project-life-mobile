@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "types": ["node"]
+  },
+  "include": [
+    "../server/hook-core.ts",
+    "../server/sync-core.ts",
+    "../server/sync-store.ts",
+    "../server/sync-router.ts",
+    "../api/health.ts",
+    "../api/hooks.ts",
+    "../api/sync/**/*.ts"
+  ]
+}

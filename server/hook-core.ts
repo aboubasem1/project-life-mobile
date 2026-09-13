@@ -1,0 +1,227 @@
+import { getRoom, saveRoom, type SyncSnapshot } from './sync-store'
+import { SyncHttpError } from './sync-core'
+
+const HABIT_KEYS = new Set([
+  'breathingDone',
+  'coldShower',
+  'proteinShake',
+  'pushupsDone',
+  'squatsDone',
+  'wallsitDone',
+  'plankDone',
+  'gratitudeDone',
+  'focusDone',
+  'winnerModeDone',
+  'journalDone',
+  'familyTimeDone',
+])
+
+export type InboundHookType = 'log' | 'quick' | 'task'
+
+export type InboundHook = {
+  roomId: string
+  deviceToken: string
+  type: InboundHookType
+  date?: string
+  text?: string
+  title?: string
+  proteinGrams?: number
+  calories?: number
+  waterLiters?: number
+  steps?: number
+  weightKg?: number
+  energy?: 'low' | 'okay' | 'high'
+  habit?: string
+}
+
+type LooseEntry = Record<string, unknown> & { date: string }
+
+function todayInBerlin(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Berlin',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
+}
+
+function validDate(raw: unknown): string | null {
+  const value = String(raw ?? '').trim()
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null
+}
+
+function finiteNumber(raw: unknown): number | null {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw
+  if (typeof raw === 'string' && raw.trim()) {
+    const value = Number(raw.replace(',', '.'))
+    return Number.isFinite(value) ? value : null
+  }
+  return null
+}
+
+function validEnergy(raw: unknown): 'low' | 'okay' | 'high' | undefined {
+  return raw === 'low' || raw === 'okay' || raw === 'high' ? raw : undefined
+}
+
+type QuickParse =
+  | { kind: 'fields'; fields: Partial<LooseEntry> }
+  | { kind: 'task'; title: string }
+
+function parseQuickText(raw: string): QuickParse | null {
+  const text = raw.trim()
+  const toNumber = (match: string) => Number(match.replace(',', '.'))
+  const weight = text.match(/(\d+(?:[.,]\d+)?)\s*kg\b/i)
+  if (weight) return { kind: 'fields', fields: { weightKg: toNumber(weight[1]) } }
+  const calories = text.match(/(\d+(?:[.,]\d+)?)\s*kcal\b/i)
+  if (calories) return { kind: 'fields', fields: { calories: toNumber(calories[1]) } }
+  const protein = text.match(/(\d+(?:[.,]\d+)?)\s*(?:g\s*)?(?:protein|eiwei[sß])\b/i)
+    ?? text.match(/(\d+(?:[.,]\d+)?)\s*g\s*p\b/i)
+  if (protein) return { kind: 'fields', fields: { proteinGrams: toNumber(protein[1]) } }
+  const water = text.match(/(\d+(?:[.,]\d+)?)\s*(?:l|liter)\b/i)
+  if (water) return { kind: 'fields', fields: { waterLiters: toNumber(water[1]) } }
+  const steps = text.match(/(\d+(?:[.,]\d+)?)\s*(?:schritte|steps)\b/i)
+  if (steps) return { kind: 'fields', fields: { steps: Math.round(toNumber(steps[1])) } }
+  if (text) return { kind: 'task', title: text }
+  return null
+}
+
+function seedEntry(date: string): LooseEntry {
+  return {
+    date,
+    mood: '',
+    sleepQuality: '',
+    sleepDuration: '',
+    meditationMinutes: 0,
+    coldShower: false,
+    proteinShake: false,
+    pushupsDone: false,
+    squatsDone: false,
+    wallsitDone: false,
+    plankDone: false,
+    gratitudeDone: false,
+    focusDone: false,
+    winnerModeDone: false,
+    proteinReached: false,
+    caloriesReached: false,
+    proteinGrams: 0,
+    calories: 0,
+    fatGrams: 0,
+    carbsGrams: 0,
+    fiberGrams: 0,
+    tasksDone: 0,
+    journalDone: false,
+    journalText: '',
+    familyTimeDone: false,
+    weightKg: 0,
+    waterLiters: 0,
+    deepWorkHours: 0,
+    steps: 0,
+    dailyScore: 0,
+    breathingDone: false,
+    anchors: [],
+    anchorsDone: [],
+    anchorMinutes: [],
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+function addTask(entry: LooseEntry, title: string): void {
+  const anchors = Array.isArray(entry.anchors) ? entry.anchors.map(item => String(item)) : []
+  const done = Array.isArray(entry.anchorsDone) ? entry.anchorsDone.map(item => Boolean(item)) : []
+  const minutes = Array.isArray(entry.anchorMinutes) ? entry.anchorMinutes.map(item => Number(item)) : []
+  anchors.push(title)
+  done.push(false)
+  minutes.push(25)
+  entry.anchors = anchors
+  entry.anchorsDone = done
+  entry.anchorMinutes = minutes
+}
+
+function applyPatch(entry: LooseEntry, hook: InboundHook): LooseEntry {
+  const next = { ...entry }
+  const fromText = hook.text ? parseQuickText(hook.text) : null
+  if (fromText?.kind === 'task' && hook.type !== 'log') {
+    addTask(next, fromText.title)
+  } else if (fromText?.kind === 'fields') {
+    Object.assign(next, fromText.fields)
+  }
+
+  if (hook.proteinGrams !== null && hook.proteinGrams !== undefined) next.proteinGrams = hook.proteinGrams
+  if (hook.calories !== null && hook.calories !== undefined) next.calories = hook.calories
+  if (hook.waterLiters !== null && hook.waterLiters !== undefined) next.waterLiters = hook.waterLiters
+  if (hook.steps !== null && hook.steps !== undefined) next.steps = hook.steps
+  if (hook.weightKg !== null && hook.weightKg !== undefined) next.weightKg = hook.weightKg
+  if (hook.energy) next.energyLevel = hook.energy
+  if (hook.habit && HABIT_KEYS.has(hook.habit)) next[hook.habit] = true
+
+  if (hook.type === 'task' && hook.title?.trim()) {
+    addTask(next, hook.title.trim())
+  }
+
+  next.updatedAt = new Date().toISOString()
+  return next
+}
+
+export async function applyInboundHook(raw: InboundHook): Promise<{
+  date: string
+  revision: number
+  updatedAt: string
+}> {
+  const roomId = String(raw.roomId ?? '').trim()
+  const deviceToken = String(raw.deviceToken ?? '').trim()
+  if (!roomId || !deviceToken) {
+    throw new SyncHttpError(400, 'roomId und deviceToken sind nötig.')
+  }
+
+  const type = raw.type
+  if (type !== 'log' && type !== 'quick' && type !== 'task') {
+    throw new SyncHttpError(400, 'type muss log, quick oder task sein.')
+  }
+
+  const room = await getRoom(roomId)
+  if (!room) throw new SyncHttpError(404, 'Sync-Raum nicht gefunden.')
+  if (!room.deviceTokens.includes(deviceToken)) {
+    throw new SyncHttpError(403, 'Gerät nicht mit diesem Sync verbunden.')
+  }
+
+  const date = validDate(raw.date) ?? todayInBerlin()
+  const snapshot = room.snapshot
+  const entries = Array.isArray(snapshot?.entries)
+    ? snapshot.entries.filter((item): item is LooseEntry => Boolean(item && typeof item === 'object'))
+    : []
+  const index = entries.findIndex(item => String(item.date) === date)
+  const current = index >= 0
+    ? { ...seedEntry(date), ...entries[index], date }
+    : seedEntry(date)
+  const patched = applyPatch(current, {
+    ...raw,
+    roomId,
+    deviceToken,
+    type,
+    proteinGrams: finiteNumber(raw.proteinGrams) ?? undefined,
+    calories: finiteNumber(raw.calories) ?? undefined,
+    waterLiters: finiteNumber(raw.waterLiters) ?? undefined,
+    steps: finiteNumber(raw.steps) ?? undefined,
+    weightKg: finiteNumber(raw.weightKg) ?? undefined,
+    energy: validEnergy(raw.energy),
+  })
+
+  if (index >= 0) entries[index] = patched
+  else entries.push(patched)
+
+  const updatedAt = new Date().toISOString()
+  const nextRevision = (snapshot?.revision ?? 0) + 1
+  const nextSnapshot: SyncSnapshot = {
+    revision: nextRevision,
+    updatedAt,
+    entries,
+    settings: snapshot?.settings,
+    dashboardPlus: snapshot?.dashboardPlus,
+    xp: snapshot?.xp,
+    quickNote: snapshot?.quickNote,
+  }
+  room.snapshot = nextSnapshot
+  room.updatedAt = updatedAt
+  await saveRoom(room)
+  return { date, revision: nextRevision, updatedAt }
+}

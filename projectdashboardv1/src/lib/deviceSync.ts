@@ -13,6 +13,26 @@ import { loadXP, saveXP, type XPStore } from './xp-store'
 const SYNC_CRED_KEY = 'life-os-v1-device-sync'
 const QUICK_NOTE_KEY = 'life-os-quick-note'
 const LOCAL_REVISION_KEY = 'life-os-v1-sync-revision'
+export const LIFE_OS_SYNC_EXTRAS_EVENT = 'life-os-sync-extras'
+
+let remoteApplyGeneration = 0
+let syncChain: Promise<unknown> = Promise.resolve()
+
+function enqueueSync<T>(fn: () => Promise<T>): Promise<T> {
+  const run = syncChain.then(fn, fn)
+  syncChain = run.then(() => undefined, () => undefined)
+  return run
+}
+
+function notifySyncExtras(): void {
+  remoteApplyGeneration += 1
+  window.dispatchEvent(new CustomEvent(LIFE_OS_SYNC_EXTRAS_EVENT))
+}
+
+/** Bumps when a pull wrote settings/labor. Persist effects skip the echo-push. */
+export function remoteApplyGenerationNow(): number {
+  return remoteApplyGeneration
+}
 
 export type DeviceSyncCredentials = {
   roomId: string
@@ -224,9 +244,10 @@ function applyRemoteExtras(snapshot: DeviceSyncSnapshot): void {
   if (snapshot.quickNote != null) {
     safeSet(QUICK_NOTE_KEY, JSON.stringify(snapshot.quickNote))
   }
+  notifySyncExtras()
 }
 
-export async function pushDeviceSync(): Promise<{ revision: number; updatedAt: string } | null> {
+async function pushDeviceSyncUnlocked(): Promise<{ revision: number; updatedAt: string } | null> {
   const creds = loadSyncCredentials()
   if (!creds || !navigator.onLine) return null
 
@@ -249,61 +270,67 @@ export async function pushDeviceSync(): Promise<{ revision: number; updatedAt: s
   return result
 }
 
+export async function pushDeviceSync(): Promise<{ revision: number; updatedAt: string } | null> {
+  return enqueueSync(() => pushDeviceSyncUnlocked())
+}
+
 export async function pullDeviceSync(): Promise<{
   changed: boolean
   revision: number
   entries: DashboardEntry[]
 } | null> {
-  const creds = loadSyncCredentials()
-  if (!creds || !navigator.onLine) return null
+  return enqueueSync(async () => {
+    const creds = loadSyncCredentials()
+    if (!creds || !navigator.onLine) return null
 
-  const result = await syncFetch<{ snapshot: DeviceSyncSnapshot | null }>(
-    `/api/sync/pull?roomId=${encodeURIComponent(creds.roomId)}&deviceToken=${encodeURIComponent(creds.deviceToken)}`,
-  )
+    const result = await syncFetch<{ snapshot: DeviceSyncSnapshot | null }>(
+      `/api/sync/pull?roomId=${encodeURIComponent(creds.roomId)}&deviceToken=${encodeURIComponent(creds.deviceToken)}`,
+    )
 
-  if (!result.snapshot) {
-    const pushed = await pushDeviceSync()
+    if (!result.snapshot) {
+      const pushed = await pushDeviceSyncUnlocked()
+      return {
+        changed: false,
+        revision: pushed?.revision ?? 0,
+        entries: loadAllEntries(),
+      }
+    }
+
+    const localBefore = loadAllEntries()
+    const remote = result.snapshot
+    const localRevision = Number(safeGet(LOCAL_REVISION_KEY) || 0) || 0
+    const remoteRevision = remote.revision ?? 0
+    const mergedEntries = mergeEntriesByUpdatedAt(localBefore, remote.entries ?? [])
+
+    saveAllEntries(mergedEntries)
+
+    if (remoteRevision >= localRevision) {
+      applyRemoteExtras(remote)
+    }
+
+    const localHadNewerEntry = localBefore.some(entry => {
+      const remoteEntry = (remote.entries ?? []).find(item => item.date === entry.date)
+      return !remoteEntry || entryUpdatedAt(entry) > entryUpdatedAt(remoteEntry)
+    })
+
+    const nextRevision = Math.max(localRevision, remoteRevision)
+    safeSet(LOCAL_REVISION_KEY, String(nextRevision))
+    saveSyncCredentials({
+      ...creds,
+      lastSyncedAt: new Date().toISOString(),
+      lastRevision: nextRevision,
+    })
+
+    if (localHadNewerEntry || localRevision > remoteRevision) {
+      await pushDeviceSyncUnlocked()
+    }
+
     return {
-      changed: false,
-      revision: pushed?.revision ?? 0,
+      changed: remoteRevision > localRevision || localHadNewerEntry,
+      revision: Number(safeGet(LOCAL_REVISION_KEY) || nextRevision) || nextRevision,
       entries: loadAllEntries(),
     }
-  }
-
-  const localBefore = loadAllEntries()
-  const remote = result.snapshot
-  const localRevision = Number(safeGet(LOCAL_REVISION_KEY) || 0) || 0
-  const remoteRevision = remote.revision ?? 0
-  const mergedEntries = mergeEntriesByUpdatedAt(localBefore, remote.entries ?? [])
-
-  saveAllEntries(mergedEntries)
-
-  if (remoteRevision >= localRevision) {
-    applyRemoteExtras(remote)
-  }
-
-  const localHadNewerEntry = localBefore.some(entry => {
-    const remoteEntry = (remote.entries ?? []).find(item => item.date === entry.date)
-    return !remoteEntry || entryUpdatedAt(entry) > entryUpdatedAt(remoteEntry)
   })
-
-  const nextRevision = Math.max(localRevision, remoteRevision)
-  safeSet(LOCAL_REVISION_KEY, String(nextRevision))
-  saveSyncCredentials({
-    ...creds,
-    lastSyncedAt: new Date().toISOString(),
-    lastRevision: nextRevision,
-  })
-
-  if (localHadNewerEntry || localRevision > remoteRevision) {
-    await pushDeviceSync()
-  }
-
-  return {
-    changed: remoteRevision > localRevision || localHadNewerEntry,
-    revision: Number(safeGet(LOCAL_REVISION_KEY) || nextRevision) || nextRevision,
-    entries: loadAllEntries(),
-  }
 }
 
 export { SYNC_CRED_KEY, QUICK_NOTE_KEY, ENTRIES_KEY }

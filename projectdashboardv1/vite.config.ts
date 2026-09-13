@@ -18,7 +18,7 @@ function lifeOsSyncDevPlugin(): Plugin {
       server.middlewares.use((req, res, next) => {
         void (async () => {
           const url = req.url ?? ''
-          if (!url.startsWith('/api/sync')) {
+          if (!url.startsWith('/api/sync') && !url.startsWith('/api/hooks') && !url.startsWith('/api/health')) {
             next()
             return
           }
@@ -42,6 +42,7 @@ function lifeOsSyncDevPlugin(): Plugin {
               method: req.method ?? 'GET',
               headers: {
                 'Content-Type': req.headers['content-type'] ?? 'application/json',
+                ...(req.headers.authorization ? { Authorization: req.headers.authorization } : {}),
               },
               body: req.method && !['GET', 'HEAD'].includes(req.method) ? bodyText : undefined,
             })

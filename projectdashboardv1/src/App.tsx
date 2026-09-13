@@ -76,7 +76,7 @@ import { buildWeekInsights } from './lib/insights'
 import { deriveLaborOverview, deriveLaborStats, smartLaborHints } from './lib/laborLive'
 import { searchLabor } from './lib/laborSearch'
 import { buildMonthGrid, monthLabel } from './lib/calendarGrid'
-import { hashFromView, hashPathOnly, navigateHash, takeAppActionFromLocation, viewFromHash, buildActionUrl, SHORTCUT_RECIPES, type AppAction } from './lib/routing'
+import { hashFromView, hashPathOnly, navigateHash, peekAppAction, takeAppActionFromLocation, viewFromHash, buildActionUrl, SHORTCUT_RECIPES, type AppAction } from './lib/routing'
 import { shareOrDownloadIcs } from './lib/ics'
 import { copyText, shareText } from './lib/share'
 import { releaseScreenWakeLock, requestScreenWakeLock } from './lib/wakeLock'
@@ -97,6 +97,7 @@ import {
   buildWeightInsights,
   formatSleepHoursLabel,
   hoursBetweenTimes,
+  macroProgress,
 } from './lib/healthMetrics'
 import type { HabitKey } from './types/DashboardEntry'
 import {
@@ -112,7 +113,9 @@ import {
   createDevicePairing,
   isDeviceSyncEnabled,
   joinDevicePairing,
+  LIFE_OS_SYNC_EXTRAS_EVENT,
   loadSyncCredentials,
+  remoteApplyGenerationNow,
   pushDeviceSync,
   refreshPairCode,
   type DeviceSyncCredentials,
@@ -123,6 +126,22 @@ import {
   isMedTakenToday,
   reminderStorageKey,
 } from './lib/medReminders'
+import {
+  FULLSCREEN_STEP_IDS,
+  MORNING_RITUAL_STEP_IDS,
+  loadMorningGateSkip,
+  loadMorningRitualProgress,
+  markRitualStepDone,
+  morningRitualPhase,
+  nextMorningRitualStep,
+  normalizeMorningRitualConfig,
+  normalizeSelfcareItems,
+  saveMorningGateSkip,
+  saveMorningRitualProgress,
+  type MorningRitualConfig,
+  type MorningRitualProgress,
+} from './lib/morningGate'
+import { MorningGate } from './components/MorningGate'
 import './launch.css'
 
 type View = 'today' | 'plan' | 'checkin' | 'progress' | 'dashboardPlus'
@@ -163,6 +182,9 @@ type AppSettings = {
   dashboardPlusLayout: DashboardPlusLayout
   /** Opt-in: soft Medis reminders when clock matches (no auto permission ask). */
   medisRemindersEnabled: boolean
+  /** First open of the day: complete these widgets before Heute. */
+  morningGateEnabled: boolean
+  morningRitual: MorningRitualConfig
 }
 
 type DashboardPlusLayout = {
@@ -785,6 +807,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   habitSchedules: {},
   dashboardPlusLayout: DEFAULT_DASHBOARD_PLUS_LAYOUT,
   medisRemindersEnabled: false,
+  morningGateEnabled: true,
+  morningRitual: normalizeMorningRitualConfig(undefined),
 }
 
 function normalizeDashboardPlusLayout(raw: unknown): DashboardPlusLayout {
@@ -971,6 +995,10 @@ function loadSettings(): AppSettings {
       habitSchedules: normalizeHabitSchedules(stored.habitSchedules),
       dashboardPlusLayout: normalizeDashboardPlusLayout(stored.dashboardPlusLayout),
       medisRemindersEnabled: Boolean(stored.medisRemindersEnabled),
+      morningGateEnabled: stored.morningGateEnabled !== false,
+      morningRitual: normalizeMorningRitualConfig(
+        (stored as Partial<AppSettings> & { morningRitual?: Partial<MorningRitualConfig> }).morningRitual,
+      ),
     }
   } catch {
     return DEFAULT_SETTINGS
@@ -1002,7 +1030,9 @@ function daysUntil(targetKey: string, todayKey: string): number {
 type QuickAddResult =
   | { kind: 'weight'; value: number }
   | { kind: 'calories'; value: number }
+  | { kind: 'protein'; value: number }
   | { kind: 'water'; value: number }
+  | { kind: 'steps'; value: number }
   | { kind: 'task'; title: string }
 
 /** Deliberately simple pattern matching, no NLP/AI — a handful of unit
@@ -1018,10 +1048,38 @@ function parseQuickAdd(raw: string): QuickAddResult {
   const calories = text.match(/(\d+(?:[.,]\d+)?)\s*kcal\b/i)
   if (calories) return { kind: 'calories', value: toNumber(calories[1]) }
 
+  const protein = text.match(/(\d+(?:[.,]\d+)?)\s*(?:g\s*)?(?:protein|eiwei[sß])\b/i)
+    ?? text.match(/(\d+(?:[.,]\d+)?)\s*g\s*p\b/i)
+  if (protein) return { kind: 'protein', value: toNumber(protein[1]) }
+
   const water = text.match(/(\d+(?:[.,]\d+)?)\s*(?:l|liter)\b/i)
   if (water) return { kind: 'water', value: toNumber(water[1]) }
 
+  const steps = text.match(/(\d+(?:[.,]\d+)?)\s*(?:schritte|steps)\b/i)
+  if (steps) return { kind: 'steps', value: Math.round(toNumber(steps[1])) }
+
   return { kind: 'task', title: text }
+}
+
+function describeQuickAdd(parsed: QuickAddResult): string {
+  switch (parsed.kind) {
+    case 'weight':
+      return `→ Gewicht: ${parsed.value} kg`
+    case 'calories':
+      return `→ Kalorien: ${parsed.value} kcal`
+    case 'protein':
+      return `→ Protein: ${parsed.value} g`
+    case 'water':
+      return `→ Wasser: ${parsed.value} L`
+    case 'steps':
+      return `→ Schritte: ${parsed.value}`
+    case 'task':
+      return `→ Neue Aufgabe: „${parsed.title}“`
+    default: {
+      const _exhaustive: never = parsed
+      return _exhaustive
+    }
+  }
 }
 
 function formatLongDate(key: string): string {
@@ -1221,6 +1279,11 @@ function App() {
       return 'visible'
     }
   })
+  const [gatePreview, setGatePreview] = useState(false)
+  const [previewIndex, setPreviewIndex] = useState(0)
+  const [gateBypass, setGateBypass] = useState(() => Boolean(peekAppAction()))
+  const [gateSkipped, setGateSkipped] = useState(() => loadMorningGateSkip(dateKey(new Date())))
+  const [ritualProgress, setRitualProgress] = useState<MorningRitualProgress>(() => loadMorningRitualProgress(dateKey(new Date())))
 
   const today = dateKey(new Date())
   const nowHour = new Date().getHours()
@@ -1252,6 +1315,55 @@ function App() {
     [entry.energyLevel, habitsDueToday, settings.focusMinutes, selectedDate, today, nowHour],
   )
 
+  const morningGateMeds = useMemo(
+    () => dashboardPlus.medications.map(item => ({
+      id: item.id,
+      name: item.name,
+      dosage: item.dosage,
+      time: item.time,
+      taken: isMedicationTakenToday(item, today),
+    })),
+    [dashboardPlus.medications, today],
+  )
+
+  const ritualNext = useMemo(
+    () => nextMorningRitualStep({
+      enabled: settings.morningGateEnabled,
+      skipped: gateSkipped,
+      preview: false,
+      progress: ritualProgress,
+      medications: morningGateMeds,
+      proteinShake: Boolean(entry.proteinShake),
+      gratitudeDone: Boolean(entry.gratitudeDone),
+      energySet: Boolean(entry.energyLevel),
+      pushupsDone: Boolean(entry.pushupsDone),
+      config: settings.morningRitual,
+    }),
+    [
+      settings.morningGateEnabled,
+      settings.morningRitual,
+      gateSkipped,
+      ritualProgress,
+      morningGateMeds,
+      entry.proteinShake,
+      entry.gratitudeDone,
+      entry.energyLevel,
+      entry.pushupsDone,
+    ],
+  )
+
+  const ritualStep = gatePreview
+    ? MORNING_RITUAL_STEP_IDS[Math.min(previewIndex, MORNING_RITUAL_STEP_IDS.length - 1)]
+    : ritualNext
+  const ritualPhase = ritualStep ? morningRitualPhase(ritualStep) : null
+  const showMorningGate = splashPhase === 'done'
+    && !gateBypass
+    && Boolean(ritualStep)
+    && (gatePreview || (ritualStep ? FULLSCREEN_STEP_IDS.includes(ritualStep) : false))
+  const ritualHeuteLock = !gatePreview && !gateBypass && splashPhase === 'done' && (ritualPhase === 'heute')
+    ? ritualStep
+    : null
+
   const streakByKey = useMemo(() => {
     const map: Record<string, number> = {}
     for (const key of STREAK_HABIT_KEYS) {
@@ -1269,11 +1381,13 @@ function App() {
     () => deriveLaborOverview({
       entries,
       today,
-      activeHabits: settings.activeHabits,
+      activeHabits: filterHabitsForDate(settings.activeHabits, today, settings.habitSchedules),
       openBoardCount: laborOpenBoards,
       goals: scoreGoals,
+      syncLabel: storageStatusLabel(syncStatus, isOnline, Boolean(deviceSyncCreds)),
+      syncTime: deviceSyncCreds ? 'gekoppelte Geräte' : 'nur dieses Gerät',
     }),
-    [entries, today, settings.activeHabits, laborOpenBoards, scoreGoals],
+    [entries, today, settings.activeHabits, settings.habitSchedules, laborOpenBoards, scoreGoals, syncStatus, isOnline, deviceSyncCreds],
   )
 
   const laborStats = useMemo(
@@ -1285,6 +1399,7 @@ function App() {
     const consumeAction = () => {
       const action = takeAppActionFromLocation()
       if (!action) return
+      setGateBypass(true)
       window.setTimeout(() => actionBridgeRef.current?.applyAction(action), 0)
     }
 
@@ -1303,8 +1418,22 @@ function App() {
     if (hashPathOnly(window.location.hash) !== hashFromView(view)) navigateHash(view, true)
   }, [view])
 
+  const settingsHydrated = useRef(false)
+  const laborHydrated = useRef(false)
+  const lastRemoteGenSettings = useRef(0)
+  const lastRemoteGenLabor = useRef(0)
+
   useEffect(() => {
     safeLocalStorageSetItem(SETTINGS_KEY, JSON.stringify(settings))
+    if (!settingsHydrated.current) {
+      settingsHydrated.current = true
+      return
+    }
+    const gen = remoteApplyGenerationNow()
+    if (gen !== lastRemoteGenSettings.current) {
+      lastRemoteGenSettings.current = gen
+      return
+    }
     if (isDeviceSyncEnabled()) {
       window.setTimeout(() => {
         void pushDeviceSync().catch(() => {})
@@ -1314,12 +1443,40 @@ function App() {
 
   useEffect(() => {
     safeLocalStorageSetItem(DASHBOARD_PLUS_KEY, JSON.stringify(dashboardPlus))
+    if (!laborHydrated.current) {
+      laborHydrated.current = true
+      return
+    }
+    const gen = remoteApplyGenerationNow()
+    if (gen !== lastRemoteGenLabor.current) {
+      lastRemoteGenLabor.current = gen
+      return
+    }
     if (isDeviceSyncEnabled()) {
       window.setTimeout(() => {
         void pushDeviceSync().catch(() => {})
       }, 500)
     }
   }, [dashboardPlus])
+
+  useEffect(() => {
+    const reloadExtras = () => {
+      setSettings(loadSettings())
+      setDashboardPlus(loadDashboardPlusState())
+      setDeviceSyncCreds(loadSyncCredentials())
+    }
+    window.addEventListener(LIFE_OS_SYNC_EXTRAS_EVENT, reloadExtras)
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === SETTINGS_KEY || event.key === DASHBOARD_PLUS_KEY || event.key === null) {
+        reloadExtras()
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    return () => {
+      window.removeEventListener(LIFE_OS_SYNC_EXTRAS_EVENT, reloadExtras)
+      window.removeEventListener('storage', onStorage)
+    }
+  }, [])
 
   useEffect(() => {
     const root = document.documentElement
@@ -1357,6 +1514,11 @@ function App() {
   const dismissSplash = () => {
     if (splashPhase === 'visible') setSplashPhase('leaving')
   }
+
+  useEffect(() => {
+    setGateSkipped(loadMorningGateSkip(today))
+    setRitualProgress(loadMorningRitualProgress(today))
+  }, [today])
 
   useEffect(() => {
     if (!toast) return
@@ -1553,6 +1715,18 @@ function App() {
     showToast(`Wasser gespeichert: ${value} L`)
   }
 
+  const quickAddProtein = (value: number) => {
+    updateEntry({ proteinGrams: value, proteinReached: value >= settings.proteinGoal })
+    setQuickAddOpen(false)
+    showToast(`Protein gespeichert: ${value} g`)
+  }
+
+  const quickAddSteps = (value: number) => {
+    updateEntry({ steps: value })
+    setQuickAddOpen(false)
+    showToast(`Schritte gespeichert: ${value}`)
+  }
+
   const deleteTask = (index: number) => {
     const deleted = anchors[index]
     const wasDone = Boolean(anchorsDone[index])
@@ -1665,14 +1839,50 @@ function App() {
         case 'add-task':
           navigateTo('plan')
           window.setTimeout(() => {
+            const titled = action.title?.trim()
+            if (titled) {
+              saveTask(titled, null)
+              return
+            }
             setTaskEditor({
               index: null,
               value: '',
               minutes: dayPolicy.focusMinutes,
             })
           }, 60)
-          showToast('Kurzbefehl: Aufgabe')
+          showToast(action.title?.trim() ? 'Kurzbefehl: Aufgabe gespeichert' : 'Kurzbefehl: Aufgabe')
           break
+        case 'log': {
+          navigateTo('today')
+          const patch: Partial<DashboardEntry> = {}
+          const parsed = action.text ? parseQuickAdd(action.text) : null
+          if (parsed?.kind === 'protein') patch.proteinGrams = parsed.value
+          else if (parsed?.kind === 'calories') patch.calories = parsed.value
+          else if (parsed?.kind === 'water') patch.waterLiters = parsed.value
+          else if (parsed?.kind === 'steps') patch.steps = parsed.value
+          else if (parsed?.kind === 'weight') patch.weightKg = parsed.value
+          else if (parsed?.kind === 'task' && parsed.title) {
+            saveTask(parsed.title, null)
+          }
+          if (action.protein !== undefined) patch.proteinGrams = action.protein
+          if (action.calories !== undefined) patch.calories = action.calories
+          if (action.water !== undefined) patch.waterLiters = action.water
+          if (action.steps !== undefined) patch.steps = action.steps
+          if (action.weight !== undefined) patch.weightKg = action.weight
+          if (action.energy) patch.energyLevel = action.energy
+          if (action.habit && STREAK_HABIT_KEYS.includes(action.habit as HabitKey)) {
+            patch[action.habit as HabitKey] = true
+          }
+          if (patch.proteinGrams !== undefined) {
+            patch.proteinReached = patch.proteinGrams >= settings.proteinGoal
+          }
+          if (patch.calories !== undefined) {
+            patch.caloriesReached = patch.calories >= settings.calorieGoal
+          }
+          if (Object.keys(patch).length > 0) updateEntry(patch)
+          showToast('Kurzbefehl: Wert gespeichert')
+          break
+        }
         case 'focus': {
           navigateTo('today')
           const nextIndex = anchors.findIndex((_, index) => !anchorsDone[index])
@@ -1700,7 +1910,7 @@ function App() {
 
   return (
     <div className="life-app">
-      <aside className="sidebar" aria-label="Hauptnavigation">
+      <aside className="sidebar" aria-label="Hauptnavigation" inert={showMorningGate || undefined}>
         <div className="brand">
           <div className="brand__mark" aria-hidden="true">
             <span />
@@ -1756,7 +1966,7 @@ function App() {
         </div>
       </aside>
 
-      <div className="app-stage">
+      <div className="app-stage" inert={showMorningGate || undefined}>
         <header className="mobile-header">
           <div className="brand brand--mobile">
             <div className="brand__mark" aria-hidden="true"><span /></div>
@@ -1848,6 +2058,10 @@ function App() {
               showToast={showToast}
               highlightQuickNote={highlightQuickNote}
               onQuickNoteHighlightHandled={() => setHighlightQuickNote(false)}
+              ritualLock={ritualHeuteLock === 'energy' || ritualHeuteLock === 'todos' ? ritualHeuteLock : null}
+              onContinueRitualTodos={() => {
+                setRitualProgress(current => markRitualStepDone(current, 'todos'))
+              }}
             />
           )}
 
@@ -1886,6 +2100,7 @@ function App() {
               entry={entry}
               date={selectedDate}
               today={today}
+              settings={settings}
               onDateChange={setSelectedDate}
               onUpdate={updateEntry}
               showToast={showToast}
@@ -1918,6 +2133,7 @@ function App() {
               layout={settings.dashboardPlusLayout}
               medisRemindersEnabled={settings.medisRemindersEnabled}
               onOpenSettings={() => setSettingsOpen(true)}
+              showToast={showToast}
             />
           )}
         </main>
@@ -1939,7 +2155,7 @@ function App() {
           })}
         </nav>
 
-        {view !== 'dashboardPlus' && !(view === 'today' && !entry.energyLevel) && (
+        {view !== 'dashboardPlus' && !showMorningGate && (
           <button type="button" className="fab" onClick={() => setQuickAddOpen(true)} aria-label="Schnell hinzufügen">
             <Plus size={22} />
           </button>
@@ -1962,7 +2178,9 @@ function App() {
           onSubmitTask={quickAddTask}
           onSubmitWeight={quickAddWeight}
           onSubmitCalories={quickAddCalories}
+          onSubmitProtein={quickAddProtein}
           onSubmitWater={quickAddWater}
+          onSubmitSteps={quickAddSteps}
         />
       )}
 
@@ -2000,6 +2218,12 @@ function App() {
           }}
           showToast={showToast}
           onClose={() => setSettingsOpen(false)}
+          onPreviewMorningGate={() => {
+            setSettingsOpen(false)
+            setPreviewIndex(0)
+            setGatePreview(true)
+            setGateBypass(false)
+          }}
         />
       )}
 
@@ -2018,6 +2242,117 @@ function App() {
             </button>
           )}
         </div>
+      )}
+
+      {showMorningGate && ritualStep && (
+        <MorningGate
+          step={ritualStep}
+          stepIndex={gatePreview ? previewIndex : Math.max(0, MORNING_RITUAL_STEP_IDS.indexOf(ritualStep))}
+          stepCount={MORNING_RITUAL_STEP_IDS.length}
+          name={settings.name}
+          medications={morningGateMeds}
+          proteinShake={Boolean(entry.proteinShake)}
+          gratitudeText={settings.morningRitual.gratitudeText}
+          config={settings.morningRitual}
+          anchors={anchors}
+          anchorsDone={anchorsDone}
+          pushups={ritualProgress.pushups}
+          ko={ritualProgress.ko}
+          selfcareChecked={ritualProgress.selfcareChecked}
+          onToggleMed={id => {
+            setDashboardPlus(current => ({
+              ...current,
+              medications: current.medications.map(item => {
+                if (item.id !== id) return item
+                const taken = isMedicationTakenToday(item, today)
+                return {
+                  ...item,
+                  takenDate: taken ? undefined : today,
+                  taken: !taken,
+                }
+              }),
+            }))
+          }}
+          onConfirmAllMeds={() => {
+            setDashboardPlus(current => ({
+              ...current,
+              medications: current.medications.map(item => ({
+                ...item,
+                takenDate: today,
+                taken: true,
+              })),
+            }))
+          }}
+          onToggleProtein={() => updateEntry({ proteinShake: !entry.proteinShake })}
+          onCompleteGratitude={() => {
+            const time = new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' }).format(new Date())
+            const line = `${time} — Dankbarkeit gehört`
+            updateEntry({
+              gratitudeDone: true,
+              journalText: entry.journalText ? `${entry.journalText}\n${line}` : line,
+            })
+          }}
+          onPickEnergy={energy => {
+            updateEntry({ energyLevel: energy })
+            setRitualProgress(current => markRitualStepDone(current, 'energy'))
+            if (gatePreview) setPreviewIndex(value => value + 1)
+          }}
+          onCompleteTimer={kind => {
+            if (kind === 'coldShower') updateEntry({ coldShower: true })
+            if (kind === 'winnerPose') updateEntry({ winnerModeDone: true })
+            setRitualProgress(current => markRitualStepDone(current, kind))
+            if (kind === 'prayer') navigateTo('today')
+            if (gatePreview) setPreviewIndex(value => Math.min(MORNING_RITUAL_STEP_IDS.length - 1, value + 1))
+          }}
+          onSetPushups={value => {
+            setRitualProgress(current => {
+              const next = { ...current, pushups: value }
+              saveMorningRitualProgress(next)
+              return next
+            })
+          }}
+          onSetKo={value => {
+            setRitualProgress(current => {
+              const next = { ...current, ko: value }
+              saveMorningRitualProgress(next)
+              return next
+            })
+          }}
+          onToggleSelfcare={id => {
+            setRitualProgress(current => {
+              const checked = current.selfcareChecked.includes(id)
+                ? current.selfcareChecked.filter(item => item !== id)
+                : [...current.selfcareChecked, id]
+              const next = { ...current, selfcareChecked: checked }
+              saveMorningRitualProgress(next)
+              return next
+            })
+          }}
+          onCompleteStep={step => {
+            if (step === 'medsShake' && !entry.proteinShake) updateEntry({ proteinShake: true })
+            if (step === 'workout') updateEntry({ pushupsDone: true })
+            setRitualProgress(current => markRitualStepDone(current, step))
+            if (gatePreview) {
+              if (previewIndex >= MORNING_RITUAL_STEP_IDS.length - 1) {
+                setGatePreview(false)
+                setPreviewIndex(0)
+                return
+              }
+              setPreviewIndex(value => value + 1)
+            }
+            if (step === 'letsGo') {
+              setGatePreview(false)
+              showToast('LETS GO — ready.')
+            }
+          }}
+          onSkipToday={() => {
+            saveMorningGateSkip(today)
+            setGateSkipped(true)
+            setGatePreview(false)
+            showToast('Morgen-Ritual für heute übersprungen.')
+          }}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
       )}
 
       {splashPhase !== 'done' && (
@@ -2224,6 +2559,8 @@ function TodayView({
   highlightQuickNote = false,
   onQuickNoteHighlightHandled,
   onExportToCalendar,
+  ritualLock = null,
+  onContinueRitualTodos,
 }: {
   entry: DashboardEntry
   date: string
@@ -2248,6 +2585,8 @@ function TodayView({
   highlightQuickNote?: boolean
   onQuickNoteHighlightHandled?: () => void
   onExportToCalendar: (title: string, minutes: number) => Promise<void>
+  ritualLock?: 'energy' | 'todos' | null
+  onContinueRitualTodos?: () => void
 }) {
   const [capture, setCapture] = useState('')
   const [dragIdx,     setDragIdx]     = useState<number | null>(null)
@@ -2456,7 +2795,10 @@ function TodayView({
 
       {!energy && (
         <section className="card energy-card">
-          <SectionTitle eyebrow="Kurz einchecken" title="Wie ist deine Energie heute?" />
+          <SectionTitle
+            eyebrow="Kurz einchecken"
+            title={date === today ? 'Wie ist deine Energie heute?' : `Wie war die Energie am ${formatLongDate(date)}?`}
+          />
           <div className="energy-grid">
             {ENERGY_OPTIONS.map(option => (
               <button
@@ -2474,7 +2816,32 @@ function TodayView({
         </section>
       )}
 
-      {energy && (
+      {ritualLock === 'todos' && energy && (
+        <section className="card morning-todos-card">
+          <SectionTitle eyebrow="Morgen-Ritual" title="To-do Overview" />
+          <p className="policy-note">Das sind deine Anker. Danach kommt Workout.</p>
+          {anchors.length === 0 ? (
+            <EmptyState title="Noch keine Todos" text="Lege ein bis drei Anker fest, oder geh weiter zum Workout." />
+          ) : (
+            <ul className="morning-gate__meds">
+              {anchors.map((task, index) => (
+                <li key={`${task}-${index}`}>
+                  <div className={anchorsDone[index] ? 'morning-gate__med is-taken' : 'morning-gate__med'}>
+                    <span className="morning-gate__check">{anchorsDone[index] ? <Check size={16} /> : <span />}</span>
+                    <span><strong>{task}</strong></span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <button type="button" className="primary-button morning-gate__cta" onClick={onContinueRitualTodos}>
+            <Check size={17} />
+            Gesehen · Workout
+          </button>
+        </section>
+      )}
+
+      {energy && ritualLock !== 'energy' && ritualLock !== 'todos' && (
         <div className="status-block">
           <div className="status-row">
             <span className={`energy-pill energy-pill--${energy}`}>
@@ -2510,6 +2877,7 @@ function TodayView({
         </div>
       )}
 
+      {ritualLock !== 'energy' && ritualLock !== 'todos' && (
       <div className={`dashboard-grid dashboard-grid--${dayMode}`}>
         <section className="card tasks-card">
           <SectionTitle
@@ -2703,6 +3071,14 @@ function TodayView({
               <span>Protein</span>
               <strong>{entry.proteinGrams ? `${entry.proteinGrams} g` : '—'}</strong>
             </div>
+            <div>
+              <span>Wasser</span>
+              <strong>{entry.waterLiters ? `${entry.waterLiters} L` : '—'}</strong>
+            </div>
+            <div>
+              <span>Kalorien</span>
+              <strong>{entry.calories ? `${entry.calories}` : '—'}</strong>
+            </div>
           </div>
           <button type="button" className="secondary-button secondary-button--full" onClick={onOpenCheckin}>
             <Heart size={16} /> Check-in öffnen
@@ -2732,6 +3108,7 @@ function TodayView({
           onToast={message => showToast(message)}
         />
       </div>
+      )}
     </div>
   )
 }
@@ -2934,6 +3311,7 @@ function CheckinView({
   entry,
   date,
   today,
+  settings,
   onDateChange,
   onUpdate,
   showToast,
@@ -2941,6 +3319,7 @@ function CheckinView({
   entry: DashboardEntry
   date: string
   today: string
+  settings: AppSettings
   onDateChange: (date: string) => void
   onUpdate: (patch: Partial<DashboardEntry>) => void
   showToast: (message: string) => void
@@ -3122,6 +3501,67 @@ function CheckinView({
                     placeholder="z. B. 65,0"
                     onChange={weightKg => onUpdate({ weightKg })}
                   />
+                  <NumberField
+                    label="Protein"
+                    value={entry.proteinGrams}
+                    unit="g"
+                    step={5}
+                    min={0}
+                    max={400}
+                    placeholder="z. B. 140"
+                    onChange={proteinGrams => onUpdate({
+                      proteinGrams,
+                      proteinReached: proteinGrams >= settings.proteinGoal,
+                    })}
+                  />
+                  <NumberField
+                    label="Kalorien"
+                    value={entry.calories}
+                    unit="kcal"
+                    step={50}
+                    min={0}
+                    max={8000}
+                    placeholder="z. B. 2400"
+                    onChange={calories => onUpdate({
+                      calories,
+                      caloriesReached: calories >= settings.calorieGoal,
+                    })}
+                  />
+                  <NumberField
+                    label="Wasser"
+                    value={entry.waterLiters}
+                    unit="L"
+                    step={0.1}
+                    min={0}
+                    max={8}
+                    placeholder="z. B. 2,5"
+                    onChange={waterLiters => onUpdate({ waterLiters })}
+                  />
+                  <NumberField
+                    label="Schritte"
+                    value={entry.steps}
+                    step={500}
+                    min={0}
+                    max={100000}
+                    placeholder="z. B. 8000"
+                    onChange={steps => onUpdate({ steps })}
+                  />
+                </div>
+                <div className="macro-rings" aria-label="Tagesziele">
+                  {[
+                    { label: 'Protein', value: entry.proteinGrams, goal: settings.proteinGoal, unit: 'g' },
+                    { label: 'Kalorien', value: entry.calories, goal: settings.calorieGoal, unit: 'kcal' },
+                    { label: 'Wasser', value: entry.waterLiters, goal: 2.5, unit: 'L' },
+                  ].map(ring => {
+                    const percent = macroProgress(ring.value, ring.goal)
+                    return (
+                      <div className="macro-ring" key={ring.label}>
+                        <strong>{percent}%</strong>
+                        <small>{ring.label}</small>
+                        <small>{ring.value || 0} / {ring.goal} {ring.unit}</small>
+                      </div>
+                    )
+                  })}
                 </div>
               </>
             )
@@ -3632,6 +4072,7 @@ function DashboardPlusView({
   layout,
   medisRemindersEnabled,
   onOpenSettings,
+  showToast,
 }: {
   dashboard: DashboardPlusState
   onChange: Dispatch<SetStateAction<DashboardPlusState>>
@@ -3643,6 +4084,7 @@ function DashboardPlusView({
   layout: DashboardPlusLayout
   medisRemindersEnabled: boolean
   onOpenSettings: () => void
+  showToast: (message: string) => void
 }) {
   const [activeSection, setActiveSection] = useState<DashboardPlusSection>('overview')
 
@@ -3884,6 +4326,40 @@ function DashboardPlusView({
     }))
   }
 
+  const addSupplementToShopping = (item: DashboardPlusSupplement) => {
+    const name = item.name.trim() || 'Nachbestellen'
+    let added = true
+    onChange(current => {
+      const exists = current.shopping.items.some(row =>
+        !row.done && row.name.trim().toLowerCase() === name.toLowerCase(),
+      )
+      if (exists) {
+        added = false
+        return current
+      }
+      return {
+        ...current,
+        shopping: {
+          ...current.shopping,
+          items: [
+            ...current.shopping.items,
+            {
+              id: crypto.randomUUID(),
+              icon: 'pill',
+              name,
+              note: 'Aus Beständen · knapp',
+              price: 0,
+              done: false,
+              lowStock: true,
+            },
+          ],
+        },
+      }
+    })
+    setActiveSection('shopping')
+    showToast(added ? `${name} auf die Kaufliste.` : `${name} ist schon auf der Kaufliste.`)
+  }
+
   const removeShoppingItem = (index: number) => {
     onChange(current => ({
       ...current,
@@ -4090,8 +4566,8 @@ function DashboardPlusView({
         <div className="dashboard-plus-intro__copy">
           <div className="dashboard-plus-intro__eyebrow">
             <span className="eyebrow">Labor</span>
-            <span className="sync-pill sync-pill--synced" title="Kein Cloud-Sync">
-              <Cloud size={14} /> Lokal
+            <span className="sync-pill sync-pill--synced" title={liveOverview.syncTime}>
+              <Cloud size={14} /> {liveOverview.syncStatus}
             </span>
           </div>
           <h2>Verwaltung ohne Fokus-Diebstahl.</h2>
@@ -4506,11 +4982,20 @@ function DashboardPlusView({
                     </label>
                   </div>
                   {isLow && (
-                    <p className="dashboard-plus-supp-hint">
-                      {daysLeft! <= 0
-                        ? 'Bestand leer — nachbestellen'
-                        : `Noch ca. ${daysLeft} ${daysLeft === 1 ? 'Tag' : 'Tage'} · nachbestellen`}
-                    </p>
+                    <>
+                      <p className="dashboard-plus-supp-hint">
+                        {daysLeft! <= 0
+                          ? 'Bestand leer — nachbestellen'
+                          : `Noch ca. ${daysLeft} ${daysLeft === 1 ? 'Tag' : 'Tage'} · nachbestellen`}
+                      </p>
+                      <button
+                        type="button"
+                        className="secondary-button secondary-button--full"
+                        onClick={() => addSupplementToShopping(item)}
+                      >
+                        <ShoppingBag size={15} /> Auf Kaufliste
+                      </button>
+                    </>
                   )}
                   <button type="button" className="secondary-button secondary-button--full" onClick={() => removeSupplement(index)}>
                     <Trash2 size={15} /> Entfernen
@@ -4953,32 +5438,53 @@ function QuickAddModal({
   onSubmitTask,
   onSubmitWeight,
   onSubmitCalories,
+  onSubmitProtein,
   onSubmitWater,
+  onSubmitSteps,
 }: {
   onClose: () => void
   onSubmitTask: (title: string) => void
   onSubmitWeight: (value: number) => void
   onSubmitCalories: (value: number) => void
+  onSubmitProtein: (value: number) => void
   onSubmitWater: (value: number) => void
+  onSubmitSteps: (value: number) => void
 }) {
   const [value, setValue] = useState('')
   useModalBehavior(onClose)
 
   const parsed = parseQuickAdd(value)
   const preview = value.trim() === ''
-    ? 'Erkennt automatisch: „74.2kg“ → Gewicht, „3000kcal“ → Kalorien, „2.5l“ → Wasser — sonst wird eine Aufgabe daraus.'
-    : parsed.kind === 'weight' ? `→ Gewicht: ${parsed.value} kg`
-      : parsed.kind === 'calories' ? `→ Kalorien: ${parsed.value} kcal`
-        : parsed.kind === 'water' ? `→ Wasser: ${parsed.value} L`
-          : `→ Neue Aufgabe: „${parsed.title}“`
+    ? 'Erkennt automatisch: „74.2kg“, „180g protein“, „3000kcal“, „2.5l“, „8000 Schritte“ — sonst wird eine Aufgabe daraus.'
+    : describeQuickAdd(parsed)
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
     if (!value.trim()) return
-    if (parsed.kind === 'weight') onSubmitWeight(parsed.value)
-    else if (parsed.kind === 'calories') onSubmitCalories(parsed.value)
-    else if (parsed.kind === 'water') onSubmitWater(parsed.value)
-    else onSubmitTask(parsed.title)
+    switch (parsed.kind) {
+      case 'weight':
+        onSubmitWeight(parsed.value)
+        return
+      case 'calories':
+        onSubmitCalories(parsed.value)
+        return
+      case 'protein':
+        onSubmitProtein(parsed.value)
+        return
+      case 'water':
+        onSubmitWater(parsed.value)
+        return
+      case 'steps':
+        onSubmitSteps(parsed.value)
+        return
+      case 'task':
+        onSubmitTask(parsed.title)
+        return
+      default: {
+        const _exhaustive: never = parsed
+        return _exhaustive
+      }
+    }
   }
 
   return (
@@ -5253,6 +5759,7 @@ function SettingsModal({
   onSyncNow,
   showToast,
   onClose,
+  onPreviewMorningGate,
 }: {
   settings: AppSettings
   lastBackupAt: string | null
@@ -5265,6 +5772,7 @@ function SettingsModal({
   onSyncNow: () => void
   showToast: (message: string) => void
   onClose: () => void
+  onPreviewMorningGate: () => void
 }) {
   useModalBehavior(onClose)
   const importInputRef = useRef<HTMLInputElement | null>(null)
@@ -5274,6 +5782,7 @@ function SettingsModal({
   const [pairExpiresAt, setPairExpiresAt] = useState<string | null>(null)
   const [joinCode, setJoinCode] = useState('')
   const [syncBusy, setSyncBusy] = useState(false)
+  const [selfcareDraft, setSelfcareDraft] = useState('')
 
   const moveDashboardTab = (index: number, direction: -1 | 1) => {
     const target = index + direction
@@ -5474,6 +5983,93 @@ function SettingsModal({
         </div>
 
         <div className="settings-section">
+          <h3>Morgen-Ritual</h3>
+          <p className="settings-help">
+            App öffnet → Medikamente + Shake → Dankbarkeit vorlesen → Cold Shower → Winner Pose → Gebet → Heute (Energie, Todos) → Workout → Dusche → Selfcare → LETS GO.
+          </p>
+          <div className="settings-actions">
+            <button
+              type="button"
+              className={settings.morningGateEnabled ? 'choice-button is-active' : 'choice-button'}
+              aria-pressed={settings.morningGateEnabled}
+              onClick={() => onChange({ ...settings, morningGateEnabled: !settings.morningGateEnabled })}
+            >
+              {settings.morningGateEnabled ? 'Ritual an' : 'Ritual aus'}
+            </button>
+            {settings.morningGateEnabled && (
+              <button type="button" className="secondary-button" onClick={onPreviewMorningGate}>
+                Ablauf jetzt öffnen
+              </button>
+            )}
+          </div>
+          {settings.morningGateEnabled && (
+            <>
+              <label className="text-field" style={{ marginTop: 12 }}>
+                <span>Dankbarkeits-Text (wird vorgelesen)</span>
+                <textarea
+                  rows={5}
+                  value={settings.morningRitual.gratitudeText}
+                  onChange={event => onChange({
+                    ...settings,
+                    morningRitual: { ...settings.morningRitual, gratitudeText: event.target.value.slice(0, 1200) },
+                  })}
+                />
+              </label>
+              <p className="settings-help">
+                Timer: Cold {Math.round(settings.morningRitual.coldSeconds / 60)} Min · Winner {Math.round(settings.morningRitual.winnerSeconds / 60)} Min · Gebet {Math.round(settings.morningRitual.prayerSeconds / 60)} Min · Kaltspülung {settings.morningRitual.coldRinseSeconds}s
+              </p>
+              <p className="settings-help">Selfcare — tippe zum Entfernen, unten hinzufügen:</p>
+              <div className="habit-settings-list">
+                {settings.morningRitual.selfcareItems.map(item => (
+                  <button
+                    type="button"
+                    key={item.id}
+                    className="choice-button is-active"
+                    onClick={() => {
+                      if (settings.morningRitual.selfcareItems.length <= 1) return
+                      onChange({
+                        ...settings,
+                        morningRitual: {
+                          ...settings.morningRitual,
+                          selfcareItems: settings.morningRitual.selfcareItems.filter(entry => entry.id !== item.id),
+                        },
+                      })
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+              <label className="text-field" style={{ marginTop: 8 }}>
+                <span>Selfcare-Punkt hinzufügen</span>
+                <input
+                  value={selfcareDraft}
+                  placeholder="z. B. Haar stylen"
+                  onChange={event => setSelfcareDraft(event.target.value)}
+                  onKeyDown={event => {
+                    if (event.key !== 'Enter') return
+                    event.preventDefault()
+                    const label = selfcareDraft.trim()
+                    if (!label) return
+                    onChange({
+                      ...settings,
+                      morningRitual: {
+                        ...settings.morningRitual,
+                        selfcareItems: normalizeSelfcareItems([
+                          ...settings.morningRitual.selfcareItems,
+                          { id: `selfcare-${Date.now()}`, label },
+                        ]),
+                      },
+                    })
+                    setSelfcareDraft('')
+                  }}
+                />
+              </label>
+            </>
+          )}
+        </div>
+
+        <div className="settings-section">
           <h3>Labor</h3>
           <p className="settings-help">
             Alte Demo-Daten (Medis, Boards, Finanzen) entfernen und mit leerem Labor neu starten. Tages-Einträge bleiben.
@@ -5492,7 +6088,7 @@ function SettingsModal({
           </p>
           <div className="shortcut-recipe-list">
             {SHORTCUT_RECIPES.map(recipe => {
-              const url = buildActionUrl(recipe.kind)
+              const url = buildActionUrl(recipe.kind, recipe.text ? { text: recipe.text } : undefined)
               return (
                 <div key={recipe.kind} className="shortcut-recipe">
                   <div>
@@ -5517,7 +6113,10 @@ function SettingsModal({
             })}
           </div>
           <p className="settings-help">
-            Fokus mit Dauer: <code>?action=focus&amp;min=25</code> an die Heute-URL hängen.
+            Fokus mit Dauer: <code>?action=focus&amp;min=25</code>. Werte ohne UI:
+            <code>?action=log&amp;protein=180&amp;water=2.5</code> oder
+            <code>?action=log&amp;text=180g%20protein</code>. Aufgabe direkt:
+            <code>?action=add-task&amp;title=Creatine%20holen</code>.
           </p>
         </div>
 
@@ -5656,6 +6255,72 @@ function SettingsModal({
                 </button>
               </div>
             </>
+          )}
+        </div>
+
+        <div className="settings-section">
+          <h3>Webhook</h3>
+          {deviceSync ? (
+            <>
+              <p className="settings-help">
+                Kurzbefehle, Watch oder andere Apps können Werte schreiben, ohne die App zu öffnen.
+                Token nicht teilen — wer ihn hat, kann Tage überschreiben.
+              </p>
+              <div className="shortcut-recipe-list">
+                <div className="shortcut-recipe">
+                  <div>
+                    <strong>POST URL</strong>
+                    <span>JSON an diesen Endpunkt senden</span>
+                    <code>{`${window.location.origin}/api/hooks`}</code>
+                  </div>
+                  <button
+                    type="button"
+                    className="small-button"
+                    onClick={async () => {
+                      const ok = await copyText(`${window.location.origin}/api/hooks`)
+                      if (!ok) return
+                      setCopiedShortcut('webhook-url')
+                      window.setTimeout(() => setCopiedShortcut(current => (current === 'webhook-url' ? null : current)), 1600)
+                    }}
+                  >
+                    {copiedShortcut === 'webhook-url' ? 'Kopiert' : 'URL kopieren'}
+                  </button>
+                </div>
+                <div className="shortcut-recipe">
+                  <div>
+                    <strong>Beispiel JSON</strong>
+                    <span>type: log, quick oder task</span>
+                    <code>{`{"roomId":"${deviceSync.roomId}","deviceToken":"${deviceSync.deviceToken}","type":"log","proteinGrams":180}`}</code>
+                  </div>
+                  <button
+                    type="button"
+                    className="small-button"
+                    onClick={async () => {
+                      const ok = await copyText(JSON.stringify({
+                        roomId: deviceSync.roomId,
+                        deviceToken: deviceSync.deviceToken,
+                        type: 'log',
+                        proteinGrams: 180,
+                      }, null, 2))
+                      if (!ok) return
+                      setCopiedShortcut('webhook-json')
+                      window.setTimeout(() => setCopiedShortcut(current => (current === 'webhook-json' ? null : current)), 1600)
+                    }}
+                  >
+                    {copiedShortcut === 'webhook-json' ? 'Kopiert' : 'JSON kopieren'}
+                  </button>
+                </div>
+              </div>
+              <p className="settings-help">
+                Quick-Text: <code>{`{"type":"quick","text":"180g protein"}`}</code>
+                · Aufgabe: <code>{`{"type":"task","title":"Creatine holen"}`}</code>
+                · Energie: <code>{`{"type":"log","energy":"high"}`}</code>
+              </p>
+            </>
+          ) : (
+            <p className="settings-help">
+              Zuerst Geräte-Sync koppeln. Danach erscheint hier die Webhook-URL mit Token.
+            </p>
           )}
         </div>
 

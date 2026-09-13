@@ -47,6 +47,20 @@ export function saveAllEntries(entries: DashboardEntry[]): boolean {
   return safeSetItem(ENTRIES_KEY, JSON.stringify(entries))
 }
 
+/** Drop oldest per-day backups so Safari/iOS quota does not block the live save. */
+export function pruneDayBackups(keep = 14): number {
+  const keys = listDayBackupKeys()
+  if (keys.length <= keep) return 0
+  let removed = 0
+  for (const key of keys.slice(keep)) {
+    try {
+      localStorage.removeItem(key)
+      removed += 1
+    } catch { /* ignore */ }
+  }
+  return removed
+}
+
 export type UpsertResult = {
   entries: DashboardEntry[]
   ok: boolean
@@ -173,12 +187,19 @@ export function importJSON(file: File): Promise<DashboardEntry[]> {
   return importBackupFile(file).then(result => result.entries)
 }
 
+function entryUpdatedAt(entry: DashboardEntry): number {
+  const raw = entry.updatedAt
+  if (!raw) return 0
+  const time = Date.parse(raw)
+  return Number.isFinite(time) ? time : 0
+}
+
 export function mergeEntriesByDate(current: DashboardEntry[], incoming: DashboardEntry[]): DashboardEntry[] {
   const map = new Map<string, DashboardEntry>()
   for (const entry of current) map.set(entry.date, entry)
   for (const entry of incoming) {
     const existing = map.get(entry.date)
-    if (!existing || (entry.dailyScore ?? 0) >= (existing.dailyScore ?? 0)) {
+    if (!existing || entryUpdatedAt(entry) >= entryUpdatedAt(existing)) {
       map.set(entry.date, entry)
     }
   }
@@ -263,6 +284,12 @@ function safeSetItem(key: string, value: string): boolean {
     localStorage.setItem(key, value)
     return true
   } catch {
-    return false
+    pruneDayBackups(7)
+    try {
+      localStorage.setItem(key, value)
+      return true
+    } catch {
+      return false
+    }
   }
 }

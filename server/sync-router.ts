@@ -1,3 +1,4 @@
+import { applyInboundHook, type InboundHook } from './hook-core'
 import {
   createSyncRoom,
   joinSyncRoom,
@@ -8,7 +9,12 @@ import {
   syncError,
   syncJson,
 } from './sync-core'
-import type { SyncSnapshot } from './sync-store'
+import { syncStorageMode, type SyncSnapshot } from './sync-store'
+
+function bearerToken(request: Request): string {
+  const header = request.headers.get('authorization') ?? ''
+  return header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : ''
+}
 
 /** Unified router for Vite middleware + optional single-endpoint use. */
 export async function handleSyncRequest(request: Request): Promise<Response> {
@@ -17,6 +23,35 @@ export async function handleSyncRequest(request: Request): Promise<Response> {
 
     const url = new URL(request.url)
     const pathname = url.pathname.replace(/\/$/, '')
+
+    if (pathname.endsWith('/api/health') && (request.method === 'GET' || request.method === 'HEAD')) {
+      return syncJson({
+        ok: true,
+        service: 'life-os',
+        storage: syncStorageMode(),
+        time: new Date().toISOString(),
+      })
+    }
+
+    if (pathname.endsWith('/api/hooks') && request.method === 'POST') {
+      const body = await readSyncJson<Partial<InboundHook>>(request)
+      const result = await applyInboundHook({
+        roomId: String(body.roomId ?? ''),
+        deviceToken: bearerToken(request) || String(body.deviceToken ?? ''),
+        type: (body.type ?? 'log') as InboundHook['type'],
+        date: typeof body.date === 'string' ? body.date : undefined,
+        text: typeof body.text === 'string' ? body.text : undefined,
+        title: typeof body.title === 'string' ? body.title : undefined,
+        proteinGrams: body.proteinGrams,
+        calories: body.calories,
+        waterLiters: body.waterLiters,
+        steps: body.steps,
+        weightKg: body.weightKg,
+        energy: body.energy,
+        habit: typeof body.habit === 'string' ? body.habit : undefined,
+      })
+      return syncJson({ ok: true, ...result })
+    }
 
     if (pathname.endsWith('/api/sync/create') && request.method === 'POST') {
       return syncJson(await createSyncRoom())

@@ -2,12 +2,23 @@
 
 export type AppView = 'today' | 'plan' | 'checkin' | 'progress' | 'dashboardPlus'
 
-export type AppActionKind = 'focus' | 'checkin' | 'note' | 'plan' | 'add-task' | 'today'
+export type AppActionKind = 'focus' | 'checkin' | 'note' | 'plan' | 'add-task' | 'today' | 'log'
+
+export type AppActionEnergy = 'low' | 'okay' | 'high'
 
 export type AppAction = {
   kind: AppActionKind
   minutes?: number
   title?: string
+  /** Raw Quick-Add string, e.g. "180g protein" */
+  text?: string
+  protein?: number
+  calories?: number
+  water?: number
+  steps?: number
+  weight?: number
+  energy?: AppActionEnergy
+  habit?: string
 }
 
 const HASH_TO_VIEW: Record<string, AppView> = {
@@ -40,6 +51,7 @@ const ACTION_TO_VIEW: Record<AppActionKind, AppView> = {
   plan: 'plan',
   'add-task': 'plan',
   today: 'today',
+  log: 'today',
 }
 
 function splitHash(hash: string): { path: string; query: string } {
@@ -88,7 +100,8 @@ function parseActionParams(params: URLSearchParams): AppAction | null {
           : raw === 'plan' ? 'plan'
             : raw === 'add-task' || raw === 'task' || raw === 'aufgabe' ? 'add-task'
               : raw === 'today' || raw === 'heute' ? 'today'
-                : null
+                : raw === 'log' || raw === 'quick' || raw === 'metric' ? 'log'
+                  : null
 
   if (!kind) return null
 
@@ -97,8 +110,30 @@ function parseActionParams(params: URLSearchParams): AppAction | null {
     ? Math.min(120, Math.max(5, Math.round(minutesRaw)))
     : undefined
   const title = (params.get('title') ?? params.get('t') ?? '').trim() || undefined
+  const text = (params.get('text') ?? params.get('q') ?? '').trim() || undefined
+  const energyRaw = (params.get('energy') ?? '').trim().toLowerCase()
+  const energy: AppActionEnergy | undefined =
+    energyRaw === 'low' || energyRaw === 'okay' || energyRaw === 'high' ? energyRaw : undefined
 
-  return { kind, minutes, title }
+  return {
+    kind,
+    minutes,
+    title,
+    text,
+    protein: optionalNumber(params.get('protein') ?? params.get('p')),
+    calories: optionalNumber(params.get('kcal') ?? params.get('calories')),
+    water: optionalNumber(params.get('water') ?? params.get('l')),
+    steps: optionalNumber(params.get('steps')),
+    weight: optionalNumber(params.get('kg') ?? params.get('weight')),
+    energy,
+    habit: (params.get('habit') ?? '').trim() || undefined,
+  }
+}
+
+function optionalNumber(raw: string | null): number | undefined {
+  if (!raw) return undefined
+  const value = Number(String(raw).replace(',', '.'))
+  return Number.isFinite(value) ? value : undefined
 }
 
 /** Read action from hash query (`#/heute?action=focus`) and/or search (`?action=focus#/heute`). */
@@ -131,6 +166,19 @@ export function takeAppActionFromLocation(): AppAction | null {
   params.delete('minutes')
   params.delete('title')
   params.delete('t')
+  params.delete('text')
+  params.delete('q')
+  params.delete('protein')
+  params.delete('p')
+  params.delete('kcal')
+  params.delete('calories')
+  params.delete('water')
+  params.delete('l')
+  params.delete('steps')
+  params.delete('kg')
+  params.delete('weight')
+  params.delete('energy')
+  params.delete('habit')
   const nextSearch = params.toString()
   const url = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${nextHash}`
   window.history.replaceState(null, '', url)
@@ -138,20 +186,25 @@ export function takeAppActionFromLocation(): AppAction | null {
 }
 
 /** Absolute deep-link URLs for Shortcuts / Automations. */
-export function buildActionUrl(kind: AppActionKind, opts?: { minutes?: number; title?: string }): string {
+export function buildActionUrl(
+  kind: AppActionKind,
+  opts?: { minutes?: number; title?: string; text?: string },
+): string {
   const view = ACTION_TO_VIEW[kind]
   const base = `${window.location.origin}${window.location.pathname}`
   const params = new URLSearchParams()
   params.set('action', kind === 'add-task' ? 'add-task' : kind)
   if (opts?.minutes) params.set('min', String(opts.minutes))
   if (opts?.title) params.set('title', opts.title)
+  if (opts?.text) params.set('text', opts.text)
   return `${base}${hashFromView(view)}?${params.toString()}`
 }
 
-export const SHORTCUT_RECIPES: Array<{ label: string; kind: AppActionKind; hint: string }> = [
+export const SHORTCUT_RECIPES: Array<{ label: string; kind: AppActionKind; hint: string; text?: string }> = [
   { label: 'Heute öffnen', kind: 'today', hint: 'Kurzbefehl → URL öffnen' },
   { label: 'Fokus starten', kind: 'focus', hint: 'Optional: &min=25' },
   { label: 'Check-in', kind: 'checkin', hint: 'Abend-Automation' },
   { label: 'Kurznotiz', kind: 'note', hint: 'Springt zum Merkzettel' },
-  { label: 'Plan / Aufgabe', kind: 'add-task', hint: 'Neue Aufgabe anlegen' },
+  { label: 'Aufgabe anlegen', kind: 'add-task', hint: '&title=Creatine holen' },
+  { label: 'Protein loggen', kind: 'log', hint: 'Schreibt ins Heute-Protokoll', text: '180g protein' },
 ]

@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import type { DashboardEntry } from '../types/DashboardEntry'
-import { ENTRIES_KEY, loadAllEntries, upsertEntry } from '../lib/storage'
+import { ENTRIES_KEY, loadAllEntries, pruneDayBackups, upsertEntry } from '../lib/storage'
 import { calculateScore } from '../lib/score'
 import { awardDailyXP } from '../lib/xp-store'
 import {
@@ -135,7 +135,11 @@ export function useEntries(): UseEntriesReturn {
       updatedAt: new Date().toISOString(),
     }
 
-    const { entries: updated, ok } = upsertEntry(scored)
+    let { entries: updated, ok } = upsertEntry(scored)
+    if (!ok) {
+      pruneDayBackups(7)
+      ;({ entries: updated, ok } = upsertEntry(scored))
+    }
     if (!ok) {
       markStatus('error', 4000)
       return false
@@ -144,8 +148,9 @@ export function useEntries(): UseEntriesReturn {
     awardDailyXP(scored.dailyScore, scored.date, todayKeyLocal())
 
     try {
+      pruneDayBackups(14)
       localStorage.setItem('project-life-backup-' + scored.date, JSON.stringify(scored))
-    } catch { /* storage quota — ignore */ }
+    } catch { /* optional day snapshot — live save already succeeded */ }
 
     setEntries(updated)
     markStatus(navigator.onLine ? 'synced' : 'offline', navigator.onLine ? 2000 : 0)

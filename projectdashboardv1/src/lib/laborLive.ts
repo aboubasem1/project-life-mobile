@@ -48,6 +48,8 @@ export function deriveLaborOverview(input: {
   activeHabits: string[]
   openBoardCount: number
   goals?: ScoreGoals
+  syncLabel?: string
+  syncTime?: string
 }): LaborLiveOverview {
   const todayEntry = entryFor(input.entries, input.today)
   const score = todayEntry ? calculateScore(todayEntry, input.goals) : 0
@@ -64,8 +66,8 @@ export function deriveLaborOverview(input: {
       day: 'numeric',
       month: 'long',
     }).format(new Date(`${input.today}T12:00:00`)),
-    syncStatus: 'Lokal',
-    syncTime: 'nur dieses Gerät',
+    syncStatus: input.syncLabel ?? 'Lokal',
+    syncTime: input.syncTime ?? 'nur dieses Gerät',
     score: Math.min(100, Math.max(0, Math.round(score))),
     habits,
     habitsTotal,

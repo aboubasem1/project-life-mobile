@@ -212,6 +212,7 @@ button:disabled {
 .brand > div:last-child {
   display: flex;
   flex-direction: column;
+  gap: 2px;
 }
 
 .brand strong {
@@ -574,8 +575,8 @@ button:disabled {
   margin: 12px 0 12px;
   font-size: clamp(35px, 4.4vw, 64px);
   font-weight: 500;
-  line-height: 0.98;
-  letter-spacing: -0.065em;
+  line-height: 1.12;
+  letter-spacing: -0.04em;
 }
 
 .hero-card__copy p {
@@ -707,17 +708,20 @@ button:disabled {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 3px;
   border-radius: 50%;
   background: var(--surface-solid);
 }
 
 .progress-ring__inner strong {
   font-size: 14px;
+  line-height: 1.15;
 }
 
 .progress-ring__inner span {
   color: var(--text-muted);
   font-size: 9px;
+  line-height: 1.2;
 }
 
 .calm-visual {
@@ -1313,7 +1317,7 @@ button:disabled {
 
 .metric-summary-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 9px;
   margin-bottom: 18px;
 }
@@ -1420,8 +1424,8 @@ button:disabled {
   margin: 7px 0 9px;
   font-size: clamp(31px, 4vw, 52px);
   font-weight: 500;
-  line-height: 1.02;
-  letter-spacing: -0.055em;
+  line-height: 1.14;
+  letter-spacing: -0.04em;
 }
 
 .page-intro p {
@@ -2351,7 +2355,7 @@ button.status-chip.status-chip--good {
   max-width: 18ch;
   margin: 8px 0 8px;
   font-size: clamp(26px, 5.5vw, 40px);
-  line-height: 1.08;
+  line-height: 1.14;
 }
 
 .dashboard-plus-intro p {
@@ -3414,8 +3418,8 @@ button.status-chip.status-chip--good {
   margin: 12px 0 30px;
   font-size: clamp(32px, 5vw, 68px);
   font-weight: 490;
-  line-height: 1.02;
-  letter-spacing: -0.06em;
+  line-height: 1.14;
+  letter-spacing: -0.04em;
 }
 
 .focus-timer {
@@ -4546,6 +4550,349 @@ button.status-chip.status-chip--good {
   .splash-screen__mark,
   .splash-screen__loader span { animation: none; }
   .splash-screen__content { animation-duration: 0.01s; }
+}
+
+/* ---------- First-open morning gate ---------- */
+
+.morning-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 480;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: calc(18px + env(safe-area-inset-top)) 20px calc(18px + env(safe-area-inset-bottom));
+  overflow: auto;
+  background: var(--bg);
+  -webkit-overflow-scrolling: touch;
+}
+
+.morning-gate__orbs {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  filter: blur(46px);
+  opacity: 0.42;
+}
+
+.morning-gate__orb {
+  position: absolute;
+  border-radius: 50%;
+}
+
+.morning-gate__orb--one {
+  top: 8%;
+  left: 6%;
+  width: 220px;
+  height: 220px;
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.morning-gate__orb--two {
+  right: 4%;
+  bottom: 12%;
+  width: 260px;
+  height: 260px;
+  background: color-mix(in srgb, var(--sage) 24%, transparent);
+}
+
+.morning-gate__top {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.morning-gate__top p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.morning-gate__dots {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.morning-gate__dots li {
+  width: 28px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--track);
+}
+
+.morning-gate__dots li.is-current {
+  background: var(--accent);
+}
+
+.morning-gate__dots li.is-done {
+  background: color-mix(in srgb, var(--accent) 55%, var(--track));
+}
+
+.morning-gate__card {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  max-width: 520px;
+  width: 100%;
+  margin: 8px auto 0;
+  padding: 22px 20px 20px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--surface);
+  animation: splash-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.morning-gate__card form {
+  display: grid;
+  gap: 12px;
+}
+
+.morning-gate__card h2 {
+  margin: 0;
+  font-size: clamp(26px, 7vw, 40px);
+  line-height: 1.14;
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+}
+
+.morning-gate__card p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.morning-gate__icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 16px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.morning-gate__empty {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--surface-soft);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.morning-gate__meds {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.morning-gate__med {
+  display: flex;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-soft);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.morning-gate__med strong,
+.morning-gate__med small {
+  display: block;
+}
+
+.morning-gate__med small {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.morning-gate__med.is-taken {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: var(--accent-soft);
+}
+
+.morning-gate__check {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-soft);
+}
+
+.morning-gate__med.is-taken .morning-gate__check {
+  background: var(--accent);
+  color: var(--surface-solid);
+}
+
+.morning-gate__cta {
+  width: 100%;
+  min-height: 52px;
+  justify-content: center;
+  margin-top: 8px;
+  font-size: 15px;
+  touch-action: manipulation;
+}
+
+.morning-gate__skip {
+  position: relative;
+  align-self: center;
+  min-height: 44px;
+  margin-top: 4px;
+  padding: 10px 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+  touch-action: manipulation;
+}
+
+.morning-gate__script {
+  margin: 0;
+  padding: 14px 16px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 14px 14px 0;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.morning-timer {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  padding: 8px 0 0;
+}
+
+.morning-timer__clock {
+  font-size: clamp(42px, 12vw, 64px);
+  letter-spacing: -0.05em;
+  line-height: 1;
+}
+
+.morning-timer span {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.morning-rep {
+  display: grid;
+  width: 100%;
+  min-height: 140px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--accent-soft);
+  color: inherit;
+  cursor: pointer;
+}
+
+.morning-rep strong {
+  font-size: clamp(48px, 14vw, 72px);
+  letter-spacing: -0.06em;
+  line-height: 1;
+}
+
+.morning-rep span {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.morning-gate__row {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 8px;
+}
+
+.morning-gate__cta--go {
+  min-height: 56px;
+  font-size: 18px;
+  letter-spacing: 0.04em;
+}
+
+.morning-todos-card .morning-gate__cta {
+  margin-top: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .morning-gate__card { animation: none; }
+}
+
+@media (max-width: 560px) {
+  .morning-gate {
+    gap: 10px;
+    padding: calc(10px + env(safe-area-inset-top)) 12px calc(10px + env(safe-area-inset-bottom));
+  }
+
+  .morning-gate__card {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    max-width: none;
+    min-height: 0;
+    margin: 0;
+    padding: 18px 16px 16px;
+    overflow: auto;
+    border-radius: 20px;
+  }
+
+  .morning-gate__card h2 {
+    font-size: clamp(24px, 8vw, 32px);
+    letter-spacing: -0.025em;
+  }
+
+  .morning-gate__cta {
+    margin-top: auto;
+    min-height: 52px;
+  }
+
+  .morning-gate__row {
+    margin-top: auto;
+  }
+
+  .morning-gate__row .primary-button,
+  .morning-gate__row .secondary-button {
+    min-height: 52px;
+  }
+
+  .morning-rep {
+    min-height: 168px;
+  }
+
+  .morning-gate__script {
+    font-size: 15px;
+    line-height: 1.45;
+  }
+
+  .settings-modal {
+    width: 100%;
+    max-height: min(92dvh, 760px);
+    padding: 18px 16px 20px;
+  }
+
+  .settings-section .habit-settings-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
 }
 
 /* ---------- Quick note widget ---------- */
