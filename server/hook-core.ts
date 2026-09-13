@@ -1,6 +1,6 @@
 import { getRoom, saveRoom, type SyncSnapshot } from './sync-store'
 import { SyncHttpError } from './sync-core'
-import { appendJournal, formatNoteLine, mergeQuickNote, parseQuickNote } from '../projectdashboardv1/src/lib/inboundNote'
+import { appendJournal, formatNoteLine, mergeQuickNote, parseQuickNote } from './inbound-note'
 
 const HABIT_KEYS = new Set([
   'breathingDone',

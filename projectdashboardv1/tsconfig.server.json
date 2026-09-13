@@ -19,6 +19,6 @@
     "../api/health.ts",
     "../api/hooks.ts",
     "../api/sync/**/*.ts",
-    "src/lib/inboundNote.ts"
+    "../server/inbound-note.ts"
   ]
 }

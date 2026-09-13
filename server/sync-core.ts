@@ -7,7 +7,7 @@ import {
   type SyncRoom,
   type SyncSnapshot,
 } from './sync-store'
-import { mergeDayJournal, mergeQuickNoteStates, parseQuickNote } from '../projectdashboardv1/src/lib/inboundNote'
+import { mergeDayJournal, mergeQuickNoteStates, parseQuickNote } from './inbound-note'
 
 const PAIR_TTL_MS = 30 * 60 * 1000
 const MAX_DEVICES = 8
