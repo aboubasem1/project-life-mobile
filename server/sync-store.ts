@@ -20,7 +20,11 @@ function loadLocalEnvFiles(): void {
         const key = line.slice(0, eq).trim()
         const value = line.slice(eq + 1).trim()
         if (!key.startsWith('UPSTASH_')) continue
-        if (!process.env[key]) process.env[key] = value
+        if (process.env.VERCEL) {
+          if (!process.env[key]) process.env[key] = value
+        } else {
+          process.env[key] = value
+        }
       }
     } catch {
       /* ignore */
@@ -59,6 +63,19 @@ const MEMORY_KEY = '__lifeOsSyncStore'
 const LOCAL_FILE = path.join(process.cwd(), 'projectdashboardv1', '.data', 'life-os-sync.json')
 const MAX_SNAPSHOT_CHARS = 1_400_000
 
+/** After a failed Upstash call off Vercel, stay on the file store for this process. */
+let localUpstashBroken = false
+
+export type SyncStorageMode = 'upstash' | 'file' | 'memory'
+
+export type SyncStorageProbe = {
+  ok: boolean
+  storage: SyncStorageMode
+  time: string
+  error?: string
+  warning?: string
+}
+
 function memoryStore(): SyncStoreFile {
   const g = globalThis as typeof globalThis & { [MEMORY_KEY]?: SyncStoreFile }
   if (!g[MEMORY_KEY]) {
@@ -71,6 +88,14 @@ function hasUpstash(): boolean {
   return Boolean(
     process.env.UPSTASH_REDIS_REST_URL?.trim() && process.env.UPSTASH_REDIS_REST_TOKEN?.trim(),
   )
+}
+
+function usesUpstash(): boolean {
+  return hasUpstash() && !localUpstashBroken
+}
+
+function markLocalUpstashBroken(): void {
+  if (!process.env.VERCEL) localUpstashBroken = true
 }
 
 function abortSignalAfter(ms: number): AbortSignal {
@@ -121,6 +146,7 @@ async function upstashFetch(command: unknown[]): Promise<unknown> {
       'Upstash',
     )
   } catch (error) {
+    markLocalUpstashBroken()
     if (
       error instanceof Error
       && (error.name === 'AbortError' || error.name === 'TimeoutError' || /Timeout/i.test(error.message))
@@ -157,14 +183,22 @@ async function writeLocalFile(store: SyncStoreFile): Promise<void> {
   await writeFile(LOCAL_FILE, JSON.stringify(store), 'utf8')
 }
 
+async function getRoomFromUpstash(roomId: string): Promise<SyncRoom | null> {
+  const raw = await upstashFetch(['GET', `lifeos:sync:room:${roomId}`])
+  if (typeof raw !== 'string' || !raw) return null
+  return JSON.parse(raw) as SyncRoom
+}
+
 export async function getRoom(roomId: string): Promise<SyncRoom | null> {
-  if (hasUpstash()) {
-    const raw = await upstashFetch(['GET', `lifeos:sync:room:${roomId}`])
-    if (typeof raw !== 'string' || !raw) return null
-    return JSON.parse(raw) as SyncRoom
+  if (usesUpstash()) {
+    try {
+      return await getRoomFromUpstash(roomId)
+    } catch (error) {
+      if (process.env.VERCEL) throw error
+      markLocalUpstashBroken()
+    }
   }
   if (process.env.VERCEL) {
-    // Ephemeral fallback so API still responds with a clear error path via nulls
     return memoryStore().rooms[roomId] ?? null
   }
   const store = await readLocalFile()
@@ -172,9 +206,14 @@ export async function getRoom(roomId: string): Promise<SyncRoom | null> {
 }
 
 export async function getRoomIdByPairCode(pairCode: string): Promise<string | null> {
-  if (hasUpstash()) {
-    const raw = await upstashFetch(['GET', `lifeos:sync:pair:${pairCode}`])
-    return typeof raw === 'string' && raw ? raw : null
+  if (usesUpstash()) {
+    try {
+      const raw = await upstashFetch(['GET', `lifeos:sync:pair:${pairCode}`])
+      return typeof raw === 'string' && raw ? raw : null
+    } catch (error) {
+      if (process.env.VERCEL) throw error
+      markLocalUpstashBroken()
+    }
   }
   if (process.env.VERCEL) {
     return memoryStore().pairIndex[pairCode] ?? null
@@ -191,16 +230,21 @@ export async function saveRoom(room: SyncRoom, previousPairCode?: string | null)
     }
   }
 
-  if (hasUpstash()) {
-    await upstashFetch(['SET', `lifeos:sync:room:${room.roomId}`, JSON.stringify(room)])
-    if (previousPairCode && previousPairCode !== room.pairCode) {
-      await upstashFetch(['DEL', `lifeos:sync:pair:${previousPairCode}`])
+  if (usesUpstash()) {
+    try {
+      await upstashFetch(['SET', `lifeos:sync:room:${room.roomId}`, JSON.stringify(room)])
+      if (previousPairCode && previousPairCode !== room.pairCode) {
+        await upstashFetch(['DEL', `lifeos:sync:pair:${previousPairCode}`])
+      }
+      if (room.pairCode && room.pairCodeExpiresAt) {
+        const ttlSeconds = Math.max(1, Math.ceil((room.pairCodeExpiresAt - Date.now()) / 1000))
+        await upstashFetch(['SET', `lifeos:sync:pair:${room.pairCode}`, room.roomId, 'EX', ttlSeconds])
+      }
+      return
+    } catch (error) {
+      if (process.env.VERCEL) throw error
+      markLocalUpstashBroken()
     }
-    if (room.pairCode && room.pairCodeExpiresAt) {
-      const ttlSeconds = Math.max(1, Math.ceil((room.pairCodeExpiresAt - Date.now()) / 1000))
-      await upstashFetch(['SET', `lifeos:sync:pair:${room.pairCode}`, room.roomId, 'EX', ttlSeconds])
-    }
-    return
   }
 
   if (process.env.VERCEL) {
@@ -233,8 +277,39 @@ export async function saveRoom(room: SyncRoom, previousPairCode?: string | null)
   await writeLocalFile(store)
 }
 
-export function syncStorageMode(): 'upstash' | 'file' | 'memory' {
-  if (hasUpstash()) return 'upstash'
-  if (process.env.VERCEL) return 'memory'
+export function syncStorageMode(): SyncStorageMode {
+  if (usesUpstash()) return 'upstash'
+  if (process.env.VERCEL) return hasUpstash() ? 'upstash' : 'memory'
   return 'file'
+}
+
+export async function probeSyncStorage(): Promise<SyncStorageProbe> {
+  const time = new Date().toISOString()
+  if (hasUpstash() && !localUpstashBroken) {
+    try {
+      const result = await upstashFetch(['PING'])
+      if (String(result).toUpperCase() !== 'PONG') {
+        throw new Error(`Unerwartete PING-Antwort: ${String(result)}`)
+      }
+      return { ok: true, storage: 'upstash', time }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Upstash nicht erreichbar.'
+      if (process.env.VERCEL) {
+        return { ok: false, storage: 'upstash', time, error: message }
+      }
+      markLocalUpstashBroken()
+      return { ok: true, storage: 'file', time, warning: message }
+    }
+  }
+
+  if (process.env.VERCEL) {
+    return {
+      ok: false,
+      storage: 'memory',
+      time,
+      error: 'Kein persistenter Store. UPSTASH_REDIS_REST_URL und TOKEN auf Vercel setzen.',
+    }
+  }
+
+  return { ok: true, storage: 'file', time }
 }

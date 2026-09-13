@@ -1,5 +1,6 @@
 import { getRoom, saveRoom, type SyncSnapshot } from './sync-store'
 import { SyncHttpError } from './sync-core'
+import { appendJournal, formatNoteLine, mergeQuickNote, parseQuickNote } from '../projectdashboardv1/src/lib/inboundNote'
 
 const HABIT_KEYS = new Set([
   'breathingDone',
@@ -16,7 +17,25 @@ const HABIT_KEYS = new Set([
   'familyTimeDone',
 ])
 
-export type InboundHookType = 'log' | 'quick' | 'task'
+export type InboundHookType = 'log' | 'quick' | 'task' | 'note'
+
+export function isInboundHookType(value: unknown): value is InboundHookType {
+  return value === 'log' || value === 'quick' || value === 'task' || value === 'note'
+}
+
+export function resolveInboundHookType(raw: Partial<InboundHook>): InboundHookType {
+  if (isInboundHookType(raw.type)) return raw.type
+  const text = String(raw.text ?? raw.title ?? '').trim()
+  const hasMetric = raw.proteinGrams != null
+    || raw.calories != null
+    || raw.waterLiters != null
+    || raw.steps != null
+    || raw.weightKg != null
+    || raw.energy != null
+    || Boolean(raw.habit)
+  if (text && !hasMetric) return 'note'
+  return 'log'
+}
 
 export type InboundHook = {
   roomId: string
@@ -139,6 +158,18 @@ function addTask(entry: LooseEntry, title: string): void {
 
 function applyPatch(entry: LooseEntry, hook: InboundHook): LooseEntry {
   const next = { ...entry }
+  if (hook.type === 'note') {
+    const text = (hook.text ?? hook.title ?? '').trim()
+    if (text) {
+      next.journalText = appendJournal(String(next.journalText ?? ''), formatNoteLine(text))
+      next.journalDone = true
+    }
+    next.updatedAt = typeof entry.updatedAt === 'string' && entry.updatedAt
+      ? entry.updatedAt
+      : new Date().toISOString()
+    return next
+  }
+
   const fromText = hook.text ? parseQuickText(hook.text) : null
   if (fromText?.kind === 'task' && hook.type !== 'log') {
     addTask(next, fromText.title)
@@ -173,15 +204,17 @@ export async function applyInboundHook(raw: InboundHook): Promise<{
     throw new SyncHttpError(400, 'roomId und deviceToken sind nötig.')
   }
 
-  const type = raw.type
-  if (type !== 'log' && type !== 'quick' && type !== 'task') {
-    throw new SyncHttpError(400, 'type muss log, quick oder task sein.')
-  }
+  const type = resolveInboundHookType(raw)
 
   const room = await getRoom(roomId)
   if (!room) throw new SyncHttpError(404, 'Sync-Raum nicht gefunden.')
   if (!room.deviceTokens.includes(deviceToken)) {
     throw new SyncHttpError(403, 'Gerät nicht mit diesem Sync verbunden.')
+  }
+
+  const noteText = (raw.text ?? raw.title ?? '').trim()
+  if (type === 'note' && !noteText) {
+    throw new SyncHttpError(400, 'Notiz braucht text.')
   }
 
   const date = validDate(raw.date) ?? todayInBerlin()
@@ -218,7 +251,9 @@ export async function applyInboundHook(raw: InboundHook): Promise<{
     settings: snapshot?.settings,
     dashboardPlus: snapshot?.dashboardPlus,
     xp: snapshot?.xp,
-    quickNote: snapshot?.quickNote,
+    quickNote: type === 'note' && noteText
+      ? mergeQuickNote(parseQuickNote(snapshot?.quickNote), formatNoteLine(noteText))
+      : snapshot?.quickNote,
   }
   room.snapshot = nextSnapshot
   room.updatedAt = updatedAt

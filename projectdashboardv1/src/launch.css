@@ -998,7 +998,7 @@ button:disabled {
 .routine-item {
   display: grid;
   min-height: 58px;
-  grid-template-columns: 28px 38px minmax(0, 1fr) 28px;
+  grid-template-columns: 28px 38px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   padding: 8px 11px 8px 8px;
@@ -5003,6 +5003,23 @@ button.status-chip.status-chip--good {
   word-break: break-all;
 }
 
+.glasses-hook-help {
+  margin: 12px 0 0;
+}
+
+.glasses-hook-help p {
+  margin: 0 0 6px;
+}
+
+.glasses-hook-help ol {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+.glasses-hook-help li {
+  margin: 0 0 4px;
+}
+
 .sync-pair-code {
   display: grid;
   gap: 4px;
@@ -5132,5 +5149,220 @@ button.status-chip.status-chip--good {
   }
   .quick-note-card { grid-column: 1; }
   .splash-screen__orbs { filter: blur(34px); }
+}
+
+.day-shield {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.day-shield p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-soft);
+}
+
+.day-shield.is-on {
+  border-color: color-mix(in srgb, var(--sage) 45%, var(--border));
+  background: color-mix(in srgb, var(--sage) 10%, var(--surface));
+}
+
+.habit-kind__chip,
+.habit-kind__step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.habit-kind__amount,
+.habit-kind__timer,
+.habit-kind__steps {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.habit-kind__amount span,
+.habit-kind__timer strong {
+  min-width: 4.5ch;
+  font-size: 12px;
+  font-weight: 650;
+  text-align: center;
+}
+
+.habit-kind__steps {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.habit-kind__steps ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.habit-kind__step.is-on {
+  background: color-mix(in srgb, var(--sage) 16%, var(--surface));
+}
+
+.habit-detail-sheet {
+  width: min(420px, calc(100vw - 24px));
+}
+
+.habit-detail-sheet__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.habit-detail-sheet__top h2 {
+  margin: 4px 0 0;
+  font-size: 22px;
+}
+
+.habit-detail-sheet__stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.habit-detail-sheet__stats div {
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.habit-detail-sheet__stats strong {
+  display: block;
+  font-size: 22px;
+}
+
+.habit-detail-sheet__stats span,
+.habit-detail-sheet .field-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.habit-week,
+.habit-mini-heat {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 16px;
+}
+
+.habit-week {
+  grid-template-columns: repeat(7, 1fr);
+}
+
+.habit-mini-heat {
+  grid-auto-flow: column;
+  grid-template-rows: repeat(7, 8px);
+  grid-auto-columns: 8px;
+  overflow-x: auto;
+}
+
+.habit-week__cell,
+.habit-mini-heat__cell {
+  aspect-ratio: 1;
+  border-radius: 3px;
+  background: var(--track);
+}
+
+.habit-week__cell.is-done,
+.habit-mini-heat__cell.is-done {
+  background: var(--sage);
+}
+
+.habit-week__cell.is-shield,
+.habit-mini-heat__cell.is-shield {
+  background: color-mix(in srgb, var(--lilac) 40%, var(--track));
+}
+
+.ritual-order-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ritual-order-item {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 36px;
+  gap: 8px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.ritual-order-item.is-hidden {
+  opacity: 0.48;
+}
+
+.ritual-order-item__move {
+  display: grid;
+  gap: 2px;
+}
+
+.ritual-order-item strong,
+.ritual-order-item small {
+  display: block;
+}
+
+.ritual-order-item small {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.ritual-duration,
+.ritual-duration-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.ritual-duration input {
+  width: 64px;
+  min-height: 36px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: inherit;
+}
+
+.strength-row--button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
 }
 

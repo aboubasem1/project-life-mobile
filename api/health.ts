@@ -1,5 +1,5 @@
 import { syncJson } from '../server/sync-core'
-import { syncStorageMode } from '../server/sync-store'
+import { probeSyncStorage } from '../server/sync-store'
 
 export const config = {
   maxDuration: 10,
@@ -10,12 +10,11 @@ async function handle(request: Request): Promise<Response> {
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     return syncJson({ error: 'Methode nicht erlaubt.' }, 405)
   }
+  const probe = await probeSyncStorage()
   return syncJson({
-    ok: true,
     service: 'life-os',
-    storage: syncStorageMode(),
-    time: new Date().toISOString(),
-  })
+    ...probe,
+  }, probe.ok ? 200 : 503)
 }
 
 export default { fetch: handle }

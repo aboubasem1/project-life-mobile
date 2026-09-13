@@ -128,20 +128,28 @@ import {
 } from './lib/medReminders'
 import {
   FULLSCREEN_STEP_IDS,
-  MORNING_RITUAL_STEP_IDS,
   loadMorningGateSkip,
   loadMorningRitualProgress,
   markRitualStepDone,
+  morningRitualMeta,
   morningRitualPhase,
+  moveRitualStep,
   nextMorningRitualStep,
   normalizeMorningRitualConfig,
   normalizeSelfcareItems,
+  ritualSequence,
   saveMorningGateSkip,
   saveMorningRitualProgress,
   type MorningRitualConfig,
   type MorningRitualProgress,
+  type MorningRitualStepId,
 } from './lib/morningGate'
 import { MorningGate } from './components/MorningGate'
+import { HabitDetailSheet } from './components/HabitDetailSheet'
+import { HabitKindControls } from './components/HabitKindRow'
+import { defaultHabitKind, isHabitComplete, isHabitKey, patchHabitLog } from './lib/habitKinds'
+import { moodHabitLine } from './lib/moodHabit'
+import { appendJournal, formatNoteLine, mergeQuickNote, parseQuickNote } from './lib/inboundNote'
 import './launch.css'
 
 type View = 'today' | 'plan' | 'checkin' | 'progress' | 'dashboardPlus'
@@ -560,6 +568,13 @@ const SETTINGS_KEY = 'life-os-v1-settings'
 const SPLASH_KEY = 'life-os-splash-day'
 const QUICK_NOTE_KEY = 'life-os-quick-note'
 const DASHBOARD_PLUS_KEY = 'life-os-v1-dashboard-plus'
+
+function shouldBypassMorningGate(action: AppAction | null): boolean {
+  return action?.kind === 'note'
+    || action?.kind === 'log'
+    || action?.kind === 'add-task'
+    || action?.kind === 'focus'
+}
 
 // ── Data from projectbaby ────────────────────────────────────────────────────
 const QUOTES = [
@@ -1281,7 +1296,7 @@ function App() {
   })
   const [gatePreview, setGatePreview] = useState(false)
   const [previewIndex, setPreviewIndex] = useState(0)
-  const [gateBypass, setGateBypass] = useState(() => Boolean(peekAppAction()))
+  const [gateBypass, setGateBypass] = useState(() => shouldBypassMorningGate(peekAppAction()))
   const [gateSkipped, setGateSkipped] = useState(() => loadMorningGateSkip(dateKey(new Date())))
   const [ritualProgress, setRitualProgress] = useState<MorningRitualProgress>(() => loadMorningRitualProgress(dateKey(new Date())))
 
@@ -1326,6 +1341,10 @@ function App() {
     [dashboardPlus.medications, today],
   )
 
+  const ritualSteps = useMemo(
+    () => ritualSequence(settings.morningRitual),
+    [settings.morningRitual],
+  )
   const ritualNext = useMemo(
     () => nextMorningRitualStep({
       enabled: settings.morningGateEnabled,
@@ -1337,6 +1356,8 @@ function App() {
       gratitudeDone: Boolean(entry.gratitudeDone),
       energySet: Boolean(entry.energyLevel),
       pushupsDone: Boolean(entry.pushupsDone),
+      coldShowerDone: Boolean(entry.coldShower),
+      winnerModeDone: Boolean(entry.winnerModeDone),
       config: settings.morningRitual,
     }),
     [
@@ -1349,11 +1370,13 @@ function App() {
       entry.gratitudeDone,
       entry.energyLevel,
       entry.pushupsDone,
+      entry.coldShower,
+      entry.winnerModeDone,
     ],
   )
 
   const ritualStep = gatePreview
-    ? MORNING_RITUAL_STEP_IDS[Math.min(previewIndex, MORNING_RITUAL_STEP_IDS.length - 1)]
+    ? ritualSteps[Math.min(previewIndex, Math.max(0, ritualSteps.length - 1))]
     : ritualNext
   const ritualPhase = ritualStep ? morningRitualPhase(ritualStep) : null
   const showMorningGate = splashPhase === 'done'
@@ -1367,10 +1390,10 @@ function App() {
   const streakByKey = useMemo(() => {
     const map: Record<string, number> = {}
     for (const key of STREAK_HABIT_KEYS) {
-      map[key] = calculateStreakForHabit(entries, key)
+      map[key] = calculateStreakForHabit(entries, key, today)
     }
     return map
-  }, [entries])
+  }, [entries, today])
 
   const laborOpenBoards = useMemo(
     () => dashboardPlus.boards.filter(board => board.tasks.some(task => !task.done)).length,
@@ -1399,7 +1422,7 @@ function App() {
     const consumeAction = () => {
       const action = takeAppActionFromLocation()
       if (!action) return
-      setGateBypass(true)
+      if (shouldBypassMorningGate(action)) setGateBypass(true)
       window.setTimeout(() => actionBridgeRef.current?.applyAction(action), 0)
     }
 
@@ -1828,14 +1851,32 @@ function App() {
           navigateTo('plan')
           showToast('Kurzbefehl: Plan')
           break
-        case 'note':
+        case 'note': {
+          const text = action.text?.trim()
           navigateTo('today')
+          if (text) {
+            const line = formatNoteLine(text)
+            const entryForNote = entries.find(item => item.date === today) ?? createDefaultEntry(today)
+            void saveEntryForDate(today, {
+              journalText: appendJournal(entryForNote.journalText ?? '', line),
+              journalDone: true,
+            })
+            const nextNote = mergeQuickNote(parseQuickNote(loadQuickNote()), line)
+            safeLocalStorageSetItem(QUICK_NOTE_KEY, JSON.stringify(nextNote))
+            window.dispatchEvent(new CustomEvent(LIFE_OS_SYNC_EXTRAS_EVENT))
+            if (isDeviceSyncEnabled()) {
+              window.setTimeout(() => {
+                void pushDeviceSync().catch(() => {})
+              }, 400)
+            }
+          }
           setHighlightQuickNote(true)
           window.setTimeout(() => {
             document.getElementById('life-os-quick-note')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
           }, 80)
-          showToast('Kurzbefehl: Kurznotiz')
+          showToast(text ? 'Notiz geparkt.' : 'Kurzbefehl: Kurznotiz')
           break
+        }
         case 'add-task':
           navigateTo('plan')
           window.setTimeout(() => {
@@ -2005,6 +2046,7 @@ function App() {
           {view === 'today' && (
             <TodayView
               entry={entry}
+              entries={entries}
               date={selectedDate}
               today={today}
               score={score}
@@ -2247,8 +2289,8 @@ function App() {
       {showMorningGate && ritualStep && (
         <MorningGate
           step={ritualStep}
-          stepIndex={gatePreview ? previewIndex : Math.max(0, MORNING_RITUAL_STEP_IDS.indexOf(ritualStep))}
-          stepCount={MORNING_RITUAL_STEP_IDS.length}
+          stepIndex={gatePreview ? previewIndex : Math.max(0, ritualSteps.indexOf(ritualStep))}
+          stepCount={Math.max(1, ritualSteps.length)}
           name={settings.name}
           medications={morningGateMeds}
           proteinShake={Boolean(entry.proteinShake)}
@@ -2302,7 +2344,7 @@ function App() {
             if (kind === 'winnerPose') updateEntry({ winnerModeDone: true })
             setRitualProgress(current => markRitualStepDone(current, kind))
             if (kind === 'prayer') navigateTo('today')
-            if (gatePreview) setPreviewIndex(value => Math.min(MORNING_RITUAL_STEP_IDS.length - 1, value + 1))
+            if (gatePreview) setPreviewIndex(value => Math.min(ritualSteps.length - 1, value + 1))
           }}
           onSetPushups={value => {
             setRitualProgress(current => {
@@ -2333,7 +2375,7 @@ function App() {
             if (step === 'workout') updateEntry({ pushupsDone: true })
             setRitualProgress(current => markRitualStepDone(current, step))
             if (gatePreview) {
-              if (previewIndex >= MORNING_RITUAL_STEP_IDS.length - 1) {
+              if (previewIndex >= ritualSteps.length - 1) {
                 setGatePreview(false)
                 setPreviewIndex(0)
                 return
@@ -2461,6 +2503,19 @@ function QuickNoteWidget({
   const [note, setNote] = useState<QuickNoteState>(loadQuickNote)
 
   useEffect(() => {
+    const reload = () => setNote(loadQuickNote())
+    window.addEventListener(LIFE_OS_SYNC_EXTRAS_EVENT, reload)
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === QUICK_NOTE_KEY || event.key === null) reload()
+    }
+    window.addEventListener('storage', onStorage)
+    return () => {
+      window.removeEventListener(LIFE_OS_SYNC_EXTRAS_EVENT, reload)
+      window.removeEventListener('storage', onStorage)
+    }
+  }, [])
+
+  useEffect(() => {
     if (!highlighted) return
     const timer = window.setTimeout(() => onHighlightHandled?.(), 1800)
     return () => window.clearTimeout(timer)
@@ -2537,6 +2592,7 @@ function QuickNoteWidget({
 
 function TodayView({
   entry,
+  entries,
   date,
   today,
   score,
@@ -2563,6 +2619,7 @@ function TodayView({
   onContinueRitualTodos,
 }: {
   entry: DashboardEntry
+  entries: DashboardEntry[]
   date: string
   today: string
   score: number
@@ -2591,9 +2648,14 @@ function TodayView({
   const [capture, setCapture] = useState('')
   const [dragIdx,     setDragIdx]     = useState<number | null>(null)
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
+  const [habitDetail, setHabitDetail] = useState<{ key: HabitKey; label: string } | null>(null)
   const touchRef = useRef<{ sourceIdx: number } | null>(null)
-
   const energy = entry.energyLevel
+  const habitGoals = {
+    proteinGoal: settings.proteinGoal,
+    focusMinutes: settings.focusMinutes,
+    softMinutes: energy === 'low' ? 2 : undefined,
+  }
   const hour = date === today ? new Date().getHours() : 12
   const habitsDue = filterHabitsForDate(settings.activeHabits, date, settings.habitSchedules)
   const policy = getDayPolicy({
@@ -2613,7 +2675,9 @@ function TodayView({
       label: energy === 'low' ? `${h.label} · 2 Min` : h.label,
       icon: h.icon,
       minutes: energy === 'low' ? 2 : (h.minutes ?? 11),
-      done: Boolean(entry[h.id as keyof DashboardEntry]),
+      done: isHabitKey(h.id)
+        ? isHabitComplete(entry, h.id, defaultHabitKind(h.id, habitGoals))
+        : Boolean(entry[h.id as keyof DashboardEntry]),
     }))
 
   const routineItems = allRoutineItems.filter(item => policy.primaryHabitIds.includes(item.key))
@@ -2692,7 +2756,20 @@ function TodayView({
       onToggleAnchor(nextStep.index)
       return
     }
-    if (nextStep?.kind === 'habit') {
+    if (nextStep?.kind === 'habit' && isHabitKey(nextStep.key)) {
+      const config = defaultHabitKind(nextStep.key, habitGoals)
+      if (config.kind === 'amount') {
+        onUpdate(patchHabitLog(entry, nextStep.key, { value: config.target }, config))
+        return
+      }
+      if (config.kind === 'timer') {
+        onUpdate(patchHabitLog(entry, nextStep.key, { elapsed: config.target }, config))
+        return
+      }
+      if (config.kind === 'steps') {
+        onUpdate(patchHabitLog(entry, nextStep.key, { checked: config.steps.map(step => step.id) }, config))
+        return
+      }
       onUpdate({ [nextStep.key]: true } as Partial<DashboardEntry>)
     }
   }
@@ -2721,6 +2798,24 @@ function TodayView({
   return (
     <div className="view-stack">
       <DateStrip selected={date} today={today} onChange={onDateChange} />
+
+      {date === today && (
+        <div className={entry.dayShield ? 'day-shield is-on' : 'day-shield'}>
+          {entry.dayShield ? (
+            <p>Heute zählt nicht als Lücke. Streaks bleiben stehen.</p>
+          ) : (
+            <p>Schwerer Tag? Setze ihn bewusst aus — ohne heimliches Abhaken.</p>
+          )}
+          <button
+            type="button"
+            className={entry.dayShield ? 'choice-button is-active' : 'choice-button'}
+            aria-pressed={Boolean(entry.dayShield)}
+            onClick={() => onUpdate({ dayShield: !entry.dayShield })}
+          >
+            {entry.dayShield ? 'Aussetzen aufheben' : 'Heute aussetzen'}
+          </button>
+        </div>
+      )}
 
       <section className="hero-card">
         <div className="hero-card__content">
@@ -2818,7 +2913,7 @@ function TodayView({
 
       {ritualLock === 'todos' && energy && (
         <section className="card morning-todos-card">
-          <SectionTitle eyebrow="Morgen-Ritual" title="To-do Overview" />
+          <SectionTitle eyebrow="Morgen-Ritual" title="Was heute zählt" />
           <p className="policy-note">Das sind deine Anker. Danach kommt Workout.</p>
           {anchors.length === 0 ? (
             <EmptyState title="Noch keine Todos" text="Lege ein bis drei Anker fest, oder geh weiter zum Workout." />
@@ -3010,19 +3105,26 @@ function TodayView({
                     type="button"
                     className="routine-item__main"
                     onClick={() => {
-                      if (!item.done) {
-                        onOpenFocus(item.label, undefined, item.key as RoutineKey, item.minutes ?? policy.focusMinutes)
-                      } else {
-                        onUpdate({ [item.key]: false } as Partial<DashboardEntry>)
-                      }
+                      if (isHabitKey(item.key)) setHabitDetail({ key: item.key, label: item.label })
                     }}
-                    aria-pressed={item.done}
                   >
-                    {item.label}
+                    <span className="routine-item__copy">
+                      <span className="routine-item__title">{item.label}</span>
+                      <small>Streak {streakByKey[item.key] ?? 0}</small>
+                    </span>
                   </button>
-                  <span className="routine-item__state">
-                    {item.done ? <Check size={16} /> : <ChevronRight size={16} />}
-                  </span>
+                  {isHabitKey(item.key) && !entry.dayShield ? (
+                    <HabitKindControls
+                      habitKey={item.key}
+                      entry={entry}
+                      goals={habitGoals}
+                      onUpdate={onUpdate}
+                    />
+                  ) : (
+                    <span className="routine-item__state">
+                      {item.done ? <Check size={16} /> : <ChevronRight size={16} />}
+                    </span>
+                  )}
                 </div>
               )
             })}
@@ -3108,6 +3210,15 @@ function TodayView({
           onToast={message => showToast(message)}
         />
       </div>
+      )}
+      {habitDetail && (
+        <HabitDetailSheet
+          habitKey={habitDetail.key}
+          label={habitDetail.label}
+          entries={entries}
+          today={today}
+          onClose={() => setHabitDetail(null)}
+        />
       )}
     </div>
   )
@@ -3780,11 +3891,16 @@ function ProgressView({
   heightCm: number
   onSelectDate: (date: string) => void
 }) {
+  const [habitDetail, setHabitDetail] = useState<{ key: HabitKey; label: string } | null>(null)
+  const moodLine = moodHabitLine(entries, today, scoreGoals.activeHabits)
   const lastSeven = Array.from({ length: 7 }, (_, index) => addDays(today, index - 6)).map(date => {
     const entry = entries.find(item => item.date === date) ?? createDefaultEntry(date)
     return { date, score: clampNumber(calculateScore(entry, scoreGoals), 0, 100), entry }
   })
-  const average = Math.round(lastSeven.reduce((sum, item) => sum + item.score, 0) / lastSeven.length)
+  const scoredSeven = lastSeven.filter(item => !item.entry.dayShield)
+  const average = scoredSeven.length === 0
+    ? 0
+    : Math.round(scoredSeven.reduce((sum, item) => sum + item.score, 0) / scoredSeven.length)
   const best = Math.max(...lastSeven.map(item => item.score))
   const previousSeven = Array.from({ length: 7 }, (_, index) => addDays(today, index - 13)).map(date => {
     const entry = entries.find(item => item.date === date) ?? createDefaultEntry(date)
@@ -3815,7 +3931,9 @@ function ProgressView({
 
   const todayEntry = entries.find(item => item.date === today) ?? createDefaultEntry(today)
   const breakdown = getScoreBreakdown(todayEntry, scoreGoals)
-  const heatmap = buildYearHeatmap(entries, today, e => calculateScore(e, scoreGoals))
+  const heatmap = buildYearHeatmap(entries, today, e => (
+    e.dayShield ? 20 : calculateScore(e, scoreGoals)
+  ))
   const review = buildWeeklyReview(entries, today, scoreGoals)
   const weightSeries = buildWeightSeries(entries, today, 30)
   const weightInsights = buildWeightInsights(entries, today, heightCm)
@@ -3908,6 +4026,12 @@ function ProgressView({
       <section className="card insight-card">
         <SectionTitle eyebrow="Muster" title="Was die Woche dir sagt" />
         <div className="insight-list">
+          {moodLine && (
+            <div className="insight-row">
+              <strong>Stimmung × Habit</strong>
+              <p>{moodLine.text}</p>
+            </div>
+          )}
           {insights.map(insight => (
             <div className="insight-row" key={insight.id}>
               <strong>{insight.title}</strong>
@@ -3948,7 +4072,12 @@ function ProgressView({
           {strengthStats.map(item => {
             const Icon = item.icon
             return (
-              <div className="strength-row" key={item.key}>
+              <button
+                type="button"
+                className="strength-row strength-row--button"
+                key={item.key}
+                onClick={() => setHabitDetail({ key: item.key, label: item.label })}
+              >
                 <span className="soft-icon"><Icon size={16} /></span>
                 <div>
                   <strong>{item.label}</strong>
@@ -3960,7 +4089,7 @@ function ProgressView({
                 <div className="mini-progress" aria-hidden="true">
                   <span style={{ width: `${item.strength}%` }} />
                 </div>
-              </div>
+              </button>
             )
           })}
         </div>
@@ -4057,6 +4186,15 @@ function ProgressView({
           ))}
         </div>
       </section>
+      {habitDetail && (
+        <HabitDetailSheet
+          habitKey={habitDetail.key}
+          label={habitDetail.label}
+          entries={entries}
+          today={today}
+          onClose={() => setHabitDetail(null)}
+        />
+      )}
     </div>
   )
 }
@@ -5747,6 +5885,132 @@ function FocusModal({
   )
 }
 
+function RitualDurationFields({
+  id,
+  config,
+  onChange,
+}: {
+  id: MorningRitualStepId
+  config: MorningRitualConfig
+  onChange: (config: MorningRitualConfig) => void
+}) {
+  const setMinutes = (key: 'coldSeconds' | 'winnerSeconds' | 'prayerSeconds' | 'hotShowerSeconds', value: number, min: number, max: number) => {
+    onChange({ ...config, [key]: clampNumber(Math.round(value * 60), min, max) })
+  }
+
+  switch (id) {
+    case 'coldShower':
+      return (
+        <label className="ritual-duration">
+          <span>Minuten</span>
+          <input
+            type="number"
+            min={1}
+            max={10}
+            value={Math.round(config.coldSeconds / 60)}
+            onChange={event => setMinutes('coldSeconds', Number(event.target.value) || 3, 30, 600)}
+          />
+        </label>
+      )
+    case 'winnerPose':
+      return (
+        <label className="ritual-duration">
+          <span>Minuten</span>
+          <input
+            type="number"
+            min={1}
+            max={10}
+            value={Math.round(config.winnerSeconds / 60)}
+            onChange={event => setMinutes('winnerSeconds', Number(event.target.value) || 3, 30, 600)}
+          />
+        </label>
+      )
+    case 'prayer':
+      return (
+        <label className="ritual-duration">
+          <span>Minuten</span>
+          <input
+            type="number"
+            min={1}
+            max={20}
+            value={Math.round(config.prayerSeconds / 60)}
+            onChange={event => setMinutes('prayerSeconds', Number(event.target.value) || 7, 60, 1200)}
+          />
+        </label>
+      )
+    case 'workout':
+      return (
+        <div className="ritual-duration-row">
+          <label className="ritual-duration">
+            <span>Pushups</span>
+            <input
+              type="number"
+              min={5}
+              max={200}
+              value={config.pushupTarget}
+              onChange={event => onChange({
+                ...config,
+                pushupTarget: clampNumber(Number(event.target.value) || 50, 5, 200),
+              })}
+            />
+          </label>
+          <label className="ritual-duration">
+            <span>KO</span>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={config.koTarget}
+              onChange={event => onChange({
+                ...config,
+                koTarget: clampNumber(Number(event.target.value) || 10, 1, 100),
+              })}
+            />
+          </label>
+        </div>
+      )
+    case 'postShower':
+      return (
+        <div className="ritual-duration-row">
+          <label className="ritual-duration">
+            <span>Heiß Min</span>
+            <input
+              type="number"
+              min={1}
+              max={10}
+              value={Math.round(config.hotShowerSeconds / 60)}
+              onChange={event => setMinutes('hotShowerSeconds', Number(event.target.value) || 3, 30, 600)}
+            />
+          </label>
+          <label className="ritual-duration">
+            <span>Kalt Sek</span>
+            <input
+              type="number"
+              min={8}
+              max={45}
+              value={config.coldRinseSeconds}
+              onChange={event => onChange({
+                ...config,
+                coldRinseSeconds: clampNumber(Number(event.target.value) || 20, 8, 45),
+              })}
+            />
+          </label>
+        </div>
+      )
+    case 'medsShake':
+    case 'gratitude':
+    case 'energy':
+    case 'todos':
+    case 'selfcare':
+    case 'letsGo':
+      return null
+    default: {
+      const _exhaustive: never = id
+      return _exhaustive
+    }
+  }
+}
+
 function SettingsModal({
   settings,
   lastBackupAt,
@@ -5985,7 +6249,7 @@ function SettingsModal({
         <div className="settings-section">
           <h3>Morgen-Ritual</h3>
           <p className="settings-help">
-            App öffnet → Medikamente + Shake → Dankbarkeit vorlesen → Cold Shower → Winner Pose → Gebet → Heute (Energie, Todos) → Workout → Dusche → Selfcare → LETS GO.
+            Reihenfolge, Dauer und Auto-Weiter steuerst du unten. Pause sitzt auf jedem Timer.
           </p>
           <div className="settings-actions">
             <button
@@ -6015,9 +6279,85 @@ function SettingsModal({
                   })}
                 />
               </label>
-              <p className="settings-help">
-                Timer: Cold {Math.round(settings.morningRitual.coldSeconds / 60)} Min · Winner {Math.round(settings.morningRitual.winnerSeconds / 60)} Min · Gebet {Math.round(settings.morningRitual.prayerSeconds / 60)} Min · Kaltspülung {settings.morningRitual.coldRinseSeconds}s
-              </p>
+              <button
+                type="button"
+                className={settings.morningRitual.autoAdvance ? 'choice-button is-active' : 'choice-button'}
+                aria-pressed={settings.morningRitual.autoAdvance}
+                onClick={() => onChange({
+                  ...settings,
+                  morningRitual: { ...settings.morningRitual, autoAdvance: !settings.morningRitual.autoAdvance },
+                })}
+              >
+                {settings.morningRitual.autoAdvance ? 'Auto-Weiter an' : 'Auto-Weiter aus'}
+              </button>
+              <p className="settings-help">Reihenfolge und Dauer. Ausblendete Schritte werden übersprungen.</p>
+              <ul className="ritual-order-list">
+                {settings.morningRitual.stepOrder.map((id, index) => {
+                  const hidden = settings.morningRitual.hiddenSteps.includes(id)
+                  const meta = morningRitualMeta(id, settings.morningRitual)
+                  return (
+                    <li key={id} className={hidden ? 'ritual-order-item is-hidden' : 'ritual-order-item'}>
+                      <div className="ritual-order-item__move">
+                        <button
+                          type="button"
+                          className="icon-button"
+                          aria-label={`${meta.label} nach oben`}
+                          disabled={index === 0}
+                          onClick={() => onChange({
+                            ...settings,
+                            morningRitual: {
+                              ...settings.morningRitual,
+                              stepOrder: moveRitualStep(settings.morningRitual.stepOrder, index, -1),
+                            },
+                          })}
+                        >
+                          <ChevronUp size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-button"
+                          aria-label={`${meta.label} nach unten`}
+                          disabled={index === settings.morningRitual.stepOrder.length - 1}
+                          onClick={() => onChange({
+                            ...settings,
+                            morningRitual: {
+                              ...settings.morningRitual,
+                              stepOrder: moveRitualStep(settings.morningRitual.stepOrder, index, 1),
+                            },
+                          })}
+                        >
+                          <ChevronDown size={15} />
+                        </button>
+                      </div>
+                      <div>
+                        <strong>{meta.label}</strong>
+                        <small>{meta.hint}</small>
+                        <RitualDurationFields
+                          id={id}
+                          config={settings.morningRitual}
+                          onChange={morningRitual => onChange({ ...settings, morningRitual })}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label={hidden ? `${meta.label} einblenden` : `${meta.label} ausblenden`}
+                        onClick={() => {
+                          const hiddenSteps = hidden
+                            ? settings.morningRitual.hiddenSteps.filter(step => step !== id)
+                            : [...settings.morningRitual.hiddenSteps, id]
+                          onChange({
+                            ...settings,
+                            morningRitual: { ...settings.morningRitual, hiddenSteps },
+                          })
+                        }}
+                      >
+                        {hidden ? <EyeOff size={15} /> : <Eye size={15} />}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
               <p className="settings-help">Selfcare — tippe zum Entfernen, unten hinzufügen:</p>
               <div className="habit-settings-list">
                 {settings.morningRitual.selfcareItems.map(item => (
@@ -6085,6 +6425,7 @@ function SettingsModal({
           <h3>iPhone · Kurzbefehle</h3>
           <p className="settings-help">
             In Kurzbefehle → „URL öffnen“. Life OS als PWA auf dem Home Screen speichern (Teilen → Zum Home-Bildschirm), dann bleiben Daten stabiler.
+            Ray-Ban / Meta AI ohne Sync: URL mit <code>?action=note&amp;text=…</code> öffnen. Mit Sync: Webhook unten.
           </p>
           <div className="shortcut-recipe-list">
             {SHORTCUT_RECIPES.map(recipe => {
@@ -6117,6 +6458,7 @@ function SettingsModal({
             <code>?action=log&amp;protein=180&amp;water=2.5</code> oder
             <code>?action=log&amp;text=180g%20protein</code>. Aufgabe direkt:
             <code>?action=add-task&amp;title=Creatine%20holen</code>.
+            Notiz (Journal + Kurznotiz): <code>?action=note&amp;text=Idee</code>.
           </p>
         </div>
 
@@ -6263,7 +6605,7 @@ function SettingsModal({
           {deviceSync ? (
             <>
               <p className="settings-help">
-                Kurzbefehle, Watch oder andere Apps können Werte schreiben, ohne die App zu öffnen.
+                Kurzbefehle, Watch, Ray-Ban Meta oder andere Apps können schreiben, ohne die App zu öffnen.
                 Token nicht teilen — wer ihn hat, kann Tage überschreiben.
               </p>
               <div className="shortcut-recipe-list">
@@ -6289,7 +6631,7 @@ function SettingsModal({
                 <div className="shortcut-recipe">
                   <div>
                     <strong>Beispiel JSON</strong>
-                    <span>type: log, quick oder task</span>
+                    <span>type: log, quick, task oder note</span>
                     <code>{`{"roomId":"${deviceSync.roomId}","deviceToken":"${deviceSync.deviceToken}","type":"log","proteinGrams":180}`}</code>
                   </div>
                   <button
@@ -6310,11 +6652,45 @@ function SettingsModal({
                     {copiedShortcut === 'webhook-json' ? 'Kopiert' : 'JSON kopieren'}
                   </button>
                 </div>
+                <div className="shortcut-recipe">
+                  <div>
+                    <strong>Brille-Notiz JSON</strong>
+                    <span>Kurzbefehl: Text aus WhatsApp/Notizen in text setzen</span>
+                    <code>{`{"roomId":"${deviceSync.roomId}","deviceToken":"${deviceSync.deviceToken}","type":"note","text":"DEIN TEXT"}`}</code>
+                  </div>
+                  <button
+                    type="button"
+                    className="small-button"
+                    onClick={async () => {
+                      const ok = await copyText(JSON.stringify({
+                        roomId: deviceSync.roomId,
+                        deviceToken: deviceSync.deviceToken,
+                        type: 'note',
+                        text: 'DEIN TEXT',
+                      }, null, 2))
+                      if (!ok) return
+                      setCopiedShortcut('webhook-note')
+                      window.setTimeout(() => setCopiedShortcut(current => (current === 'webhook-note' ? null : current)), 1600)
+                    }}
+                  >
+                    {copiedShortcut === 'webhook-note' ? 'Kopiert' : 'JSON kopieren'}
+                  </button>
+                </div>
+              </div>
+              <div className="settings-help glasses-hook-help">
+                <p>Ray-Ban Meta → Life OS (ohne Native-App):</p>
+                <ol>
+                  <li>Brille: „Hey Meta, schick mir per WhatsApp: …“ oder in die iPhone-Notizen.</li>
+                  <li>Kurzbefehle → Automation: neue WhatsApp-Nachricht von dir selbst, oder Teilen-Sheet aus Notizen.</li>
+                  <li>Aktion „URL-Inhalt abrufen“: POST auf die Webhook-URL, JSON-Typ <code>note</code>, Text = Diktat.</li>
+                  <li>Life OS holt die Notiz beim nächsten Sync — Journal + Kurznotiz.</li>
+                </ol>
               </div>
               <p className="settings-help">
                 Quick-Text: <code>{`{"type":"quick","text":"180g protein"}`}</code>
                 · Aufgabe: <code>{`{"type":"task","title":"Creatine holen"}`}</code>
                 · Energie: <code>{`{"type":"log","energy":"high"}`}</code>
+                · Notiz: <code>{`{"type":"note","text":"Idee vom Gehen"}`}</code>
               </p>
             </>
           ) : (

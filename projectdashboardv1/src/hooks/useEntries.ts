@@ -145,7 +145,7 @@ export function useEntries(): UseEntriesReturn {
       return false
     }
 
-    awardDailyXP(scored.dailyScore, scored.date, todayKeyLocal())
+    awardDailyXP(scored.dailyScore, scored.date, todayKeyLocal(), { shield: Boolean(scored.dayShield) })
 
     try {
       pruneDayBackups(14)

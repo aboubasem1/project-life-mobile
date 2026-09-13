@@ -1,4 +1,4 @@
-import { applyInboundHook, type InboundHook } from '../server/hook-core'
+import { applyInboundHook, resolveInboundHookType, type InboundHook } from '../server/hook-core'
 import { readSyncJson, syncError, syncJson } from '../server/sync-core'
 
 export const config = {
@@ -19,7 +19,7 @@ async function handle(request: Request): Promise<Response> {
     const result = await applyInboundHook({
       roomId: String(body.roomId ?? ''),
       deviceToken: bearerToken(request) || String(body.deviceToken ?? ''),
-      type: (body.type ?? 'log') as InboundHook['type'],
+      type: resolveInboundHookType(body),
       date: typeof body.date === 'string' ? body.date : undefined,
       text: typeof body.text === 'string' ? body.text : undefined,
       title: typeof body.title === 'string' ? body.title : undefined,

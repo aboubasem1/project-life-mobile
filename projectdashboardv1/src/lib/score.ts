@@ -166,12 +166,33 @@ export function getScoreColor(score: number): string {
   return '#ff3b30'
 }
 
-export function calculateStreakForHabit(entries: DashboardEntry[], key: HabitKey): number {
-  const sorted = [...entries].sort((a, b) => b.date.localeCompare(a.date))
+export function calculateStreakForHabit(entries: DashboardEntry[], key: HabitKey, today?: string): number {
+  if (entries.length === 0) return 0
+  const byDate = new Map(entries.map(entry => [entry.date, entry]))
+  const start = today ?? [...entries].sort((a, b) => b.date.localeCompare(a.date))[0]?.date
+  if (!start) return 0
+
+  const shift = (date: string, days: number) => {
+    const cursor = new Date(`${date}T12:00:00`)
+    cursor.setDate(cursor.getDate() + days)
+    const year = cursor.getFullYear()
+    const month = String(cursor.getMonth() + 1).padStart(2, '0')
+    const day = String(cursor.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
   let streak = 0
-  for (const entry of sorted) {
-    if (entry[key]) streak++
-    else break
+  let walk = start
+  while (true) {
+    const entry = byDate.get(walk)
+    if (!entry) break
+    if (entry.dayShield) {
+      walk = shift(walk, -1)
+      continue
+    }
+    if (!entry[key]) break
+    streak += 1
+    walk = shift(walk, -1)
   }
   return streak
 }

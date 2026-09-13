@@ -9,6 +9,7 @@ import {
   saveAllEntries,
 } from './storage'
 import { loadXP, saveXP, type XPStore } from './xp-store'
+import { mergeDayJournal, mergeQuickNoteStates, parseQuickNote } from './inboundNote'
 
 const SYNC_CRED_KEY = 'life-os-v1-device-sync'
 const QUICK_NOTE_KEY = 'life-os-quick-note'
@@ -198,9 +199,13 @@ export function mergeEntriesByUpdatedAt(
   for (const entry of remote) {
     if (!entry.date) continue
     const current = map.get(entry.date)
-    if (!current || entryUpdatedAt(entry) >= entryUpdatedAt(current)) {
+    if (!current) {
       map.set(entry.date, entry)
+      continue
     }
+    const newer = entryUpdatedAt(entry) >= entryUpdatedAt(current) ? entry : current
+    const older = newer === entry ? current : entry
+    map.set(entry.date, mergeDayJournal(newer, older))
   }
   return [...map.values()].sort((a, b) => a.date.localeCompare(b.date))
 }
@@ -242,7 +247,14 @@ function applyRemoteExtras(snapshot: DeviceSyncSnapshot): void {
     saveXP({ ...loadXP(), ...snapshot.xp })
   }
   if (snapshot.quickNote != null) {
-    safeSet(QUICK_NOTE_KEY, JSON.stringify(snapshot.quickNote))
+    let localNote: unknown = null
+    try {
+      localNote = JSON.parse(safeGet(QUICK_NOTE_KEY) ?? 'null')
+    } catch {
+      localNote = null
+    }
+    const merged = mergeQuickNoteStates(parseQuickNote(localNote), parseQuickNote(snapshot.quickNote))
+    if (merged) safeSet(QUICK_NOTE_KEY, JSON.stringify(merged))
   }
   notifySyncExtras()
 }

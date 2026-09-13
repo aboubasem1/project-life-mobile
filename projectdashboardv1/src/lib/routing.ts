@@ -204,7 +204,7 @@ export const SHORTCUT_RECIPES: Array<{ label: string; kind: AppActionKind; hint:
   { label: 'Heute öffnen', kind: 'today', hint: 'Kurzbefehl → URL öffnen' },
   { label: 'Fokus starten', kind: 'focus', hint: 'Optional: &min=25' },
   { label: 'Check-in', kind: 'checkin', hint: 'Abend-Automation' },
-  { label: 'Kurznotiz', kind: 'note', hint: 'Springt zum Merkzettel' },
+  { label: 'Kurznotiz', kind: 'note', hint: 'Kurzbefehl / Brille: &text= durch Diktat ersetzen', text: 'DEIN TEXT' },
   { label: 'Aufgabe anlegen', kind: 'add-task', hint: '&title=Creatine holen' },
   { label: 'Protein loggen', kind: 'log', hint: 'Schreibt ins Heute-Protokoll', text: '180g protein' },
 ]

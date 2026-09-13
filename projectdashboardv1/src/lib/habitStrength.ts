@@ -28,7 +28,7 @@ export function calculateHabitStrength(
   for (let offset = LOOKBACK - 1; offset >= 0; offset -= 1) {
     const date = offsetDate(today, -offset)
     const entry = byDate.get(date)
-    if (!entry) continue
+    if (!entry || entry.dayShield) continue
     const done = Boolean(entry[key as keyof DashboardEntry])
     recentFlags.push(done)
     if (done) {

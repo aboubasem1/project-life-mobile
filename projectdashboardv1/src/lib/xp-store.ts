@@ -68,12 +68,27 @@ function todayKeyLocal(): string {
  * days never rewinds the live streak. Historical days can still top-up
  * per-day XP if the score improved (never subtract).
  */
-export function awardDailyXP(score: number, date: string, today = todayKeyLocal()): XPStore {
+export function awardDailyXP(
+  score: number,
+  date: string,
+  today = todayKeyLocal(),
+  options?: { shield?: boolean },
+): XPStore {
   const store = loadXP()
   const earned = scoreToXP(score)
   const perDayKey = `lifeos-xp-day-${date}`
   const prevAwarded = Number(safeGetItem(perDayKey) ?? '0')
   const diff = earned - prevAwarded
+
+  if (date === today && options?.shield) {
+    if (diff > 0) {
+      safeSetItem(perDayKey, String(earned))
+      return applyXP({ ...store, lastScoreDate: date }, diff, date)
+    }
+    const held: XPStore = { ...store, lastScoreDate: date }
+    saveXP(held)
+    return held
+  }
 
   // Editing a past / future day: only top up XP, never touch streak clock
   if (date !== today) {
@@ -143,7 +158,7 @@ export function scoreToXP(score: number): number {
  * Clears prior per-day XP keys, then rewrites from the imported set.
  */
 export function recomputeXPFromEntries(
-  entries: Array<{ date: string; dailyScore: number }>,
+  entries: Array<{ date: string; dailyScore: number; dayShield?: boolean }>,
   today = todayKeyLocal(),
 ): XPStore {
   const sorted = [...entries]
@@ -169,10 +184,15 @@ export function recomputeXPFromEntries(
 
   let streakDays = 0
   let cursor = today
-  const byDate = new Map(sorted.map(entry => [entry.date, entry.dailyScore || 0]))
+  const byDate = new Map(sorted.map(entry => [entry.date, entry]))
   while (true) {
-    const score = byDate.get(cursor)
-    if (score === undefined || score < 50) break
+    const entry = byDate.get(cursor)
+    if (!entry) break
+    if (entry.dayShield) {
+      cursor = offsetDate(cursor, -1)
+      continue
+    }
+    if ((entry.dailyScore || 0) < 50) break
     streakDays += 1
     cursor = offsetDate(cursor, -1)
   }

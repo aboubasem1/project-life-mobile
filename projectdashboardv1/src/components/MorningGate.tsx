@@ -29,22 +29,24 @@ import { releaseScreenWakeLock, requestScreenWakeLock } from '../lib/wakeLock'
 function RitualTimer({
   seconds,
   label,
+  autoStart = false,
   onComplete,
 }: {
   seconds: number
   label: string
+  autoStart?: boolean
   onComplete: () => void
 }) {
   const [left, setLeft] = useState(seconds)
-  const [running, setRunning] = useState(false)
+  const [running, setRunning] = useState(autoStart)
   const doneRef = useRef(false)
   const wakeRef = useRef<Awaited<ReturnType<typeof requestScreenWakeLock>>>(null)
 
   useEffect(() => {
     setLeft(seconds)
-    setRunning(false)
+    setRunning(autoStart)
     doneRef.current = false
-  }, [seconds])
+  }, [seconds, autoStart])
 
   useEffect(() => {
     let cancelled = false
@@ -189,11 +191,13 @@ export function MorningGate({
   onSkipToday: () => void
   onOpenSettings: () => void
 }) {
-  const meta = morningRitualMeta(step)
+  const meta = morningRitualMeta(step, config)
   const [readDone, setReadDone] = useState(false)
   const [reading, setReading] = useState(false)
   const [showerPhase, setShowerPhase] = useState<'hot' | 'cold'>('hot')
   const [workoutPhase, setWorkoutPhase] = useState<'pushups' | 'ko'>('pushups')
+  const [autoStartTimer, setAutoStartTimer] = useState(false)
+  const pendingAutoRef = useRef(false)
   const stopSpeechRef = useRef<(() => void) | null>(null)
   const allMedsTaken = medications.length === 0 || medications.every(item => item.taken)
   const medsReady = allMedsTaken && proteinShake
@@ -206,6 +210,8 @@ export function MorningGate({
     setReading(false)
     setShowerPhase('hot')
     setWorkoutPhase('pushups')
+    setAutoStartTimer(pendingAutoRef.current)
+    pendingAutoRef.current = false
     stopSpeechRef.current?.()
     stopSpeechRef.current = null
   }, [step])
@@ -222,9 +228,17 @@ export function MorningGate({
     return () => window.clearInterval(repeat)
   }, [step])
 
+  const coldMin = Math.max(1, Math.round(config.coldSeconds / 60))
+  const winnerMin = Math.max(1, Math.round(config.winnerSeconds / 60))
+  const prayerMin = Math.max(1, Math.round(config.prayerSeconds / 60))
+  const advance = () => {
+    pendingAutoRef.current = config.autoAdvance
+  }
+
   const confirmMeds = () => {
     if (!allMedsTaken) onConfirmAllMeds()
     if (!proteinShake) onToggleProtein()
+    advance()
     onCompleteStep('medsShake')
   }
 
@@ -305,6 +319,7 @@ export function MorningGate({
                   return
                 }
                 onCompleteGratitude()
+                advance()
                 onCompleteStep('gratitude')
               }}
             >
@@ -319,11 +334,15 @@ export function MorningGate({
             <div className="morning-gate__icon" aria-hidden="true"><Snowflake size={26} /></div>
             <span className="eyebrow">{meta.hint}</span>
             <h2 id="morning-gate-title">Cold Shower</h2>
-            <p>Drei Minuten kalt. Atmen. Bleib stehen.</p>
+            <p>{coldMin} {coldMin === 1 ? 'Minute' : 'Minuten'} kalt. Atmen. Bleib stehen.</p>
             <RitualTimer
               seconds={config.coldSeconds}
               label="Kalt bleiben"
-              onComplete={() => onCompleteTimer('coldShower')}
+              autoStart={autoStartTimer}
+              onComplete={() => {
+                advance()
+                onCompleteTimer('coldShower')
+              }}
             />
           </>
         )}
@@ -333,11 +352,15 @@ export function MorningGate({
             <div className="morning-gate__icon" aria-hidden="true"><Crown size={26} /></div>
             <span className="eyebrow">{meta.hint}</span>
             <h2 id="morning-gate-title">Winner Mode</h2>
-            <p>Drei Minuten Pose. Brust offen, Blick fest.</p>
+            <p>{winnerMin} {winnerMin === 1 ? 'Minute' : 'Minuten'} Pose. Brust offen, Blick fest.</p>
             <RitualTimer
               seconds={config.winnerSeconds}
               label="Pose halten"
-              onComplete={() => onCompleteTimer('winnerPose')}
+              autoStart={autoStartTimer}
+              onComplete={() => {
+                advance()
+                onCompleteTimer('winnerPose')
+              }}
             />
           </>
         )}
@@ -347,11 +370,15 @@ export function MorningGate({
             <div className="morning-gate__icon" aria-hidden="true"><Heart size={26} /></div>
             <span className="eyebrow">{meta.hint}</span>
             <h2 id="morning-gate-title">Gebet</h2>
-            <p>Sieben Minuten. Danach öffnet sich Heute.</p>
+            <p>{prayerMin} {prayerMin === 1 ? 'Minute' : 'Minuten'}. Danach öffnet sich Heute.</p>
             <RitualTimer
               seconds={config.prayerSeconds}
               label="In Ruhe bleiben"
-              onComplete={() => onCompleteTimer('prayer')}
+              autoStart={autoStartTimer}
+              onComplete={() => {
+                advance()
+                onCompleteTimer('prayer')
+              }}
             />
           </>
         )}
@@ -402,7 +429,10 @@ export function MorningGate({
                 ))}
               </ul>
             )}
-            <button type="button" className="primary-button morning-gate__cta" onClick={() => onCompleteStep('todos')}>
+            <button type="button" className="primary-button morning-gate__cta" onClick={() => {
+              advance()
+              onCompleteStep('todos')
+            }}>
               <Check size={17} />
               Gesehen · Workout
             </button>
@@ -444,7 +474,6 @@ export function MorningGate({
               <button
                 type="button"
                 className="primary-button"
-                disabled={workoutPhase === 'pushups' ? pushups < config.pushupTarget : ko < config.koTarget}
                 onClick={() => {
                   if (workoutPhase === 'pushups') {
                     if (pushups < config.pushupTarget) onSetPushups(config.pushupTarget)
@@ -452,10 +481,13 @@ export function MorningGate({
                     return
                   }
                   if (ko < config.koTarget) onSetKo(config.koTarget)
+                  advance()
                   onCompleteStep('workout')
                 }}
               >
-                {workoutPhase === 'pushups' ? 'Weiter zu KO' : 'Workout fertig'}
+                {workoutPhase === 'pushups'
+                  ? (pushups < config.pushupTarget ? 'Rest als gemacht' : 'Weiter zu KO')
+                  : (ko < config.koTarget ? 'Rest als gemacht' : 'Workout fertig')}
               </button>
             </div>
           </>
@@ -477,11 +509,13 @@ export function MorningGate({
               key={showerPhase}
               seconds={showerPhase === 'hot' ? config.hotShowerSeconds : config.coldRinseSeconds}
               label={showerPhase === 'hot' ? 'Heiß' : 'Kurz kalt'}
+              autoStart={autoStartTimer || (showerPhase === 'cold' && config.autoAdvance)}
               onComplete={() => {
                 if (showerPhase === 'hot') {
                   setShowerPhase('cold')
                   return
                 }
+                advance()
                 onCompleteStep('postShower')
               }}
             />
@@ -508,11 +542,13 @@ export function MorningGate({
             <button
               type="button"
               className="primary-button morning-gate__cta"
-              disabled={!selfcareReady}
-              onClick={() => onCompleteStep('selfcare')}
+              onClick={() => {
+                advance()
+                onCompleteStep('selfcare')
+              }}
             >
               <Check size={17} />
-              {selfcareReady ? 'LETS GO' : 'Alles abhaken'}
+              {selfcareReady ? 'Weiter' : 'Alles bestätigt'}
             </button>
           </>
         )}
@@ -534,11 +570,9 @@ export function MorningGate({
         )}
       </section>
 
-      {(step !== 'gratitude' || readDone) && (
-        <button type="button" className="text-button morning-gate__skip" onClick={onSkipToday}>
-          Ritual heute überspringen
-        </button>
-      )}
+      <button type="button" className="text-button morning-gate__skip" onClick={onSkipToday}>
+        Ritual heute überspringen
+      </button>
     </div>
   )
 }

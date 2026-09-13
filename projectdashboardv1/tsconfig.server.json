@@ -18,6 +18,7 @@
     "../server/sync-router.ts",
     "../api/health.ts",
     "../api/hooks.ts",
-    "../api/sync/**/*.ts"
+    "../api/sync/**/*.ts",
+    "src/lib/inboundNote.ts"
   ]
 }

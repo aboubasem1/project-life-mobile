@@ -1,4 +1,5 @@
-import { applyInboundHook, type InboundHook } from './hook-core'
+import { applyInboundHook, resolveInboundHookType, type InboundHook } from './hook-core'
+import { probeSyncStorage } from './sync-store'
 import {
   createSyncRoom,
   joinSyncRoom,
@@ -9,7 +10,7 @@ import {
   syncError,
   syncJson,
 } from './sync-core'
-import { syncStorageMode, type SyncSnapshot } from './sync-store'
+import { type SyncSnapshot } from './sync-store'
 
 function bearerToken(request: Request): string {
   const header = request.headers.get('authorization') ?? ''
@@ -25,12 +26,11 @@ export async function handleSyncRequest(request: Request): Promise<Response> {
     const pathname = url.pathname.replace(/\/$/, '')
 
     if (pathname.endsWith('/api/health') && (request.method === 'GET' || request.method === 'HEAD')) {
+      const probe = await probeSyncStorage()
       return syncJson({
-        ok: true,
         service: 'life-os',
-        storage: syncStorageMode(),
-        time: new Date().toISOString(),
-      })
+        ...probe,
+      }, probe.ok ? 200 : 503)
     }
 
     if (pathname.endsWith('/api/hooks') && request.method === 'POST') {
@@ -38,7 +38,7 @@ export async function handleSyncRequest(request: Request): Promise<Response> {
       const result = await applyInboundHook({
         roomId: String(body.roomId ?? ''),
         deviceToken: bearerToken(request) || String(body.deviceToken ?? ''),
-        type: (body.type ?? 'log') as InboundHook['type'],
+        type: resolveInboundHookType(body),
         date: typeof body.date === 'string' ? body.date : undefined,
         text: typeof body.text === 'string' ? body.text : undefined,
         title: typeof body.title === 'string' ? body.title : undefined,

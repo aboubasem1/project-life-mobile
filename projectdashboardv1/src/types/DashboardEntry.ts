@@ -66,6 +66,11 @@ export interface DashboardEntry {
   // Sleep detail
   dreamed?:       boolean
   dreamQuality?:  'gut' | 'schlecht'
+
+  /** Conscious rest day — not a miss, not a win. */
+  dayShield?: boolean
+  /** Progress toward amount / timer / step habits. */
+  habitLogs?: Record<string, { value?: number; elapsed?: number; checked?: string[] }>
 }
 
 export const createDefaultEntry = (date: string): DashboardEntry => ({

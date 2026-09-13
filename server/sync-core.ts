@@ -7,6 +7,7 @@ import {
   type SyncRoom,
   type SyncSnapshot,
 } from './sync-store'
+import { mergeDayJournal, mergeQuickNoteStates, parseQuickNote } from '../projectdashboardv1/src/lib/inboundNote'
 
 const PAIR_TTL_MS = 30 * 60 * 1000
 const MAX_DEVICES = 8
@@ -176,14 +177,34 @@ export async function pushSyncSnapshot(input: {
   const currentRevision = room.snapshot?.revision ?? 0
   const nextRevision = Math.max(currentRevision + 1, Number(incoming.revision) || currentRevision + 1)
   const updatedAt = new Date().toISOString()
+  const priorEntries = Array.isArray(room.snapshot?.entries) ? room.snapshot.entries : []
+  const mergedByDate = new Map<string, { date?: string; updatedAt?: string; journalText?: unknown; journalDone?: unknown }>()
+  for (const item of [...priorEntries, ...incoming.entries]) {
+    if (!item || typeof item !== 'object') continue
+    const entry = item as { date?: string; updatedAt?: string; journalText?: unknown; journalDone?: unknown }
+    if (typeof entry.date !== 'string') continue
+    const existing = mergedByDate.get(entry.date)
+    if (!existing) {
+      mergedByDate.set(entry.date, entry)
+      continue
+    }
+    const incomingAt = Date.parse(String(entry.updatedAt ?? '')) || 0
+    const existingAt = Date.parse(String(existing.updatedAt ?? '')) || 0
+    const newer = incomingAt >= existingAt ? entry : existing
+    const older = newer === entry ? existing : entry
+    mergedByDate.set(entry.date, mergeDayJournal(newer, older))
+  }
   room.snapshot = {
     revision: nextRevision,
     updatedAt,
-    entries: incoming.entries,
-    settings: incoming.settings,
-    dashboardPlus: incoming.dashboardPlus,
-    xp: incoming.xp,
-    quickNote: incoming.quickNote,
+    entries: [...mergedByDate.values()],
+    settings: incoming.settings ?? room.snapshot?.settings,
+    dashboardPlus: incoming.dashboardPlus ?? room.snapshot?.dashboardPlus,
+    xp: incoming.xp ?? room.snapshot?.xp,
+    quickNote: mergeQuickNoteStates(
+      parseQuickNote(room.snapshot?.quickNote),
+      parseQuickNote(incoming.quickNote),
+    ) ?? incoming.quickNote ?? room.snapshot?.quickNote,
   }
   room.updatedAt = updatedAt
   await saveRoom(room)

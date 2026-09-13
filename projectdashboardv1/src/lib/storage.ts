@@ -268,7 +268,24 @@ function migrateLegacy(raw: Record<string, unknown>): DashboardEntry {
     dreamQuality,
     bedTime: typeof raw.bedTime === 'string' ? raw.bedTime : undefined,
     wakeTime: typeof raw.wakeTime === 'string' ? raw.wakeTime : undefined,
+    dayShield: raw.dayShield === true,
+    habitLogs: normalizeMigratedLogs(raw.habitLogs),
   }
+}
+
+function normalizeMigratedLogs(raw: unknown): DashboardEntry['habitLogs'] {
+  if (!raw || typeof raw !== 'object') return undefined
+  const logs: NonNullable<DashboardEntry['habitLogs']> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object') continue
+    const record = value as { value?: unknown; elapsed?: unknown; checked?: unknown }
+    logs[key] = {
+      value: typeof record.value === 'number' && Number.isFinite(record.value) ? record.value : undefined,
+      elapsed: typeof record.elapsed === 'number' && Number.isFinite(record.elapsed) ? record.elapsed : undefined,
+      checked: Array.isArray(record.checked) ? record.checked.map(String) : undefined,
+    }
+  }
+  return Object.keys(logs).length > 0 ? logs : undefined
 }
 
 function safeGetItem(key: string): string | null {

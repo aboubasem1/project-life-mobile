@@ -34,6 +34,9 @@ export type MorningRitualConfig = {
   hotShowerSeconds: number
   coldRinseSeconds: number
   selfcareItems: MorningSelfcareItem[]
+  stepOrder: MorningRitualStepId[]
+  hiddenSteps: MorningRitualStepId[]
+  autoAdvance: boolean
 }
 
 export type MorningRitualProgress = {
@@ -79,6 +82,9 @@ export const DEFAULT_MORNING_RITUAL: MorningRitualConfig = {
   hotShowerSeconds: 180,
   coldRinseSeconds: 20,
   selfcareItems: DEFAULT_SELFCARE_ITEMS,
+  stepOrder: [...MORNING_RITUAL_STEP_IDS],
+  hiddenSteps: [],
+  autoAdvance: true,
 }
 
 const SKIP_KEY = 'life-os-morning-gate-skip'
@@ -127,24 +133,31 @@ export function morningRitualPhase(id: MorningRitualStepId): MorningRitualPhase 
   }
 }
 
-export function morningRitualMeta(id: MorningRitualStepId): { label: string; hint: string } {
+export function morningRitualMeta(
+  id: MorningRitualStepId,
+  config?: MorningRitualConfig,
+): { label: string; hint: string } {
+  const minutes = (seconds: number) => `${Math.max(1, Math.round(seconds / 60))} Minuten`
   switch (id) {
     case 'medsShake':
       return { label: 'Medikamente + Shake', hint: 'Einnahme und Proteinshake' }
     case 'gratitude':
       return { label: 'Dankbarkeit', hint: 'Text hören, dann weiter' }
     case 'coldShower':
-      return { label: 'Cold Shower', hint: '3 Minuten kalt' }
+      return { label: 'Cold Shower', hint: `${minutes(config?.coldSeconds ?? 180)} kalt` }
     case 'winnerPose':
-      return { label: 'Winner Mode', hint: '3 Minuten Pose' }
+      return { label: 'Winner Mode', hint: `${minutes(config?.winnerSeconds ?? 180)} Pose` }
     case 'prayer':
-      return { label: 'Gebet', hint: '7 Minuten' }
+      return { label: 'Gebet', hint: minutes(config?.prayerSeconds ?? 420) }
     case 'energy':
       return { label: 'Energie', hint: 'Kurzer Check-in' }
     case 'todos':
       return { label: 'Todos', hint: 'Was heute zählt' }
     case 'workout':
-      return { label: 'Workout', hint: '50 Pushups und KO' }
+      return {
+        label: 'Workout',
+        hint: `${config?.pushupTarget ?? 50} Pushups und KO`,
+      }
     case 'postShower':
       return { label: 'Dusche', hint: 'Heiß, dann kurz kalt' }
     case 'selfcare':
@@ -184,6 +197,57 @@ export function normalizeSelfcareItems(raw: unknown): MorningSelfcareItem[] {
   return items.length > 0 ? items : DEFAULT_SELFCARE_ITEMS.map(item => ({ ...item }))
 }
 
+export function normalizeStepOrder(raw: unknown): MorningRitualStepId[] {
+  const stored = Array.isArray(raw) ? raw.filter(isMorningRitualStepId) : []
+  const unique = [...new Set(stored)]
+  return [...unique, ...MORNING_RITUAL_STEP_IDS.filter(id => !unique.includes(id))]
+}
+
+export function normalizeHiddenSteps(raw: unknown): MorningRitualStepId[] {
+  if (!Array.isArray(raw)) return []
+  const hidden = [...new Set(raw.filter(isMorningRitualStepId))]
+  return hidden.length >= MORNING_RITUAL_STEP_IDS.length ? [] : hidden
+}
+
+export function ritualSequence(config: MorningRitualConfig): MorningRitualStepId[] {
+  const hidden = new Set(config.hiddenSteps)
+  return normalizeStepOrder(config.stepOrder).filter(id => !hidden.has(id))
+}
+
+export function moveRitualStep(order: MorningRitualStepId[], index: number, delta: number): MorningRitualStepId[] {
+  const next = normalizeStepOrder(order)
+  const target = index + delta
+  if (target < 0 || target >= next.length) return next
+  const [item] = next.splice(index, 1)
+  next.splice(target, 0, item)
+  return next
+}
+
+export function ritualSecondsFor(id: MorningRitualStepId, config: MorningRitualConfig): number | null {
+  switch (id) {
+    case 'coldShower':
+      return config.coldSeconds
+    case 'winnerPose':
+      return config.winnerSeconds
+    case 'prayer':
+      return config.prayerSeconds
+    case 'postShower':
+      return config.hotShowerSeconds + config.coldRinseSeconds
+    case 'medsShake':
+    case 'gratitude':
+    case 'energy':
+    case 'todos':
+    case 'workout':
+    case 'selfcare':
+    case 'letsGo':
+      return null
+    default: {
+      const _exhaustive: never = id
+      return _exhaustive
+    }
+  }
+}
+
 export function normalizeMorningRitualConfig(raw: Partial<MorningRitualConfig> | undefined): MorningRitualConfig {
   const stored = raw ?? {}
   return {
@@ -198,6 +262,9 @@ export function normalizeMorningRitualConfig(raw: Partial<MorningRitualConfig> |
     hotShowerSeconds: clampRitualSeconds(stored.hotShowerSeconds, 180, 30, 600),
     coldRinseSeconds: clampRitualSeconds(stored.coldRinseSeconds, 20, 8, 45),
     selfcareItems: normalizeSelfcareItems(stored.selfcareItems),
+    stepOrder: normalizeStepOrder(stored.stepOrder),
+    hiddenSteps: normalizeHiddenSteps(stored.hiddenSteps),
+    autoAdvance: stored.autoAdvance !== false,
   }
 }
 
@@ -251,12 +318,14 @@ export function nextMorningRitualStep(input: {
   gratitudeDone: boolean
   energySet: boolean
   pushupsDone: boolean
+  coldShowerDone?: boolean
+  winnerModeDone?: boolean
   config: MorningRitualConfig
 }): MorningRitualStepId | null {
   if (!input.enabled && !input.preview) return null
   if (input.skipped && !input.preview) return null
 
-  for (const id of MORNING_RITUAL_STEP_IDS) {
+  for (const id of ritualSequence(input.config)) {
     if (!input.preview && input.progress.done.includes(id)) continue
     if (input.preview) {
       /* preview walks every step in order via the UI index, not this helper */
@@ -271,7 +340,13 @@ export function nextMorningRitualStep(input: {
         if (!input.gratitudeDone) return id
         break
       case 'coldShower':
+        if (input.preview) return id
+        if (input.coldShowerDone || input.progress.done.includes(id)) break
+        return id
       case 'winnerPose':
+        if (input.preview) return id
+        if (input.winnerModeDone || input.progress.done.includes(id)) break
+        return id
       case 'prayer':
       case 'todos':
       case 'postShower':
