@@ -4735,137 +4735,184 @@ button.status-chip.status-chip--good {
   z-index: 480;
   display: flex;
   flex-direction: column;
-  gap: 0;
-  padding: calc(22px + env(safe-area-inset-top)) 22px calc(18px + env(safe-area-inset-bottom));
-  overflow: auto;
+  gap: 16px;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  padding: calc(18px + env(safe-area-inset-top)) 20px calc(18px + env(safe-area-inset-bottom));
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--mg-bg);
   color: var(--mg-ink);
   -webkit-overflow-scrolling: touch;
 }
 
-.morning-gate__top,
-.morning-gate__title,
-.morning-gate__track,
-.morning-gate__skip {
-  width: 100%;
-  max-width: 390px;
-  margin-left: auto;
-  margin-right: auto;
+.morning-gate__orbs {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  filter: blur(46px);
+  opacity: 0.42;
+}
+
+.morning-gate__orb {
+  position: absolute;
+  border-radius: 50%;
+}
+
+.morning-gate__orb--one {
+  top: 8%;
+  left: 6%;
+  width: 220px;
+  height: 220px;
+  background: color-mix(in srgb, var(--mg-ice) 70%, transparent);
+}
+
+.morning-gate__orb--two {
+  right: 4%;
+  bottom: 12%;
+  width: 260px;
+  height: 260px;
+  background: color-mix(in srgb, var(--mg-ice) 42%, transparent);
 }
 
 .morning-gate__top {
+  position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 18px;
+  min-width: 0;
+}
+
+.morning-gate__top > div:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .morning-gate__kicker {
+  display: block;
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--mg-ink);
 }
 
+.morning-gate__top p {
+  margin: 4px 0 0;
+  color: var(--mg-muted);
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .morning-gate__top-actions {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
 .morning-gate__top .icon-button {
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   color: var(--mg-ink);
   background: transparent;
 }
 
-.morning-gate__title {
-  margin: 0 auto 22px;
-  max-width: 14ch;
-  font-size: clamp(34px, 9vw, 44px);
-  font-weight: 600;
-  line-height: 1.04;
-  letter-spacing: -0.045em;
-  color: var(--mg-ink);
-  overflow-wrap: anywhere;
-}
-
-.morning-gate__track {
-  display: grid;
-  gap: 10px;
-  margin: 0 auto;
+.morning-gate__dots {
+  position: relative;
+  display: flex;
+  width: 100%;
+  gap: 4px;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.morning-gate__pill {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 12px;
-  min-height: 52px;
-  padding: 13px 16px;
+.morning-gate__dots li {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 6px;
   border-radius: 999px;
-  background: var(--mg-pill);
-  color: var(--mg-ink);
+  background: rgba(23, 26, 27, 0.1);
 }
 
-.morning-gate__pill.is-done {
+.morning-gate__dots li.is-current {
   background: var(--mg-ice);
 }
 
-.morning-gate__pill strong {
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+.morning-gate__dots li.is-done {
+  background: color-mix(in srgb, var(--mg-ice) 55%, rgba(23, 26, 27, 0.12));
 }
 
-.morning-gate__track > li:not(.is-done):not(.is-current) .morning-gate__pill {
-  color: var(--mg-soft);
-}
-
-.morning-gate__stage {
+.morning-gate__card {
+  position: relative;
   display: grid;
   gap: 12px;
-  margin-top: 10px;
-  padding: 4px 2px 8px;
-  animation: splash-rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  max-width: 520px;
+  width: 100%;
+  min-width: 0;
+  margin: 8px auto 0;
+  padding: 22px 20px 20px;
+  border: 0;
+  border-radius: 22px;
+  background: var(--mg-pill);
+  animation: splash-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.morning-gate__stage .energy-grid {
+.morning-gate__card .energy-grid {
   grid-template-columns: 1fr;
 }
 
-.morning-gate__stage .energy-option {
-  min-height: 64px;
+.morning-gate__card .energy-option {
+  min-height: 92px;
   grid-template-columns: 16px 1fr;
   align-items: center;
   gap: 10px;
-  padding: 14px 16px;
+  padding: 20px;
   border: 0;
-  border-radius: 999px;
-  background: var(--mg-pill);
+  border-radius: 16px;
+  background: var(--mg-bg);
 }
 
-.morning-gate__stage .energy-option small {
+.morning-gate__card .energy-option small {
   grid-column: 2;
   color: var(--mg-muted);
 }
 
-.morning-gate__stage p {
+.morning-gate__card h2 {
+  margin: 0;
+  font-size: clamp(26px, 7vw, 40px);
+  line-height: 1.14;
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+}
+
+.morning-gate__card p {
   margin: 0;
   color: var(--mg-soft);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.45;
 }
 
+.morning-gate__icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 16px;
+  background: var(--mg-ice);
+  color: var(--mg-ink);
+}
+
 .morning-gate__empty {
-  padding: 12px 16px;
-  border-radius: 999px;
-  background: var(--mg-pill);
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--mg-bg);
   color: var(--mg-muted);
   font-size: 13px;
 }
@@ -4873,7 +4920,7 @@ button.status-chip.status-chip--good {
 .morning-gate__meds {
   display: grid;
   gap: 8px;
-  margin: 0;
+  margin: 4px 0 0;
   padding: 0;
   list-style: none;
 }
@@ -4884,10 +4931,10 @@ button.status-chip.status-chip--good {
   min-height: 52px;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 12px 14px;
   border: 0;
-  border-radius: 999px;
-  background: var(--mg-pill);
+  border-radius: 16px;
+  background: var(--mg-bg);
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -4916,25 +4963,18 @@ button.status-chip.status-chip--good {
 
 .morning-gate__check {
   display: grid;
-  width: 22px;
-  height: 22px;
+  width: 32px;
+  height: 32px;
   flex: 0 0 auto;
   place-items: center;
-  border: 1.5px solid var(--mg-ink);
-  border-radius: 50%;
-  background: transparent;
-  color: var(--mg-ink);
+  border-radius: 10px;
+  background: var(--mg-pill);
+  color: var(--mg-soft);
 }
 
-.morning-gate__pill.is-done .morning-gate__check,
 .morning-gate__med.is-taken .morning-gate__check {
-  border-color: #fff;
-  background: #fff;
-  color: var(--mg-ink);
-}
-
-.morning-gate__track > li:not(.is-done):not(.is-current) .morning-gate__check {
-  border-color: rgba(23, 26, 27, 0.28);
+  background: var(--mg-ink);
+  color: #fff;
 }
 
 .morning-gate .primary-button,
@@ -5001,7 +5041,7 @@ button.status-chip.status-chip--good {
 .home-pane-switch button,
 .overview-range button,
 .wmf-button {
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 12px;
   border: 0;
   border-radius: 999px;
@@ -5010,6 +5050,7 @@ button.status-chip.status-chip--good {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .morning-gate__chip.is-on,
@@ -5130,13 +5171,16 @@ button.status-chip.status-chip--good {
 
 .heute-tabs button {
   position: relative;
-  padding: 0 0 10px;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 8px 8px 10px;
   border: 0;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
   font-size: 14px;
   font-weight: 560;
+  touch-action: manipulation;
 }
 
 .heute-tabs button.is-on {
@@ -5169,9 +5213,9 @@ button.status-chip.status-chip--good {
 .heute-pill {
   display: grid;
   min-height: 76px;
-  grid-template-columns: minmax(0, 1fr) 36px;
+  grid-template-columns: minmax(0, 1fr) 44px;
   align-items: center;
-  padding: 16px 16px 16px 18px;
+  padding: 16px 12px 16px 18px;
   border-radius: 16px;
   background: #fff;
 }
@@ -5207,6 +5251,7 @@ button.status-chip.status-chip--good {
   font-size: 16px;
   font-weight: 520;
   letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
 }
 
 .heute-pill__copy span {
@@ -5216,13 +5261,14 @@ button.status-chip.status-chip--good {
 
 .heute-pill__check {
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 44px;
+  height: 44px;
   place-items: center;
   border: 0;
   background: transparent;
   color: rgba(23, 26, 27, 0.28);
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 :root[data-theme='dark'] .heute-pill__check {
@@ -5336,7 +5382,7 @@ button.status-chip.status-chip--good {
 }
 
 .heute-range__menu button {
-  min-height: 36px;
+  min-height: 44px;
   padding: 0 12px;
   border: 0;
   border-radius: 10px;
@@ -5417,6 +5463,47 @@ button.status-chip.status-chip--good {
 @media (max-width: 860px) {
   .life-app--heute .app-main {
     padding-bottom: calc(160px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (max-width: 430px) and (max-height: 740px) {
+  .life-app--heute .app-main {
+    padding-top: calc(66px + env(safe-area-inset-top, 0px) + 6px);
+  }
+
+  .heute-page {
+    gap: 12px;
+  }
+
+  .heute-head h2 {
+    font-size: clamp(28px, 7.6vw, 34px);
+  }
+
+  .heute-head__stats {
+    margin-top: 8px;
+  }
+
+  .heute-head__stats strong {
+    font-size: 24px;
+  }
+
+  .heute-head__bar {
+    margin-top: 10px;
+  }
+
+  .heute-now {
+    gap: 10px;
+  }
+
+  .heute-pill {
+    min-height: 64px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+
+  .heute-routine,
+  .heute-close {
+    margin-bottom: 0;
   }
 }
 
@@ -5617,22 +5704,47 @@ button.status-chip.status-chip--good {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .morning-gate__stage { animation: none; }
+  .morning-gate__card { animation: none; }
   .morning-timer__count { animation: none; }
 }
 
 @media (max-width: 560px) {
   .morning-gate {
-    padding: calc(16px + env(safe-area-inset-top)) 18px calc(14px + env(safe-area-inset-bottom));
+    gap: 8px;
+    padding: calc(8px + env(safe-area-inset-top)) 12px calc(10px + env(safe-area-inset-bottom));
   }
 
-  .morning-gate__title {
-    font-size: clamp(32px, 9vw, 40px);
-    margin-bottom: 18px;
+  .morning-gate__skip {
+    margin-top: 4px;
+    flex: 0 0 auto;
+  }
+
+  .morning-gate__card {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    max-width: none;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    padding: 16px 14px 14px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    border-radius: 20px;
+  }
+
+  .morning-gate__card h2 {
+    font-size: clamp(24px, 8vw, 32px);
+    letter-spacing: -0.025em;
   }
 
   .morning-gate__cta {
+    margin-top: auto;
     min-height: 52px;
+  }
+
+  .morning-gate__row {
+    margin-top: auto;
   }
 
   .morning-gate__row .primary-button,

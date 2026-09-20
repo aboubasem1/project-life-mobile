@@ -2,10 +2,18 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Check,
   Coffee,
+  Crown,
+  Droplets,
+  Flame,
   Heart,
+  Moon,
   Pause,
+  Pill,
   Play,
   Settings,
+  Snowflake,
+  Sparkles,
+  Sun,
   X,
 } from 'lucide-react'
 import {
@@ -302,6 +310,47 @@ export function MorningGate({
   const track = steps.length > 0
     ? steps
     : [{ id: step, label: meta.label }]
+
+  const chrome = (() => {
+    switch (step) {
+      case 'medsShake':
+        return { icon: <Pill size={26} />, eyebrow: meta.hint, title: 'Medikamente + Shake' }
+      case 'gratitude':
+        return { icon: <Sparkles size={26} />, eyebrow: readDone ? 'Laut gelesen' : 'Laut vorlesen', title: 'Dankbarkeit' }
+      case 'coldShower':
+        return { icon: <Snowflake size={26} />, eyebrow: meta.hint, title: 'Cold Shower' }
+      case 'winnerPose':
+        return { icon: <Crown size={26} />, eyebrow: meta.hint, title: 'Winner Mode' }
+      case 'prayer':
+        return { icon: <Heart size={26} />, eyebrow: meta.hint, title: 'Gebet' }
+      case 'energy':
+        return { icon: <Flame size={26} />, eyebrow: 'Kurz einchecken', title: 'Wie ist deine Energie heute?' }
+      case 'headRecovery':
+        return { icon: <Moon size={26} />, eyebrow: meta.hint, title: 'Kopf & Erholung' }
+      case 'todos':
+        return { icon: <Check size={26} />, eyebrow: meta.hint, title: 'Heute zählt' }
+      case 'workout':
+        return {
+          icon: <Flame size={26} />,
+          eyebrow: workoutPhase === 'pushups' ? 'Rep-Zähler' : 'Finisher',
+          title: workoutPhase === 'pushups' ? `${config.pushupTarget} Pushups` : 'KO',
+        }
+      case 'postShower':
+        return {
+          icon: showerPhase === 'hot' ? <Droplets size={26} /> : <Snowflake size={26} />,
+          eyebrow: showerPhase === 'hot' ? 'Heiß' : 'Kurz kalt',
+          title: showerPhase === 'hot' ? 'Heiß duschen' : 'Kurze Kälte',
+        }
+      case 'selfcare':
+        return { icon: <Sun size={26} />, eyebrow: meta.hint, title: 'Selfcare' }
+      case 'letsGo':
+        return { icon: <Flame size={26} />, eyebrow: 'Ready zur Arbeit', title: 'LETS GO' }
+      default: {
+        const _exhaustive: never = step
+        return _exhaustive
+      }
+    }
+  })()
 
   useEffect(() => {
     setReadDone(false)
@@ -666,8 +715,16 @@ export function MorningGate({
 
   return (
     <div className="morning-gate" role="dialog" aria-modal="true" aria-labelledby="morning-gate-title">
+      <div className="morning-gate__orbs" aria-hidden="true">
+        <span className="morning-gate__orb morning-gate__orb--one" />
+        <span className="morning-gate__orb morning-gate__orb--two" />
+      </div>
+
       <header className="morning-gate__top">
-        <span className="morning-gate__kicker">Morning Gate {stepIndex + 1}/{stepCount}</span>
+        <div>
+          <span className="morning-gate__kicker">Morning Gate {stepIndex + 1}/{stepCount}</span>
+          <p>Schritt {stepIndex + 1} von {stepCount} · {meta.label}</p>
+        </div>
         <div className="morning-gate__top-actions">
           {onClosePreview && (
             <button type="button" className="icon-button" onClick={onClosePreview} aria-label="Zurück zu Home">
@@ -680,34 +737,25 @@ export function MorningGate({
         </div>
       </header>
 
-      <h2 id="morning-gate-title" className="morning-gate__title">Winning Motherfucker Mode.</h2>
-
-      <ol className="morning-gate__track">
+      <ol className="morning-gate__dots" aria-label="Ritualfortschritt">
         {track.map((item, index) => {
           const done = doneSteps.includes(item.id) || index < stepIndex
           const current = item.id === step
-          const pillClass = [
-            'morning-gate__pill',
-            done ? 'is-done' : '',
-            current ? 'is-current' : '',
-          ].filter(Boolean).join(' ')
           return (
-            <li key={item.id} className={current ? 'is-current' : done ? 'is-done' : undefined}>
-              <div className={pillClass}>
-                <span className="morning-gate__check" aria-hidden="true">
-                  {done ? <Check size={13} strokeWidth={2.8} /> : <span />}
-                </span>
-                <strong>{item.label}</strong>
-              </div>
-              {current ? (
-                <section className="morning-gate__stage" key={step} aria-label={item.label}>
-                  {stage}
-                </section>
-              ) : null}
-            </li>
+            <li
+              key={item.id}
+              className={current ? 'is-current' : done ? 'is-done' : undefined}
+            />
           )
         })}
       </ol>
+
+      <section className="morning-gate__card" key={step}>
+        <div className="morning-gate__icon" aria-hidden="true">{chrome.icon}</div>
+        <span className="eyebrow">{chrome.eyebrow}</span>
+        <h2 id="morning-gate-title">{chrome.title}</h2>
+        {stage}
+      </section>
 
       <button type="button" className="text-button morning-gate__skip" onClick={onSkipToday}>
         Ritual heute überspringen
