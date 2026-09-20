@@ -1,4 +1,4 @@
-import type { DashboardEntry } from '../types/DashboardEntry'
+import type { DashboardEntry } from '../types/DashboardEntry.js'
 
 export const BODY_MEASUREMENTS_KEY = 'life-os-v1-body-measurements'
 

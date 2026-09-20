@@ -1,4 +1,4 @@
-import type { DashboardEntry, HabitKey } from '../types/DashboardEntry'
+import type { DashboardEntry, HabitKey } from '../types/DashboardEntry.js'
 
 export type ScoreGoals = {
   proteinGoal?: number
