@@ -5,10 +5,8 @@
   "installCommand": "echo 'deps installed in buildCommand'",
   "functions": {
     "api/**/*.ts": {
-      "maxDuration": 15
+      "maxDuration": 15,
+      "memory": 1024
     }
-  },
-  "rewrites": [
-    { "source": "/api/integrations/webhooks/:connector", "destination": "/api/integrations/webhook?connector=:connector" }
-  ]
+  }
 }
