@@ -496,9 +496,14 @@ function notifyLifeOsChanged(): void {
   host.window.dispatchEvent(new host.window.CustomEvent(LIFE_OS_CHANGE_EVENT))
 }
 
+function browserStorage(): { getItem(key: string): string | null; setItem(key: string, value: string): void } | null {
+  const host = globalThis as { localStorage?: { getItem(key: string): string | null; setItem(key: string, value: string): void } }
+  return host.localStorage ?? null
+}
+
 function safeGet(key: string): string | null {
   try {
-    return localStorage.getItem(key)
+    return browserStorage()?.getItem(key) ?? null
   } catch {
     return null
   }
@@ -506,7 +511,9 @@ function safeGet(key: string): string | null {
 
 function safeSet(key: string, value: string): boolean {
   try {
-    localStorage.setItem(key, value)
+    const storage = browserStorage()
+    if (!storage) return false
+    storage.setItem(key, value)
     return true
   } catch {
     return false
