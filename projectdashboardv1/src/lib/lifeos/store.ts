@@ -2,7 +2,7 @@ import {
   normalizeAreaIntentions,
   parseLifeArea,
   parseNeedKeys,
-} from './areas'
+} from './areas.js'
 import {
   LIFE_OS_KEY,
   LIFE_OS_STORE_VERSION,
@@ -25,7 +25,7 @@ import {
   type ReviewType,
   type Signal,
   type WebhookLog,
-} from './types'
+} from './types.js'
 
 export { LIFE_OS_KEY, LIFE_OS_STORE_VERSION }
 

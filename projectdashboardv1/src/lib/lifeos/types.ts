@@ -1,6 +1,6 @@
 /** Life OS domain types — local-first, additive, no parallel project/goal systems. */
 
-import type { AreaIntention, LifeAreaKey } from './areas'
+import type { AreaIntention, LifeAreaKey } from './areas.js'
 
 export const LIFE_OS_STORE_VERSION = 2
 export const LIFE_OS_KEY = 'life-os-v1-life'

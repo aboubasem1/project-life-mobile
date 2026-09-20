@@ -1,6 +1,6 @@
-import type { LifeAreaKey } from './areas'
-import type { ConvertResult } from './domain'
-import { nowIso } from './store'
+import type { LifeAreaKey } from './areas.js'
+import type { ConvertResult } from './domain.js'
+import { nowIso } from './store.js'
 
 export type BridgeTask = {
   id: string

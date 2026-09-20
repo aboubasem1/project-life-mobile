@@ -6,7 +6,7 @@ import {
   parseLifeArea,
   periodWindows,
   type LifeAreaKey,
-} from './areas'
+} from './areas.js'
 import {
   type ActivityRecord,
   type Capture,
@@ -26,14 +26,14 @@ import {
   type ReviewAggregates,
   type ReviewType,
   type Signal,
-} from './types'
+} from './types.js'
 import {
   createId,
   inboxCaptures,
   nowIso,
   refreshDecisionStatus,
   todayKey,
-} from './store'
+} from './store.js'
 
 const URL_RE = /https?:\/\/[^\s]+/i
 
@@ -410,7 +410,7 @@ export function aggregateReview(context: ReviewContext): ReviewAggregates {
   const activities = context.activities.filter(item => inPeriod(item.date, periodStart, periodEnd))
   const signalMap = new Map<string, { type: string; count: number; lastValue?: number; unit?: string }>()
   for (const signal of signals) {
-    const current = signalMap.get(signal.type) ?? { type: signal.type, count: 0, unit: signal.unit }
+    const current = signalMap.get(signal.type) ?? { type: signal.type, count: 0, lastValue: undefined as number | undefined, unit: signal.unit }
     current.count += 1
     current.lastValue = signal.value
     current.unit = signal.unit

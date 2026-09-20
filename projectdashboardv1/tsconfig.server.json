@@ -27,6 +27,7 @@
     "../api/integrations/outbound.ts",
     "../api/integrations/webhooks/[connector].ts",
     "src/lib/bodyMeasurement.ts",
+    "src/lib/lifeos/areas.ts",
     "src/lib/lifeos/types.ts",
     "src/lib/lifeos/store.ts",
     "src/lib/lifeos/domain.ts",

@@ -1,4 +1,4 @@
-import { parseLifeArea } from './areas'
+import { parseLifeArea } from './areas.js'
 import {
   type ConnectorCapability,
   type ConnectorDefinition,
@@ -7,9 +7,9 @@ import {
   type LifeOsState,
   type NormalizedObject,
   type Signal,
-} from './types'
-import { createId, nowIso } from './store'
-import { createCapture, recordActivity, recordSignal } from './domain'
+} from './types.js'
+import { createId, nowIso } from './store.js'
+import { createCapture, recordActivity, recordSignal } from './domain.js'
 
 export type ConnectorHealth = { ok: boolean; message: string }
 
