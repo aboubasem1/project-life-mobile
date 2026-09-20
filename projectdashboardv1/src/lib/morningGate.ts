@@ -70,12 +70,28 @@ export type MorningGateMed = {
   taken: boolean
 }
 
-export const DEFAULT_GRATITUDE_TEXT = [
+const LEGACY_DEFAULT_GRATITUDE_TEXT = [
   'Heute bin ich dankbar für diesen Morgen.',
   'Für einen Körper, der mitmacht.',
   'Für Klarheit, die wächst, wenn ich langsam starte.',
   'Für die Arbeit, die wartet — und dafür, dass ich bereit sein kann.',
 ].join('\n')
+
+export const DEFAULT_GRATITUDE_TEXT = [
+  'DANKE',
+  'ICH BIN DANKBAR. ICH BIN BEREIT. ICH BIN IN TOPFORM!',
+  'ICH DANKE GOTT FÜR DIESEN WUNDERVOLLEN TAG UND ALL DIE CHANCEN DIE MIT IHM KOMMEN.',
+  'ICH ATME, ICH LEBE UND GENIEßE DIE FREIHEIT – DAS IST EIN PRIVILEG DAS ICH TÄGLICH EHRE!',
+  'DANKBAR FÜR DIE FREIHEIT MEINE TRÄUME ZU LEBEN.',
+  'ICH ENTSCHEIDE TÄGLICH BEWUSST WER ICH BIN UND WIE ICH MOVE. ZUM NÄCHSTEN LEVEL. IMMER.',
+  'ICH BIN DANKBAR FÜR MEINEN KÖRPER – ER WÄCHST, KÄMPFT, ER TRÄGT MICH. ICH GEBE IHM ALLES WAS ER BRAUCHT UM JEDEN TAG STÄRKER ZU WERDEN!',
+  'ICH BIN DANKBAR FÜR MEINEN GEIST, MEINE TALENTE, MEIN CHARISMA, MEIN POTENTIAL – UND SETZE DIESE TÄGLICH VOLLSTÄNDIG EIN.',
+  'ICH BIN DANKBAR FÜR DIE MENSCHEN UM MICH HERUM, FREUNDE & FAMILIE DIE MICH LACHEN LASSEN, MIR KRAFT GEBEN & MICH WACHSEN LASSEN.',
+  'MEINE DANKBARKEIT ZEIGT SICH IN MEINEN HANDLUNGEN.',
+  'ICH HANDLE. ICH BAUE. ICH WACHSE.',
+  'ICH SEHE DAS KLEINE. ICH ERSCHAFFE DAS GROßE!',
+  'HEUTE! JETZT! ICH!',
+].join('\n\n')
 
 export const DEFAULT_SELFCARE_ITEMS: MorningSelfcareItem[] = [
   { id: 'teeth', label: 'Zähne geputzt' },
@@ -345,9 +361,12 @@ function normalizeStepMinutes(raw: unknown): MorningRitualStepMinutes {
 
 export function normalizeMorningRitualConfig(raw: Partial<MorningRitualConfig> | undefined): MorningRitualConfig {
   const stored = raw ?? {}
+  const storedGratitudeText = typeof stored.gratitudeText === 'string'
+    ? stored.gratitudeText.trim()
+    : ''
   return {
-    gratitudeText: typeof stored.gratitudeText === 'string' && stored.gratitudeText.trim()
-      ? stored.gratitudeText.slice(0, 1200)
+    gratitudeText: storedGratitudeText && storedGratitudeText !== LEGACY_DEFAULT_GRATITUDE_TEXT
+      ? storedGratitudeText.slice(0, 1200)
       : DEFAULT_GRATITUDE_TEXT,
     coldSeconds: clampRitualSeconds(stored.coldSeconds, 180, 30, 600),
     winnerSeconds: clampRitualSeconds(stored.winnerSeconds, 180, 30, 600),
