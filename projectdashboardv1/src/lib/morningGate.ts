@@ -94,7 +94,7 @@ export const DEFAULT_MORNING_RITUAL_RULES: MorningRitualStepRules = {
   winnerPose: 'Brust offen, Blick fest.',
   prayer: 'In Ruhe bleiben. Danach öffnet sich Heute.',
   energy: 'Kurz ehrlich einchecken, dann die Todos ansehen.',
-  headRecovery: 'Wie ist der Kopf, wie war die Nacht — ohne Werte, ohne Notiz.',
+  headRecovery: 'Wie ist die Stimmung, wie war die Nacht — ohne Werte, ohne Notiz.',
   todos: 'Schau deine Anker einmal bewusst an.',
   workout: 'Jede Wiederholung bewusst zählen.',
   postShower: 'Erst heiß, anschließend kurz kalt.',
@@ -211,7 +211,7 @@ export function morningRitualMeta(
     case 'energy':
       return { label: 'Energie', hint: 'Kurzer Check-in' }
     case 'headRecovery':
-      return { label: 'Kopf & Erholung', hint: 'Stimmung und Schlaf' }
+      return { label: 'Stimmung & Erholung', hint: 'Stimmung und Schlaf' }
     case 'todos':
       return { label: 'Todos', hint: 'Was heute zählt' }
     case 'workout':

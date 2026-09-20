@@ -6,6 +6,7 @@ import {
   assessDailyProgress,
   completedRitualSteps,
   DEFAULT_SHAKE_MEAL,
+  isHeadRecoveryDone,
   revertMealFromEntry,
   overviewSlot,
   selectNowItems,
@@ -123,6 +124,26 @@ describe('daily progress', () => {
   })
 })
 
+describe('stimmung und erholung', () => {
+  it('does not complete the card after only one selection', () => {
+    expect(isHeadRecoveryDone({
+      mood: 'Gut',
+      sleepQuality: '',
+      sleepDuration: '',
+      dreamed: undefined,
+    })).toBe(false)
+  })
+
+  it('completes the card only after all four selections', () => {
+    expect(isHeadRecoveryDone({
+      mood: 'Gut',
+      sleepQuality: 'Gut',
+      sleepDuration: '7h',
+      dreamed: false,
+    })).toBe(true)
+  })
+})
+
 describe('evening close visibility', () => {
   it('hides daily close during the day unless already closed', () => {
     expect(shouldShowDailyClose(11, false)).toBe(false)
@@ -140,6 +161,8 @@ describe('ritual reopen state', () => {
       coldShower: true,
       mood: 'Gut',
       sleepQuality: 'Gut',
+      sleepDuration: '7h',
+      dreamed: false,
     }
     const done = completedRitualSteps({
       progress: emptyRitualProgress('2026-09-20'),

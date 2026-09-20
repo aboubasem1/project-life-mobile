@@ -184,13 +184,18 @@ export function syncProteinShakeNutrition(
   return revertMealFromEntry(entry, meal, proteinGoal)
 }
 
-export function isHeadRecoveryDone(entry: Pick<DashboardEntry, 'mood' | 'sleepQuality' | 'sleepDuration' | 'bedTime' | 'wakeTime'>): boolean {
-  return Boolean(entry.mood || entry.sleepQuality || entry.sleepDuration || entry.bedTime || entry.wakeTime)
+export function isHeadRecoveryDone(entry: Pick<DashboardEntry, 'mood' | 'sleepQuality' | 'sleepDuration' | 'dreamed'>): boolean {
+  return Boolean(
+    entry.mood
+    && entry.sleepQuality
+    && entry.sleepDuration
+    && entry.dreamed !== undefined,
+  )
 }
 
 export function completedRitualSteps(input: {
   progress: MorningRitualProgress
-  entry: Pick<DashboardEntry, 'proteinShake' | 'gratitudeDone' | 'coldShower' | 'winnerModeDone' | 'energyLevel' | 'mood' | 'sleepQuality' | 'sleepDuration' | 'bedTime' | 'wakeTime' | 'pushupsDone'>
+  entry: Pick<DashboardEntry, 'proteinShake' | 'gratitudeDone' | 'coldShower' | 'winnerModeDone' | 'energyLevel' | 'mood' | 'sleepQuality' | 'sleepDuration' | 'dreamed' | 'pushupsDone'>
   config: MorningRitualConfig
 }): MorningRitualStepId[] {
   const done = new Set(input.progress.done)
@@ -251,7 +256,7 @@ export function assessDailyProgress(input: {
   const done = checks.filter(item => item.ok).length
   const percent = total === 0 ? 100 : Math.round((done / total) * 100)
   const meaning = mode === 'morning'
-    ? 'Morgen: Energie, Kopf & Erholung und fällige Morgen-Routinen'
+    ? 'Morgen: Energie, Stimmung & Erholung und fällige Morgen-Routinen'
     : mode === 'evening'
       ? 'Abend: offene Routinen, Anker und Abendpunkte'
       : 'Tag: fällige Routinen und Anker'

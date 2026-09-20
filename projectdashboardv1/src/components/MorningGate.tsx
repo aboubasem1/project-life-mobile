@@ -304,6 +304,12 @@ export function MorningGate({
   const [workoutPhase, setWorkoutPhase] = useState<'pushups' | 'ko'>('pushups')
   const allMedsTaken = medications.length === 0 || medications.every(item => item.taken)
   const medsReady = allMedsTaken && proteinShake
+  const headRecoveryReady = Boolean(
+    mood
+    && sleepQuality
+    && sleepDuration
+    && dreamed !== undefined,
+  )
   const selfcareItems = config.selfcareItems
   const selfcareReady = selfcareItems.length === 0
     || selfcareItems.every(item => selfcareChecked.includes(item.id))
@@ -326,7 +332,7 @@ export function MorningGate({
       case 'energy':
         return { icon: <Flame size={26} />, eyebrow: 'Kurz einchecken', title: 'Wie ist deine Energie heute?' }
       case 'headRecovery':
-        return { icon: <Moon size={26} />, eyebrow: meta.hint, title: 'Kopf & Erholung' }
+        return { icon: <Moon size={26} />, eyebrow: meta.hint, title: 'Stimmung & Erholung' }
       case 'todos':
         return { icon: <Check size={26} />, eyebrow: meta.hint, title: 'Heute zählt' }
       case 'workout':
@@ -480,7 +486,7 @@ export function MorningGate({
           <>
             <p>{rule}</p>
             <div className="morning-gate__choice">
-              <span className="morning-gate__choice-label">Kopf</span>
+              <span className="morning-gate__choice-label">Stimmung</span>
               <div className="morning-gate__chips">
                 {HEAD_MOODS.map(option => (
                   <button
@@ -546,7 +552,10 @@ export function MorningGate({
             <button
               type="button"
               className="primary-button morning-gate__cta"
-              onClick={() => onCompleteStep('headRecovery')}
+              disabled={!headRecoveryReady}
+              onClick={() => {
+                if (headRecoveryReady) onCompleteStep('headRecovery')
+              }}
             >
               Weiter
             </button>

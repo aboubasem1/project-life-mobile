@@ -4151,7 +4151,7 @@ function CheckinView({
 
       <div className="checkin-layout">
         <section className="card checkin-card">
-          <SectionTitle eyebrow="Kopf" title="Wie geht es dir?" />
+          <SectionTitle eyebrow="Stimmung" title="Wie geht es dir?" />
           <div className="choice-grid choice-grid--mood">
             {MOODS.map(mood => (
               <button
