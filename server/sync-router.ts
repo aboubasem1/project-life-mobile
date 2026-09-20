@@ -1,3 +1,4 @@
+import { applyHealthIngest } from './health-ingest-core'
 import { applyInboundHook, resolveInboundHookType, type InboundHook } from './hook-core'
 import { probeSyncStorage } from './sync-store'
 import {
@@ -24,6 +25,12 @@ export async function handleSyncRequest(request: Request): Promise<Response> {
 
     const url = new URL(request.url)
     const pathname = url.pathname.replace(/\/$/, '')
+
+    if (pathname.endsWith('/api/health/ingest') && request.method === 'POST') {
+      const body = await readSyncJson<unknown>(request)
+      const result = await applyHealthIngest(request, body)
+      return syncJson({ ok: true, ...result })
+    }
 
     if (pathname.endsWith('/api/health') && (request.method === 'GET' || request.method === 'HEAD')) {
       const probe = await probeSyncStorage()

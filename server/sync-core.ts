@@ -7,6 +7,7 @@ import {
   type SyncRoom,
   type SyncSnapshot,
 } from './sync-store'
+import { mergeBodyMeasurements, mergeHealthIngestState, normalizeBodyMeasurements } from '../projectdashboardv1/src/lib/bodyMeasurement'
 import { mergeDayJournal, mergeQuickNoteStates, parseQuickNote } from './inbound-note'
 
 const PAIR_TTL_MS = 30 * 60 * 1000
@@ -30,7 +31,7 @@ export function syncJson(data: unknown, status = 200): Response {
       'Cache-Control': 'no-store',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Life-Os-Room, X-Life-Os-Token',
     },
   })
 }
@@ -58,6 +59,44 @@ function newPairCode(): string {
 function assertDevice(room: SyncRoom, deviceToken: string): void {
   if (!room.deviceTokens.includes(deviceToken)) {
     throw new SyncHttpError(403, 'Gerät nicht mit diesem Sync verbunden.')
+  }
+}
+
+type LooseRitualProgress = {
+  date: string
+  done: string[]
+  selfcareChecked: string[]
+  pushups: number
+  ko: number
+}
+
+function normalizeRitualProgress(raw: unknown): LooseRitualProgress | null {
+  if (!raw || typeof raw !== 'object') return null
+  const value = raw as Partial<LooseRitualProgress>
+  if (typeof value.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value.date)) return null
+  return {
+    date: value.date,
+    done: Array.isArray(value.done) ? [...new Set(value.done.map(String))] : [],
+    selfcareChecked: Array.isArray(value.selfcareChecked)
+      ? [...new Set(value.selfcareChecked.map(String))]
+      : [],
+    pushups: Math.max(0, Number(value.pushups) || 0),
+    ko: Math.max(0, Number(value.ko) || 0),
+  }
+}
+
+function mergeRitualProgress(current: unknown, incoming: unknown): LooseRitualProgress | undefined {
+  const previous = normalizeRitualProgress(current)
+  const next = normalizeRitualProgress(incoming)
+  if (!previous) return next ?? undefined
+  if (!next) return previous
+  if (previous.date !== next.date) return previous.date > next.date ? previous : next
+  return {
+    date: previous.date,
+    done: [...new Set([...previous.done, ...next.done])],
+    selfcareChecked: [...new Set([...previous.selfcareChecked, ...next.selfcareChecked])],
+    pushups: Math.max(previous.pushups, next.pushups),
+    ko: Math.max(previous.ko, next.ko),
   }
 }
 
@@ -205,6 +244,15 @@ export async function pushSyncSnapshot(input: {
       parseQuickNote(room.snapshot?.quickNote),
       parseQuickNote(incoming.quickNote),
     ) ?? incoming.quickNote ?? room.snapshot?.quickNote,
+    bodyMeasurements: mergeBodyMeasurements(
+      normalizeBodyMeasurements(room.snapshot?.bodyMeasurements),
+      normalizeBodyMeasurements(incoming.bodyMeasurements),
+    ),
+    healthIngest: mergeHealthIngestState(room.snapshot?.healthIngest, incoming.healthIngest),
+    morningRitualProgress: mergeRitualProgress(
+      room.snapshot?.morningRitualProgress,
+      incoming.morningRitualProgress,
+    ),
   }
   room.updatedAt = updatedAt
   await saveRoom(room)

@@ -46,6 +46,9 @@ export interface DashboardEntry {
 
   // Extended (new)
   weightKg: number
+  /** ISO timestamp of the weight sample that last wrote weightKg. */
+  weightMeasuredAt?: string
+  bodyFatPercent?: number
   waterLiters: number
   deepWorkHours: number
   steps: number

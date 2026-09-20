@@ -18,7 +18,7 @@ import {
   formatRitualClock,
   morningRitualMeta,
   playRitualChime,
-  speakGerman,
+  ritualRuleFor,
   type MorningGateMed,
   type MorningRitualConfig,
   type MorningRitualStepId,
@@ -26,32 +26,37 @@ import {
 } from '../lib/morningGate'
 import { releaseScreenWakeLock, requestScreenWakeLock } from '../lib/wakeLock'
 
+type TimerPhase = 'idle' | 'countdown' | 'running' | 'paused' | 'done'
+
 function RitualTimer({
   seconds,
   label,
-  autoStart = false,
   onComplete,
 }: {
   seconds: number
   label: string
-  autoStart?: boolean
   onComplete: () => void
 }) {
   const [left, setLeft] = useState(seconds)
-  const [running, setRunning] = useState(autoStart)
+  const [phase, setPhase] = useState<TimerPhase>('idle')
+  const [count, setCount] = useState(3)
+  const [pulse, setPulse] = useState(0)
   const doneRef = useRef(false)
   const wakeRef = useRef<Awaited<ReturnType<typeof requestScreenWakeLock>>>(null)
+  const armed = phase === 'countdown' || phase === 'running'
 
   useEffect(() => {
     setLeft(seconds)
-    setRunning(autoStart)
+    setPhase('idle')
+    setCount(3)
+    setPulse(0)
     doneRef.current = false
-  }, [seconds, autoStart])
+  }, [seconds])
 
   useEffect(() => {
     let cancelled = false
     const sync = async () => {
-      if (!running) {
+      if (!armed) {
         await releaseScreenWakeLock(wakeRef.current)
         wakeRef.current = null
         return
@@ -69,15 +74,34 @@ function RitualTimer({
       void releaseScreenWakeLock(wakeRef.current)
       wakeRef.current = null
     }
-  }, [running])
+  }, [armed])
 
   useEffect(() => {
-    if (!running) return
+    if (phase !== 'countdown') return
+    if (navigator.vibrate) navigator.vibrate(40)
+    const timer = window.setInterval(() => {
+      setCount(current => {
+        if (current <= 1) {
+          window.clearInterval(timer)
+          if (navigator.vibrate) navigator.vibrate([80, 40, 80])
+          playRitualChime('done')
+          setPhase('running')
+          return 0
+        }
+        if (navigator.vibrate) navigator.vibrate(40)
+        return current - 1
+      })
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [phase])
+
+  useEffect(() => {
+    if (phase !== 'running') return
     const timer = window.setInterval(() => {
       setLeft(current => {
         if (current <= 1) {
           window.clearInterval(timer)
-          setRunning(false)
+          setPhase('done')
           if (!doneRef.current) {
             doneRef.current = true
             playRitualChime('done')
@@ -90,20 +114,74 @@ function RitualTimer({
       })
     }, 1000)
     return () => window.clearInterval(timer)
-  }, [running, onComplete])
+  }, [phase, onComplete])
+
+  const startCountdown = () => {
+    setLeft(seconds)
+    setCount(3)
+    setPulse(current => current + 1)
+    setPhase('countdown')
+  }
+
+  let status: string
+  let action: string
+  switch (phase) {
+    case 'idle':
+      status = 'Bereit — starte manuell'
+      action = 'Start'
+      break
+    case 'countdown':
+      status = 'Gleich geht’s los'
+      action = 'Abbrechen'
+      break
+    case 'running':
+      status = label
+      action = 'Pause'
+      break
+    case 'paused':
+      status = 'Pause'
+      action = 'Weiter'
+      break
+    case 'done':
+      status = 'Fertig'
+      action = 'Fertig'
+      break
+    default: {
+      const _exhaustive: never = phase
+      return _exhaustive
+    }
+  }
 
   return (
     <div className="morning-timer">
-      <strong className="morning-timer__clock">{formatRitualClock(left)}</strong>
-      <span>{running ? label : 'Timer bereit'}</span>
+      {phase === 'countdown' ? (
+        <strong
+          key={`${count}-${pulse}`}
+          className="morning-timer__count"
+          aria-live="assertive"
+        >
+          {count}
+        </strong>
+      ) : (
+        <strong className="morning-timer__clock">{formatRitualClock(left)}</strong>
+      )}
+      <span>{status}</span>
       <button
         type="button"
         className="primary-button morning-gate__cta"
-        onClick={() => setRunning(current => !current)}
-        disabled={left === 0}
+        onClick={() => {
+          if (phase === 'idle') startCountdown()
+          else if (phase === 'countdown') {
+            setPhase('idle')
+            setCount(3)
+          }
+          else if (phase === 'running') setPhase('paused')
+          else if (phase === 'paused') setPhase('running')
+        }}
+        disabled={phase === 'done'}
       >
-        {running ? <Pause size={17} /> : <Play size={17} />}
-        {running ? 'Pause' : left === 0 ? 'Fertig' : 'Start'}
+        {phase === 'running' ? <Pause size={17} /> : <Play size={17} />}
+        {action}
       </button>
     </div>
   )
@@ -192,13 +270,10 @@ export function MorningGate({
   onOpenSettings: () => void
 }) {
   const meta = morningRitualMeta(step, config)
+  const rule = ritualRuleFor(step, config)
   const [readDone, setReadDone] = useState(false)
-  const [reading, setReading] = useState(false)
   const [showerPhase, setShowerPhase] = useState<'hot' | 'cold'>('hot')
   const [workoutPhase, setWorkoutPhase] = useState<'pushups' | 'ko'>('pushups')
-  const [autoStartTimer, setAutoStartTimer] = useState(false)
-  const pendingAutoRef = useRef(false)
-  const stopSpeechRef = useRef<(() => void) | null>(null)
   const allMedsTaken = medications.length === 0 || medications.every(item => item.taken)
   const medsReady = allMedsTaken && proteinShake
   const selfcareItems = config.selfcareItems
@@ -207,18 +282,9 @@ export function MorningGate({
 
   useEffect(() => {
     setReadDone(false)
-    setReading(false)
     setShowerPhase('hot')
     setWorkoutPhase('pushups')
-    setAutoStartTimer(pendingAutoRef.current)
-    pendingAutoRef.current = false
-    stopSpeechRef.current?.()
-    stopSpeechRef.current = null
   }, [step])
-
-  useEffect(() => () => {
-    stopSpeechRef.current?.()
-  }, [])
 
   useEffect(() => {
     if (step !== 'letsGo') return
@@ -231,14 +297,10 @@ export function MorningGate({
   const coldMin = Math.max(1, Math.round(config.coldSeconds / 60))
   const winnerMin = Math.max(1, Math.round(config.winnerSeconds / 60))
   const prayerMin = Math.max(1, Math.round(config.prayerSeconds / 60))
-  const advance = () => {
-    pendingAutoRef.current = config.autoAdvance
-  }
 
   const confirmMeds = () => {
     if (!allMedsTaken) onConfirmAllMeds()
     if (!proteinShake) onToggleProtein()
-    advance()
     onCompleteStep('medsShake')
   }
 
@@ -267,8 +329,8 @@ export function MorningGate({
             <h2 id="morning-gate-title">Medikamente + Shake</h2>
             <p>
               {name.trim()
-                ? `${name.trim()}, erst einnehmen. Dann der Proteinshake.`
-                : 'Erst die Einnahme, dann der Proteinshake.'}
+                ? `${name.trim()}, ${rule.charAt(0).toLowerCase()}${rule.slice(1)}`
+                : rule}
             </p>
             <ul className="morning-gate__meds">
               {medications.length === 0 ? (
@@ -302,29 +364,24 @@ export function MorningGate({
         {step === 'gratitude' && (
           <>
             <div className="morning-gate__icon" aria-hidden="true"><Sparkles size={26} /></div>
-            <span className="eyebrow">{readDone ? 'Fertig vorgelesen' : reading ? 'Wird vorgelesen…' : 'Text anhören'}</span>
+            <span className="eyebrow">{readDone ? 'Laut gelesen' : 'Laut vorlesen'}</span>
             <h2 id="morning-gate-title">Dankbarkeit</h2>
+            <p>{rule}</p>
             <blockquote className="morning-gate__script">{gratitudeText}</blockquote>
             <button
               type="button"
               className="primary-button morning-gate__cta"
-              disabled={reading && !readDone}
               onClick={() => {
                 if (!readDone) {
-                  setReading(true)
-                  stopSpeechRef.current = speakGerman(gratitudeText, () => {
-                    setReadDone(true)
-                    setReading(false)
-                  })
+                  setReadDone(true)
                   return
                 }
                 onCompleteGratitude()
-                advance()
                 onCompleteStep('gratitude')
               }}
             >
               <Heart size={17} />
-              {readDone ? 'Weiter' : reading ? 'Bitte zuhören' : 'Vorlesen'}
+              {readDone ? 'Weiter' : 'Laut gelesen'}
             </button>
           </>
         )}
@@ -334,13 +391,11 @@ export function MorningGate({
             <div className="morning-gate__icon" aria-hidden="true"><Snowflake size={26} /></div>
             <span className="eyebrow">{meta.hint}</span>
             <h2 id="morning-gate-title">Cold Shower</h2>
-            <p>{coldMin} {coldMin === 1 ? 'Minute' : 'Minuten'} kalt. Atmen. Bleib stehen.</p>
+            <p>{coldMin} {coldMin === 1 ? 'Minute' : 'Minuten'} kalt. {rule}</p>
             <RitualTimer
               seconds={config.coldSeconds}
               label="Kalt bleiben"
-              autoStart={autoStartTimer}
               onComplete={() => {
-                advance()
                 onCompleteTimer('coldShower')
               }}
             />
@@ -352,13 +407,11 @@ export function MorningGate({
             <div className="morning-gate__icon" aria-hidden="true"><Crown size={26} /></div>
             <span className="eyebrow">{meta.hint}</span>
             <h2 id="morning-gate-title">Winner Mode</h2>
-            <p>{winnerMin} {winnerMin === 1 ? 'Minute' : 'Minuten'} Pose. Brust offen, Blick fest.</p>
+            <p>{winnerMin} {winnerMin === 1 ? 'Minute' : 'Minuten'} Pose. {rule}</p>
             <RitualTimer
               seconds={config.winnerSeconds}
               label="Pose halten"
-              autoStart={autoStartTimer}
               onComplete={() => {
-                advance()
                 onCompleteTimer('winnerPose')
               }}
             />
@@ -370,13 +423,11 @@ export function MorningGate({
             <div className="morning-gate__icon" aria-hidden="true"><Heart size={26} /></div>
             <span className="eyebrow">{meta.hint}</span>
             <h2 id="morning-gate-title">Gebet</h2>
-            <p>{prayerMin} {prayerMin === 1 ? 'Minute' : 'Minuten'}. Danach öffnet sich Heute.</p>
+            <p>{prayerMin} {prayerMin === 1 ? 'Minute' : 'Minuten'}. {rule}</p>
             <RitualTimer
               seconds={config.prayerSeconds}
               label="In Ruhe bleiben"
-              autoStart={autoStartTimer}
               onComplete={() => {
-                advance()
                 onCompleteTimer('prayer')
               }}
             />
@@ -388,7 +439,7 @@ export function MorningGate({
             <div className="morning-gate__icon" aria-hidden="true"><Flame size={26} /></div>
             <span className="eyebrow">{meta.hint}</span>
             <h2 id="morning-gate-title">Energie</h2>
-            <p>Kurz einchecken, dann die Todos.</p>
+            <p>{rule}</p>
             <div className="energy-grid">
               {([
                 { value: 'low', label: 'Niedrig', description: 'Nur das Wichtigste' },
@@ -414,7 +465,7 @@ export function MorningGate({
             <div className="morning-gate__icon" aria-hidden="true"><Check size={26} /></div>
             <span className="eyebrow">{meta.hint}</span>
             <h2 id="morning-gate-title">Heute zählt</h2>
-            <p>Schau die Anker einmal an. Danach kommt Workout.</p>
+            <p>{rule}</p>
             {anchors.length === 0 ? (
               <p className="morning-gate__empty">Noch keine Todos — du kannst sie gleich auf Heute anlegen.</p>
             ) : (
@@ -430,7 +481,6 @@ export function MorningGate({
               </ul>
             )}
             <button type="button" className="primary-button morning-gate__cta" onClick={() => {
-              advance()
               onCompleteStep('todos')
             }}>
               <Check size={17} />
@@ -444,11 +494,7 @@ export function MorningGate({
             <div className="morning-gate__icon" aria-hidden="true"><Flame size={26} /></div>
             <span className="eyebrow">{workoutPhase === 'pushups' ? 'Rep-Zähler' : 'Finisher'}</span>
             <h2 id="morning-gate-title">{workoutPhase === 'pushups' ? '50 Pushups' : 'KO'}</h2>
-            <p>
-              {workoutPhase === 'pushups'
-                ? 'Jedes Tippen zählt eine Wiederholung.'
-                : 'Kurz und hart. Danach nur eine kurze Kaltdusche.'}
-            </p>
+            <p>{rule}</p>
             <button
               type="button"
               className="morning-rep"
@@ -481,7 +527,6 @@ export function MorningGate({
                     return
                   }
                   if (ko < config.koTarget) onSetKo(config.koTarget)
-                  advance()
                   onCompleteStep('workout')
                 }}
               >
@@ -500,22 +545,16 @@ export function MorningGate({
             </div>
             <span className="eyebrow">{showerPhase === 'hot' ? 'Heiß' : 'Kurz kalt'}</span>
             <h2 id="morning-gate-title">{showerPhase === 'hot' ? 'Heiß duschen' : 'Kurze Kälte'}</h2>
-            <p>
-              {showerPhase === 'hot'
-                ? 'Einmal heiß nach dem Sport.'
-                : 'Nur kurz kalt — nach dem Workout nicht zu lange.'}
-            </p>
+            <p>{rule}</p>
             <RitualTimer
               key={showerPhase}
               seconds={showerPhase === 'hot' ? config.hotShowerSeconds : config.coldRinseSeconds}
               label={showerPhase === 'hot' ? 'Heiß' : 'Kurz kalt'}
-              autoStart={autoStartTimer || (showerPhase === 'cold' && config.autoAdvance)}
               onComplete={() => {
                 if (showerPhase === 'hot') {
                   setShowerPhase('cold')
                   return
                 }
-                advance()
                 onCompleteStep('postShower')
               }}
             />
@@ -527,7 +566,7 @@ export function MorningGate({
             <div className="morning-gate__icon" aria-hidden="true"><Sun size={26} /></div>
             <span className="eyebrow">{meta.hint}</span>
             <h2 id="morning-gate-title">Selfcare</h2>
-            <p>Haken setzen. Die Liste kannst du in den Einstellungen erweitern.</p>
+            <p>{rule}</p>
             <ul className="morning-gate__meds">
               {selfcareItems.map((item: MorningSelfcareItem) => (
                 <li key={item.id}>
@@ -543,7 +582,6 @@ export function MorningGate({
               type="button"
               className="primary-button morning-gate__cta"
               onClick={() => {
-                advance()
                 onCompleteStep('selfcare')
               }}
             >
@@ -558,7 +596,7 @@ export function MorningGate({
             <div className="morning-gate__icon" aria-hidden="true"><Flame size={26} /></div>
             <span className="eyebrow">Ready zur Arbeit</span>
             <h2 id="morning-gate-title">LETS GO</h2>
-            <p>Du bist durch. Tür zu, raus, arbeiten.</p>
+            <p>{rule}</p>
             <button
               type="button"
               className="primary-button morning-gate__cta morning-gate__cta--go"

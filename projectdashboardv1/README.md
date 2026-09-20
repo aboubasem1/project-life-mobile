@@ -1,6 +1,7 @@
 # Life OS (Project Life)
 
-Lokales Tages- und Gewohnheits-OS für geringe kognitive Last — ohne Cloud-Sync.
+Local-first Tages- und Gewohnheits-OS für geringe kognitive Last — offline nutzbar,
+mit optionalem Geräte-Sync und externen Imports.
 
 **Live:** https://project-life-mobile.vercel.app/
 
@@ -9,9 +10,12 @@ Lokales Tages- und Gewohnheits-OS für geringe kognitive Last — ohne Cloud-Syn
 - **React 19** + **TypeScript** + **Vite 7**
 - **lucide-react** für Icons
 - **vite-plugin-pwa** — installierbar als App
-- **localStorage** — einzige Persistenz (Vollbackup per JSON-Export/Import)
+- **localStorage** als primäre Offline-Persistenz
+- **Vercel Functions + Upstash Redis** für optionalen Geräte-Sync, Webhooks und Health-Ingest
 
-Kein Supabase, kein Backend, keine Accounts. Frühere Cloud-Docs sind veraltet.
+Es gibt bewusst keine Accounts. Ohne Kopplung bleibt alles lokal; nach dem Koppeln
+wird ein privater Sync-Raum über Geräte-Token verwendet. Details stehen in
+[`SYNC.md`](SYNC.md).
 
 ## Was die App macht
 
@@ -50,7 +54,19 @@ npm run preview
 - Labor: `life-os-v1-dashboard-plus`
 - XP: `lifeos-xp-v1`
 
-Einstellungen → **Backup exportieren / importieren**. Vollbackup enthält Tage, Settings, Labor und XP. Neuere Backup-Versionen als die App werden abgelehnt.
+Einstellungen → **Backup exportieren / importieren**. Vollbackup v3 enthält Tage,
+Settings, Labor, XP, Körpermessungen, Kurznotiz und den aktuellen
+Morgenritual-Fortschritt. Neuere Backup-Versionen als die App werden abgelehnt.
+
+## Optionaler Sync und Automatisierung
+
+- Geräte koppeln: Einstellungen → **Geräte-Sync**
+- externe Einträge: `POST /api/hooks`
+- Apple Health / Fitdays: `POST /api/health/ingest`
+- Store prüfen: `GET /api/health`
+
+Production benötigt `UPSTASH_REDIS_REST_URL` und `UPSTASH_REDIS_REST_TOKEN`.
+Lokale Einrichtung, Auth-Header und Beispiele: [`SYNC.md`](SYNC.md).
 
 ## Roadmap
 

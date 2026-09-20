@@ -24,6 +24,9 @@ export type MorningSelfcareItem = {
   label: string
 }
 
+export type MorningRitualStepRules = Record<MorningRitualStepId, string>
+export type MorningRitualStepMinutes = Record<MorningRitualStepId, number>
+
 export type MorningRitualConfig = {
   gratitudeText: string
   coldSeconds: number
@@ -37,6 +40,8 @@ export type MorningRitualConfig = {
   stepOrder: MorningRitualStepId[]
   hiddenSteps: MorningRitualStepId[]
   autoAdvance: boolean
+  stepRules: MorningRitualStepRules
+  stepMinutes: MorningRitualStepMinutes
 }
 
 export type MorningRitualProgress = {
@@ -72,6 +77,34 @@ export const DEFAULT_SELFCARE_ITEMS: MorningSelfcareItem[] = [
   { id: 'perfume', label: 'Parfüm' },
 ]
 
+export const DEFAULT_MORNING_RITUAL_RULES: MorningRitualStepRules = {
+  medsShake: 'Erst Medikamente bestätigen, dann den Proteinshake trinken.',
+  gratitude: 'Lies den Text laut. Nicht nur überfliegen.',
+  coldShower: 'Atmen. Bleib stehen.',
+  winnerPose: 'Brust offen, Blick fest.',
+  prayer: 'In Ruhe bleiben. Danach öffnet sich Heute.',
+  energy: 'Kurz ehrlich einchecken, dann die Todos ansehen.',
+  todos: 'Schau deine Anker einmal bewusst an.',
+  workout: 'Jede Wiederholung bewusst zählen.',
+  postShower: 'Erst heiß, anschließend kurz kalt.',
+  selfcare: 'Alle Punkte abhaken, bevor du weitergehst.',
+  letsGo: 'Du bist durch. Tür zu, raus, arbeiten.',
+}
+
+export const DEFAULT_MORNING_RITUAL_MINUTES: MorningRitualStepMinutes = {
+  medsShake: 2,
+  gratitude: 2,
+  coldShower: 3,
+  winnerPose: 3,
+  prayer: 7,
+  energy: 1,
+  todos: 2,
+  workout: 10,
+  postShower: 4,
+  selfcare: 8,
+  letsGo: 1,
+}
+
 export const DEFAULT_MORNING_RITUAL: MorningRitualConfig = {
   gratitudeText: DEFAULT_GRATITUDE_TEXT,
   coldSeconds: 180,
@@ -85,10 +118,12 @@ export const DEFAULT_MORNING_RITUAL: MorningRitualConfig = {
   stepOrder: [...MORNING_RITUAL_STEP_IDS],
   hiddenSteps: [],
   autoAdvance: true,
+  stepRules: { ...DEFAULT_MORNING_RITUAL_RULES },
+  stepMinutes: { ...DEFAULT_MORNING_RITUAL_MINUTES },
 }
 
 const SKIP_KEY = 'life-os-morning-gate-skip'
-const PROGRESS_KEY = 'life-os-morning-ritual-progress'
+export const MORNING_RITUAL_PROGRESS_KEY = 'life-os-morning-ritual-progress'
 
 export const GATE_STEP_IDS: MorningRitualStepId[] = [
   'medsShake',
@@ -142,7 +177,7 @@ export function morningRitualMeta(
     case 'medsShake':
       return { label: 'Medikamente + Shake', hint: 'Einnahme und Proteinshake' }
     case 'gratitude':
-      return { label: 'Dankbarkeit', hint: 'Text hören, dann weiter' }
+      return { label: 'Dankbarkeit', hint: 'Laut vorlesen, dann weiter' }
     case 'coldShower':
       return { label: 'Cold Shower', hint: `${minutes(config?.coldSeconds ?? 180)} kalt` }
     case 'winnerPose':
@@ -248,6 +283,32 @@ export function ritualSecondsFor(id: MorningRitualStepId, config: MorningRitualC
   }
 }
 
+export function ritualRuleFor(id: MorningRitualStepId, config: MorningRitualConfig): string {
+  return config.stepRules?.[id] || DEFAULT_MORNING_RITUAL_RULES[id]
+}
+
+export function ritualMinutesFor(id: MorningRitualStepId, config: MorningRitualConfig): number {
+  const timedSeconds = ritualSecondsFor(id, config)
+  if (timedSeconds !== null) return Math.max(1, Math.round(timedSeconds / 60))
+  return config.stepMinutes?.[id] || DEFAULT_MORNING_RITUAL_MINUTES[id]
+}
+
+function normalizeStepRules(raw: unknown): MorningRitualStepRules {
+  const stored = raw && typeof raw === 'object' ? raw as Partial<MorningRitualStepRules> : {}
+  return Object.fromEntries(MORNING_RITUAL_STEP_IDS.map(id => {
+    const value = typeof stored[id] === 'string' ? stored[id].trim().slice(0, 240) : ''
+    return [id, value || DEFAULT_MORNING_RITUAL_RULES[id]]
+  })) as MorningRitualStepRules
+}
+
+function normalizeStepMinutes(raw: unknown): MorningRitualStepMinutes {
+  const stored = raw && typeof raw === 'object' ? raw as Partial<MorningRitualStepMinutes> : {}
+  return Object.fromEntries(MORNING_RITUAL_STEP_IDS.map(id => [
+    id,
+    clampRitualSeconds(stored[id], DEFAULT_MORNING_RITUAL_MINUTES[id], 1, 120),
+  ])) as MorningRitualStepMinutes
+}
+
 export function normalizeMorningRitualConfig(raw: Partial<MorningRitualConfig> | undefined): MorningRitualConfig {
   const stored = raw ?? {}
   return {
@@ -265,6 +326,8 @@ export function normalizeMorningRitualConfig(raw: Partial<MorningRitualConfig> |
     stepOrder: normalizeStepOrder(stored.stepOrder),
     hiddenSteps: normalizeHiddenSteps(stored.hiddenSteps),
     autoAdvance: stored.autoAdvance !== false,
+    stepRules: normalizeStepRules(stored.stepRules),
+    stepMinutes: normalizeStepMinutes(stored.stepMinutes),
   }
 }
 
@@ -277,17 +340,48 @@ export function emptyRitualProgress(today: string): MorningRitualProgress {
   return { date: today, done: [], selfcareChecked: [], pushups: 0, ko: 0 }
 }
 
+export function normalizeMorningRitualProgress(raw: unknown): MorningRitualProgress | null {
+  if (!raw || typeof raw !== 'object') return null
+  const stored = raw as Partial<MorningRitualProgress>
+  const date = typeof stored.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(stored.date)
+    ? stored.date
+    : ''
+  if (!date) return null
+  return {
+    date,
+    done: Array.isArray(stored.done) ? [...new Set(stored.done.filter(isMorningRitualStepId))] : [],
+    selfcareChecked: Array.isArray(stored.selfcareChecked)
+      ? [...new Set(stored.selfcareChecked.map(String))]
+      : [],
+    pushups: clampRitualSeconds(stored.pushups, 0, 0, 400),
+    ko: clampRitualSeconds(stored.ko, 0, 0, 200),
+  }
+}
+
+export function mergeMorningRitualProgress(
+  current: unknown,
+  incoming: unknown,
+): MorningRitualProgress | null {
+  const local = normalizeMorningRitualProgress(current)
+  const remote = normalizeMorningRitualProgress(incoming)
+  if (!local) return remote
+  if (!remote) return local
+  if (local.date !== remote.date) return local.date > remote.date ? local : remote
+  return {
+    date: local.date,
+    done: [...new Set([...local.done, ...remote.done])],
+    selfcareChecked: [...new Set([...local.selfcareChecked, ...remote.selfcareChecked])],
+    pushups: Math.max(local.pushups, remote.pushups),
+    ko: Math.max(local.ko, remote.ko),
+  }
+}
+
 export function loadMorningRitualProgress(today: string): MorningRitualProgress {
   try {
-    const stored = JSON.parse(localStorage.getItem(PROGRESS_KEY) ?? 'null') as Partial<MorningRitualProgress> | null
-    if (!stored || stored.date !== today) return emptyRitualProgress(today)
-    return {
-      date: today,
-      done: Array.isArray(stored.done) ? stored.done.filter(isMorningRitualStepId) : [],
-      selfcareChecked: Array.isArray(stored.selfcareChecked) ? stored.selfcareChecked.map(String) : [],
-      pushups: clampRitualSeconds(stored.pushups, 0, 0, 400),
-      ko: clampRitualSeconds(stored.ko, 0, 0, 200),
-    }
+    const stored = normalizeMorningRitualProgress(
+      JSON.parse(localStorage.getItem(MORNING_RITUAL_PROGRESS_KEY) ?? 'null'),
+    )
+    return stored?.date === today ? stored : emptyRitualProgress(today)
   } catch {
     return emptyRitualProgress(today)
   }
@@ -295,7 +389,7 @@ export function loadMorningRitualProgress(today: string): MorningRitualProgress 
 
 export function saveMorningRitualProgress(progress: MorningRitualProgress): void {
   try {
-    localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress))
+    localStorage.setItem(MORNING_RITUAL_PROGRESS_KEY, JSON.stringify(progress))
   } catch {
     /* ignore */
   }

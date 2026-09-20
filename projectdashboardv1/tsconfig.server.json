@@ -13,12 +13,16 @@
   },
   "include": [
     "../server/hook-core.ts",
+    "../server/health-ingest-core.ts",
+    "../server/entry-score.ts",
     "../server/sync-core.ts",
     "../server/sync-store.ts",
     "../server/sync-router.ts",
     "../api/health.ts",
+    "../api/health/ingest.ts",
     "../api/hooks.ts",
     "../api/sync/**/*.ts",
-    "../server/inbound-note.ts"
+    "../server/inbound-note.ts",
+    "src/lib/bodyMeasurement.ts"
   ]
 }

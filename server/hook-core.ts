@@ -1,6 +1,7 @@
 import { getRoom, saveRoom, type SyncSnapshot } from './sync-store'
 import { SyncHttpError } from './sync-core'
 import { appendJournal, formatNoteLine, mergeQuickNote, parseQuickNote } from './inbound-note'
+import { scoreInboundEntry } from './entry-score'
 
 const HABIT_KEYS = new Set([
   'breathingDone',
@@ -28,6 +29,9 @@ export function resolveInboundHookType(raw: Partial<InboundHook>): InboundHookTy
   const text = String(raw.text ?? raw.title ?? '').trim()
   const hasMetric = raw.proteinGrams != null
     || raw.calories != null
+    || raw.fatGrams != null
+    || raw.carbsGrams != null
+    || raw.fiberGrams != null
     || raw.waterLiters != null
     || raw.steps != null
     || raw.weightKg != null
@@ -46,6 +50,9 @@ export type InboundHook = {
   title?: string
   proteinGrams?: number
   calories?: number
+  fatGrams?: number
+  carbsGrams?: number
+  fiberGrams?: number
   waterLiters?: number
   steps?: number
   weightKg?: number
@@ -96,6 +103,12 @@ function parseQuickText(raw: string): QuickParse | null {
   const protein = text.match(/(\d+(?:[.,]\d+)?)\s*(?:g\s*)?(?:protein|eiwei[sß])\b/i)
     ?? text.match(/(\d+(?:[.,]\d+)?)\s*g\s*p\b/i)
   if (protein) return { kind: 'fields', fields: { proteinGrams: toNumber(protein[1]) } }
+  const fat = text.match(/(\d+(?:[.,]\d+)?)\s*(?:g\s*)?(?:fett|fat)\b/i)
+  if (fat) return { kind: 'fields', fields: { fatGrams: toNumber(fat[1]) } }
+  const carbs = text.match(/(\d+(?:[.,]\d+)?)\s*(?:g\s*)?(?:kh|kohlenhydrate|carbs?)\b/i)
+  if (carbs) return { kind: 'fields', fields: { carbsGrams: toNumber(carbs[1]) } }
+  const fiber = text.match(/(\d+(?:[.,]\d+)?)\s*(?:g\s*)?(?:ballaststoffe?|fiber)\b/i)
+  if (fiber) return { kind: 'fields', fields: { fiberGrams: toNumber(fiber[1]) } }
   const water = text.match(/(\d+(?:[.,]\d+)?)\s*(?:l|liter)\b/i)
   if (water) return { kind: 'fields', fields: { waterLiters: toNumber(water[1]) } }
   const steps = text.match(/(\d+(?:[.,]\d+)?)\s*(?:schritte|steps)\b/i)
@@ -179,9 +192,15 @@ function applyPatch(entry: LooseEntry, hook: InboundHook): LooseEntry {
 
   if (hook.proteinGrams !== null && hook.proteinGrams !== undefined) next.proteinGrams = hook.proteinGrams
   if (hook.calories !== null && hook.calories !== undefined) next.calories = hook.calories
+  if (hook.fatGrams !== null && hook.fatGrams !== undefined) next.fatGrams = hook.fatGrams
+  if (hook.carbsGrams !== null && hook.carbsGrams !== undefined) next.carbsGrams = hook.carbsGrams
+  if (hook.fiberGrams !== null && hook.fiberGrams !== undefined) next.fiberGrams = hook.fiberGrams
   if (hook.waterLiters !== null && hook.waterLiters !== undefined) next.waterLiters = hook.waterLiters
   if (hook.steps !== null && hook.steps !== undefined) next.steps = hook.steps
-  if (hook.weightKg !== null && hook.weightKg !== undefined) next.weightKg = hook.weightKg
+  if (hook.weightKg !== null && hook.weightKg !== undefined) {
+    next.weightKg = hook.weightKg
+    next.weightMeasuredAt = new Date().toISOString()
+  }
   if (hook.energy) next.energyLevel = hook.energy
   if (hook.habit && HABIT_KEYS.has(hook.habit)) next[hook.habit] = true
 
@@ -226,18 +245,21 @@ export async function applyInboundHook(raw: InboundHook): Promise<{
   const current = index >= 0
     ? { ...seedEntry(date), ...entries[index], date }
     : seedEntry(date)
-  const patched = applyPatch(current, {
+  const patched = scoreInboundEntry(applyPatch(current, {
     ...raw,
     roomId,
     deviceToken,
     type,
     proteinGrams: finiteNumber(raw.proteinGrams) ?? undefined,
     calories: finiteNumber(raw.calories) ?? undefined,
+    fatGrams: finiteNumber(raw.fatGrams) ?? undefined,
+    carbsGrams: finiteNumber(raw.carbsGrams) ?? undefined,
+    fiberGrams: finiteNumber(raw.fiberGrams) ?? undefined,
     waterLiters: finiteNumber(raw.waterLiters) ?? undefined,
     steps: finiteNumber(raw.steps) ?? undefined,
     weightKg: finiteNumber(raw.weightKg) ?? undefined,
     energy: validEnergy(raw.energy),
-  })
+  }), snapshot?.settings)
 
   if (index >= 0) entries[index] = patched
   else entries.push(patched)
@@ -254,6 +276,9 @@ export async function applyInboundHook(raw: InboundHook): Promise<{
     quickNote: type === 'note' && noteText
       ? mergeQuickNote(parseQuickNote(snapshot?.quickNote), formatNoteLine(noteText))
       : snapshot?.quickNote,
+    bodyMeasurements: snapshot?.bodyMeasurements,
+    healthIngest: snapshot?.healthIngest,
+    morningRitualProgress: snapshot?.morningRitualProgress,
   }
   room.snapshot = nextSnapshot
   room.updatedAt = updatedAt

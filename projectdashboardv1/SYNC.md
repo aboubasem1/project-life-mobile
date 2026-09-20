@@ -8,7 +8,7 @@ Nach **einmaligem Koppeln** synchronisieren sich Tage, Settings, Labor, XP und K
 cd projectdashboardv1 && npm run dev
 ```
 
-Der Vite-Dev-Server stellt `/api/sync/*`, `POST /api/hooks` und `GET /api/health` bereit.
+Der Vite-Dev-Server stellt `/api/sync/*`, `POST /api/hooks`, `GET /api/health` und `POST /api/health/ingest` bereit.
 
 Mit lebender Upstash-DB (`.env.local`) gehen lokale Writes in Redis — derselbe Raum wie Production. Ohne Redis oder wenn Redis tot ist, fällt lokal auf `projectdashboardv1/.data/life-os-sync.json` zurück.
 
@@ -54,6 +54,11 @@ curl -X POST https://DEINE-DOMAIN/api/hooks \
 
 Typen: `log` (Felder), `quick` (Freitext wie `180g protein`), `task` (`title`), `note` (Journal + Kurznotiz). Optional `date` als `YYYY-MM-DD`, sonst heute (Europe/Berlin).
 
+Metrikfelder: `proteinGrams`, `calories`, `fatGrams`, `carbsGrams`,
+`fiberGrams`, `waterLiters`, `steps`, `weightKg`, `energy` und `habit`.
+Quick-Text erkennt außerdem Angaben wie `70g Fett`, `250g KH` und
+`30g Ballaststoffe`.
+
 Ray-Ban Meta / Meta AI: Diktat an dich selbst (WhatsApp oder Notizen) → iOS-Kurzbefehl POST `type: "note"` mit `text`. Die App holt Journal und Kurznotiz beim nächsten Pull.
 
 ```bash
@@ -65,3 +70,23 @@ curl -X POST https://DEINE-DOMAIN/api/hooks \
 ```bash
 curl https://DEINE-DOMAIN/api/health
 ```
+
+## Apple Health / Fitdays
+
+Waage bleibt in Fitdays. Fitdays schreibt nach Apple Health. Health Auto Export schickt die Samples an Project Life.
+
+```text
+Bluetooth-Waage → Fitdays → Apple Health → Health Auto Export → POST /api/health/ingest
+```
+
+Auth wie beim Webhook: `roomId` + `deviceToken` (Header oder Body).
+
+```bash
+curl -X POST https://DEINE-DOMAIN/api/health/ingest \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer DEIN-DEVICE-TOKEN" \
+  -H "X-Life-Os-Room: DEINE-ROOM-ID" \
+  -d '{"metric":"weight","value":56.8,"unit":"kg","date":"2026-09-13T07:42:00+02:00","source":"Fitdays"}'
+```
+
+Der Endpunkt akzeptiert außerdem das native Health-Auto-Export-JSON (`data.metrics`) und gruppiert Gewicht, Körperfett, Lean Mass, Muskelmasse, Knochenmasse, Körperwasser und BMI zu einem `BodyMeasurement`. Derselbe Eingang schreibt Schritte auf den Tageseintrag. Deduplizierung läuft über Sample-IDs. Das Heute-Widget zeigt den neuesten gültigen Messpunkt des Tages.

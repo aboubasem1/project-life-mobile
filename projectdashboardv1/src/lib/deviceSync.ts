@@ -8,8 +8,20 @@ import {
   loadAllEntries,
   saveAllEntries,
 } from './storage'
-import { loadXP, saveXP, type XPStore } from './xp-store'
+import { loadXP, recomputeXPFromEntries, saveXP, type XPStore } from './xp-store'
+import { calculateScore } from './score'
+import {
+  loadBodyMeasurements,
+  mergeSavedBodyMeasurements,
+  normalizeBodyMeasurements,
+  type BodyMeasurement,
+} from './bodyMeasurement'
 import { mergeDayJournal, mergeQuickNoteStates, parseQuickNote } from './inboundNote'
+import {
+  MORNING_RITUAL_PROGRESS_KEY,
+  mergeMorningRitualProgress,
+  type MorningRitualProgress,
+} from './morningGate'
 
 const SYNC_CRED_KEY = 'life-os-v1-device-sync'
 const QUICK_NOTE_KEY = 'life-os-quick-note'
@@ -51,6 +63,9 @@ export type DeviceSyncSnapshot = {
   dashboardPlus?: unknown
   xp?: XPStore
   quickNote?: unknown
+  bodyMeasurements?: BodyMeasurement[]
+  healthIngest?: unknown
+  morningRitualProgress?: MorningRitualProgress
 }
 
 function safeGet(key: string): string | null {
@@ -214,6 +229,7 @@ export function buildLocalSnapshot(): DeviceSyncSnapshot {
   let settings: unknown
   let dashboardPlus: unknown
   let quickNote: unknown
+  let morningRitualProgress: MorningRitualProgress | undefined
   try {
     settings = JSON.parse(safeGet(SETTINGS_KEY) ?? 'null')
   } catch { settings = undefined }
@@ -223,6 +239,12 @@ export function buildLocalSnapshot(): DeviceSyncSnapshot {
   try {
     quickNote = JSON.parse(safeGet(QUICK_NOTE_KEY) ?? 'null')
   } catch { quickNote = undefined }
+  try {
+    morningRitualProgress = mergeMorningRitualProgress(
+      undefined,
+      JSON.parse(safeGet(MORNING_RITUAL_PROGRESS_KEY) ?? 'null'),
+    ) ?? undefined
+  } catch { morningRitualProgress = undefined }
 
   const revision = Number(safeGet(LOCAL_REVISION_KEY) || 0) || 0
   return {
@@ -233,6 +255,8 @@ export function buildLocalSnapshot(): DeviceSyncSnapshot {
     dashboardPlus,
     xp: loadXP(),
     quickNote,
+    bodyMeasurements: loadBodyMeasurements(),
+    morningRitualProgress,
   }
 }
 
@@ -255,6 +279,16 @@ function applyRemoteExtras(snapshot: DeviceSyncSnapshot): void {
     }
     const merged = mergeQuickNoteStates(parseQuickNote(localNote), parseQuickNote(snapshot.quickNote))
     if (merged) safeSet(QUICK_NOTE_KEY, JSON.stringify(merged))
+  }
+  if (snapshot.morningRitualProgress != null) {
+    let localProgress: unknown = null
+    try {
+      localProgress = JSON.parse(safeGet(MORNING_RITUAL_PROGRESS_KEY) ?? 'null')
+    } catch {
+      localProgress = null
+    }
+    const merged = mergeMorningRitualProgress(localProgress, snapshot.morningRitualProgress)
+    if (merged) safeSet(MORNING_RITUAL_PROGRESS_KEY, JSON.stringify(merged))
   }
   notifySyncExtras()
 }
@@ -314,10 +348,26 @@ export async function pullDeviceSync(): Promise<{
     const remoteRevision = remote.revision ?? 0
     const mergedEntries = mergeEntriesByUpdatedAt(localBefore, remote.entries ?? [])
 
-    saveAllEntries(mergedEntries)
+    const remoteMeasurements = normalizeBodyMeasurements(remote.bodyMeasurements)
+    if (remoteMeasurements.length > 0) {
+      mergeSavedBodyMeasurements(remoteMeasurements)
+      notifySyncExtras()
+    }
 
     if (remoteRevision >= localRevision) {
       applyRemoteExtras(remote)
+    }
+
+    const rescoredEntries = mergedEntries.map(entry => ({
+      ...entry,
+      dailyScore: calculateScore(entry),
+    }))
+    const scoreChanged = rescoredEntries.some((entry, index) => (
+      entry.dailyScore !== mergedEntries[index]?.dailyScore
+    ))
+    saveAllEntries(rescoredEntries)
+    if (remoteRevision > localRevision || scoreChanged) {
+      recomputeXPFromEntries(rescoredEntries)
     }
 
     const localHadNewerEntry = localBefore.some(entry => {
@@ -333,7 +383,7 @@ export async function pullDeviceSync(): Promise<{
       lastRevision: nextRevision,
     })
 
-    if (localHadNewerEntry || localRevision > remoteRevision) {
+    if (localHadNewerEntry || localRevision > remoteRevision || scoreChanged) {
       await pushDeviceSyncUnlocked()
     }
 

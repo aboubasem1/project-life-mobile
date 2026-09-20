@@ -42,6 +42,9 @@ export type SyncSnapshot = {
   dashboardPlus?: unknown
   xp?: unknown
   quickNote?: unknown
+  bodyMeasurements?: unknown
+  healthIngest?: unknown
+  morningRitualProgress?: unknown
 }
 
 export type SyncRoom = {

@@ -128,6 +128,7 @@ import {
 } from './lib/medReminders'
 import {
   FULLSCREEN_STEP_IDS,
+  MORNING_RITUAL_PROGRESS_KEY,
   loadMorningGateSkip,
   loadMorningRitualProgress,
   markRitualStepDone,
@@ -147,6 +148,7 @@ import {
 import { MorningGate } from './components/MorningGate'
 import { HabitDetailSheet } from './components/HabitDetailSheet'
 import { HabitKindControls } from './components/HabitKindRow'
+import { WeightDailyCard } from './components/WeightDailyCard'
 import { defaultHabitKind, isHabitComplete, isHabitKey, patchHabitLog } from './lib/habitKinds'
 import { moodHabitLine } from './lib/moodHabit'
 import { appendJournal, formatNoteLine, mergeQuickNote, parseQuickNote } from './lib/inboundNote'
@@ -184,6 +186,10 @@ type AppSettings = {
   fiberGoal: number
   /** For BMI; 0 = nicht gesetzt. */
   heightCm: number
+  /** Target weight; 0 = nicht gesetzt. */
+  weightGoalKg: number
+  /** Optional baseline for progress; 0 = erster gespeicherter Wert. */
+  weightStartKg: number
   activeHabits: string[]
   /** Empty / missing = every day. Values 0=Mo … 6=So. */
   habitSchedules: HabitScheduleMap
@@ -818,6 +824,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   carbsGoal: 250,
   fiberGoal: 30,
   heightCm: 0,
+  weightGoalKg: 0,
+  weightStartKg: 0,
   activeHabits: DEFAULT_ACTIVE_HABITS,
   habitSchedules: {},
   dashboardPlusLayout: DEFAULT_DASHBOARD_PLUS_LAYOUT,
@@ -1006,6 +1014,8 @@ function loadSettings(): AppSettings {
       carbsGoal: clampNumber(Number(stored.carbsGoal) || DEFAULT_SETTINGS.carbsGoal, 50, 500),
       fiberGoal: clampNumber(Number(stored.fiberGoal) || DEFAULT_SETTINGS.fiberGoal, 10, 80),
       heightCm: clampNumber(Number(stored.heightCm) || 0, 0, 250),
+      weightGoalKg: clampNumber(Number(stored.weightGoalKg) || 0, 0, 300),
+      weightStartKg: clampNumber(Number(stored.weightStartKg) || 0, 0, 300),
       activeHabits: Array.isArray(stored.activeHabits) ? stored.activeHabits : DEFAULT_ACTIVE_HABITS,
       habitSchedules: normalizeHabitSchedules(stored.habitSchedules),
       dashboardPlusLayout: normalizeDashboardPlusLayout(stored.dashboardPlusLayout),
@@ -1046,6 +1056,9 @@ type QuickAddResult =
   | { kind: 'weight'; value: number }
   | { kind: 'calories'; value: number }
   | { kind: 'protein'; value: number }
+  | { kind: 'fat'; value: number }
+  | { kind: 'carbs'; value: number }
+  | { kind: 'fiber'; value: number }
   | { kind: 'water'; value: number }
   | { kind: 'steps'; value: number }
   | { kind: 'task'; title: string }
@@ -1067,6 +1080,15 @@ function parseQuickAdd(raw: string): QuickAddResult {
     ?? text.match(/(\d+(?:[.,]\d+)?)\s*g\s*p\b/i)
   if (protein) return { kind: 'protein', value: toNumber(protein[1]) }
 
+  const fat = text.match(/(\d+(?:[.,]\d+)?)\s*(?:g\s*)?(?:fett|fat)\b/i)
+  if (fat) return { kind: 'fat', value: toNumber(fat[1]) }
+
+  const carbs = text.match(/(\d+(?:[.,]\d+)?)\s*(?:g\s*)?(?:kh|kohlenhydrate|carbs?)\b/i)
+  if (carbs) return { kind: 'carbs', value: toNumber(carbs[1]) }
+
+  const fiber = text.match(/(\d+(?:[.,]\d+)?)\s*(?:g\s*)?(?:ballaststoffe?|fiber)\b/i)
+  if (fiber) return { kind: 'fiber', value: toNumber(fiber[1]) }
+
   const water = text.match(/(\d+(?:[.,]\d+)?)\s*(?:l|liter)\b/i)
   if (water) return { kind: 'water', value: toNumber(water[1]) }
 
@@ -1084,6 +1106,12 @@ function describeQuickAdd(parsed: QuickAddResult): string {
       return `→ Kalorien: ${parsed.value} kcal`
     case 'protein':
       return `→ Protein: ${parsed.value} g`
+    case 'fat':
+      return `→ Fett: ${parsed.value} g`
+    case 'carbs':
+      return `→ Kohlenhydrate: ${parsed.value} g`
+    case 'fiber':
+      return `→ Ballaststoffe: ${parsed.value} g`
     case 'water':
       return `→ Wasser: ${parsed.value} L`
     case 'steps':
@@ -1443,8 +1471,10 @@ function App() {
 
   const settingsHydrated = useRef(false)
   const laborHydrated = useRef(false)
+  const ritualProgressHydrated = useRef(false)
   const lastRemoteGenSettings = useRef(0)
   const lastRemoteGenLabor = useRef(0)
+  const lastRemoteGenRitual = useRef(0)
 
   useEffect(() => {
     safeLocalStorageSetItem(SETTINGS_KEY, JSON.stringify(settings))
@@ -1483,14 +1513,38 @@ function App() {
   }, [dashboardPlus])
 
   useEffect(() => {
+    saveMorningRitualProgress(ritualProgress)
+    if (!ritualProgressHydrated.current) {
+      ritualProgressHydrated.current = true
+      return
+    }
+    const gen = remoteApplyGenerationNow()
+    if (gen !== lastRemoteGenRitual.current) {
+      lastRemoteGenRitual.current = gen
+      return
+    }
+    if (isDeviceSyncEnabled()) {
+      window.setTimeout(() => {
+        void pushDeviceSync().catch(() => {})
+      }, 500)
+    }
+  }, [ritualProgress])
+
+  useEffect(() => {
     const reloadExtras = () => {
       setSettings(loadSettings())
       setDashboardPlus(loadDashboardPlusState())
       setDeviceSyncCreds(loadSyncCredentials())
+      setRitualProgress(loadMorningRitualProgress(today))
     }
     window.addEventListener(LIFE_OS_SYNC_EXTRAS_EVENT, reloadExtras)
     const onStorage = (event: StorageEvent) => {
-      if (event.key === SETTINGS_KEY || event.key === DASHBOARD_PLUS_KEY || event.key === null) {
+      if (
+        event.key === SETTINGS_KEY
+        || event.key === DASHBOARD_PLUS_KEY
+        || event.key === MORNING_RITUAL_PROGRESS_KEY
+        || event.key === null
+      ) {
         reloadExtras()
       }
     }
@@ -1499,7 +1553,7 @@ function App() {
       window.removeEventListener(LIFE_OS_SYNC_EXTRAS_EVENT, reloadExtras)
       window.removeEventListener('storage', onStorage)
     }
-  }, [])
+  }, [today])
 
   useEffect(() => {
     const root = document.documentElement
@@ -1744,6 +1798,24 @@ function App() {
     showToast(`Protein gespeichert: ${value} g`)
   }
 
+  const quickAddFat = (value: number) => {
+    updateEntry({ fatGrams: value })
+    setQuickAddOpen(false)
+    showToast(`Fett gespeichert: ${value} g`)
+  }
+
+  const quickAddCarbs = (value: number) => {
+    updateEntry({ carbsGrams: value })
+    setQuickAddOpen(false)
+    showToast(`Kohlenhydrate gespeichert: ${value} g`)
+  }
+
+  const quickAddFiber = (value: number) => {
+    updateEntry({ fiberGrams: value })
+    setQuickAddOpen(false)
+    showToast(`Ballaststoffe gespeichert: ${value} g`)
+  }
+
   const quickAddSteps = (value: number) => {
     updateEntry({ steps: value })
     setQuickAddOpen(false)
@@ -1899,6 +1971,9 @@ function App() {
           const parsed = action.text ? parseQuickAdd(action.text) : null
           if (parsed?.kind === 'protein') patch.proteinGrams = parsed.value
           else if (parsed?.kind === 'calories') patch.calories = parsed.value
+          else if (parsed?.kind === 'fat') patch.fatGrams = parsed.value
+          else if (parsed?.kind === 'carbs') patch.carbsGrams = parsed.value
+          else if (parsed?.kind === 'fiber') patch.fiberGrams = parsed.value
           else if (parsed?.kind === 'water') patch.waterLiters = parsed.value
           else if (parsed?.kind === 'steps') patch.steps = parsed.value
           else if (parsed?.kind === 'weight') patch.weightKg = parsed.value
@@ -2221,6 +2296,9 @@ function App() {
           onSubmitWeight={quickAddWeight}
           onSubmitCalories={quickAddCalories}
           onSubmitProtein={quickAddProtein}
+          onSubmitFat={quickAddFat}
+          onSubmitCarbs={quickAddCarbs}
+          onSubmitFiber={quickAddFiber}
           onSubmitWater={quickAddWater}
           onSubmitSteps={quickAddSteps}
         />
@@ -2328,7 +2406,7 @@ function App() {
           onToggleProtein={() => updateEntry({ proteinShake: !entry.proteinShake })}
           onCompleteGratitude={() => {
             const time = new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' }).format(new Date())
-            const line = `${time} — Dankbarkeit gehört`
+            const line = `${time} — Dankbarkeit vorgelesen`
             updateEntry({
               gratitudeDone: true,
               journalText: entry.journalText ? `${entry.journalText}\n${line}` : line,
@@ -3162,6 +3240,14 @@ function TodayView({
           )}
         </section>
 
+        <WeightDailyCard
+          date={date}
+          today={today}
+          entries={entries}
+          goalKg={settings.weightGoalKg}
+          startKg={settings.weightStartKg}
+        />
+
         <section className="card checkin-summary">
           <SectionTitle eyebrow="Körper & Kopf" title="Kurzer Check-in" />
           <div className="metric-summary-grid">
@@ -3639,6 +3725,36 @@ function CheckinView({
                     })}
                   />
                   <NumberField
+                    label="Fett"
+                    value={entry.fatGrams}
+                    unit="g"
+                    step={5}
+                    min={0}
+                    max={300}
+                    placeholder="z. B. 70"
+                    onChange={fatGrams => onUpdate({ fatGrams })}
+                  />
+                  <NumberField
+                    label="Kohlenhydrate"
+                    value={entry.carbsGrams}
+                    unit="g"
+                    step={5}
+                    min={0}
+                    max={800}
+                    placeholder="z. B. 250"
+                    onChange={carbsGrams => onUpdate({ carbsGrams })}
+                  />
+                  <NumberField
+                    label="Ballaststoffe"
+                    value={entry.fiberGrams}
+                    unit="g"
+                    step={1}
+                    min={0}
+                    max={100}
+                    placeholder="z. B. 30"
+                    onChange={fiberGrams => onUpdate({ fiberGrams })}
+                  />
+                  <NumberField
                     label="Wasser"
                     value={entry.waterLiters}
                     unit="L"
@@ -3662,6 +3778,9 @@ function CheckinView({
                   {[
                     { label: 'Protein', value: entry.proteinGrams, goal: settings.proteinGoal, unit: 'g' },
                     { label: 'Kalorien', value: entry.calories, goal: settings.calorieGoal, unit: 'kcal' },
+                    { label: 'Fett', value: entry.fatGrams, goal: settings.fatGoal, unit: 'g' },
+                    { label: 'KH', value: entry.carbsGrams, goal: settings.carbsGoal, unit: 'g' },
+                    { label: 'Faser', value: entry.fiberGrams, goal: settings.fiberGoal, unit: 'g' },
                     { label: 'Wasser', value: entry.waterLiters, goal: 2.5, unit: 'L' },
                   ].map(ring => {
                     const percent = macroProgress(ring.value, ring.goal)
@@ -5577,6 +5696,9 @@ function QuickAddModal({
   onSubmitWeight,
   onSubmitCalories,
   onSubmitProtein,
+  onSubmitFat,
+  onSubmitCarbs,
+  onSubmitFiber,
   onSubmitWater,
   onSubmitSteps,
 }: {
@@ -5585,6 +5707,9 @@ function QuickAddModal({
   onSubmitWeight: (value: number) => void
   onSubmitCalories: (value: number) => void
   onSubmitProtein: (value: number) => void
+  onSubmitFat: (value: number) => void
+  onSubmitCarbs: (value: number) => void
+  onSubmitFiber: (value: number) => void
   onSubmitWater: (value: number) => void
   onSubmitSteps: (value: number) => void
 }) {
@@ -5593,7 +5718,7 @@ function QuickAddModal({
 
   const parsed = parseQuickAdd(value)
   const preview = value.trim() === ''
-    ? 'Erkennt automatisch: „74.2kg“, „180g protein“, „3000kcal“, „2.5l“, „8000 Schritte“ — sonst wird eine Aufgabe daraus.'
+    ? 'Erkennt Gewicht, kcal, Protein, Fett, KH, Ballaststoffe, Wasser und Schritte — sonst wird eine Aufgabe daraus.'
     : describeQuickAdd(parsed)
 
   const submit = (event: FormEvent) => {
@@ -5608,6 +5733,15 @@ function QuickAddModal({
         return
       case 'protein':
         onSubmitProtein(parsed.value)
+        return
+      case 'fat':
+        onSubmitFat(parsed.value)
+        return
+      case 'carbs':
+        onSubmitCarbs(parsed.value)
+        return
+      case 'fiber':
+        onSubmitFiber(parsed.value)
         return
       case 'water':
         onSubmitWater(parsed.value)
@@ -5897,6 +6031,24 @@ function RitualDurationFields({
   const setMinutes = (key: 'coldSeconds' | 'winnerSeconds' | 'prayerSeconds' | 'hotShowerSeconds', value: number, min: number, max: number) => {
     onChange({ ...config, [key]: clampNumber(Math.round(value * 60), min, max) })
   }
+  const plannedTime = (
+    <label className="ritual-duration">
+      <span>Planzeit Min.</span>
+      <input
+        type="number"
+        min={1}
+        max={120}
+        value={config.stepMinutes[id]}
+        onChange={event => onChange({
+          ...config,
+          stepMinutes: {
+            ...config.stepMinutes,
+            [id]: clampNumber(Number(event.target.value) || 1, 1, 120),
+          },
+        })}
+      />
+    </label>
+  )
 
   switch (id) {
     case 'coldShower':
@@ -5941,6 +6093,7 @@ function RitualDurationFields({
     case 'workout':
       return (
         <div className="ritual-duration-row">
+          {plannedTime}
           <label className="ritual-duration">
             <span>Pushups</span>
             <input
@@ -6003,9 +6156,25 @@ function RitualDurationFields({
     case 'todos':
     case 'selfcare':
     case 'letsGo':
-      return null
+      return plannedTime
     default: {
       const _exhaustive: never = id
+      return _exhaustive
+    }
+  }
+}
+
+function ritualPhaseLabel(id: MorningRitualStepId): string {
+  const phase = morningRitualPhase(id)
+  switch (phase) {
+    case 'gate':
+      return 'Start'
+    case 'heute':
+      return 'Planung'
+    case 'track':
+      return 'Aktiv'
+    default: {
+      const _exhaustive: never = phase
       return _exhaustive
     }
   }
@@ -6047,6 +6216,7 @@ function SettingsModal({
   const [joinCode, setJoinCode] = useState('')
   const [syncBusy, setSyncBusy] = useState(false)
   const [selfcareDraft, setSelfcareDraft] = useState('')
+  const ritualConfig = normalizeMorningRitualConfig(settings.morningRitual)
 
   const moveDashboardTab = (index: number, direction: -1 | 1) => {
     const target = index + direction
@@ -6244,12 +6414,14 @@ function SettingsModal({
           <label className="text-field"><span>KH-Ziel in g</span><input type="number" min="50" max="500" step="5" value={settings.carbsGoal} onChange={event => onChange({ ...settings, carbsGoal: clampNumber(Number(event.target.value) || 250, 50, 500) })} /></label>
           <label className="text-field"><span>Ballaststoffe in g</span><input type="number" min="10" max="80" step="1" value={settings.fiberGoal} onChange={event => onChange({ ...settings, fiberGoal: clampNumber(Number(event.target.value) || 30, 10, 80) })} /></label>
           <label className="text-field"><span>Körpergröße in cm</span><input type="number" min="0" max="250" step="1" value={settings.heightCm || ''} placeholder="für BMI" onChange={event => onChange({ ...settings, heightCm: clampNumber(Number(event.target.value) || 0, 0, 250) })} /></label>
+          <label className="text-field"><span>Gewichtsziel in kg</span><input type="number" min="0" max="300" step="0.1" value={settings.weightGoalKg || ''} placeholder="z. B. 70" onChange={event => onChange({ ...settings, weightGoalKg: clampNumber(Number(event.target.value) || 0, 0, 300) })} /></label>
+          <label className="text-field"><span>Startgewicht in kg</span><input type="number" min="0" max="300" step="0.1" value={settings.weightStartKg || ''} placeholder="leer = erster Wert" onChange={event => onChange({ ...settings, weightStartKg: clampNumber(Number(event.target.value) || 0, 0, 300) })} /></label>
         </div>
 
         <div className="settings-section">
           <h3>Morgen-Ritual</h3>
           <p className="settings-help">
-            Reihenfolge, Dauer und Auto-Weiter steuerst du unten. Pause sitzt auf jedem Timer.
+            Reihenfolge, Regeln und Zeiten steuerst du unten. Jeder Timer wird weiterhin manuell gestartet.
           </p>
           <div className="settings-actions">
             <button
@@ -6267,145 +6439,171 @@ function SettingsModal({
             )}
           </div>
           {settings.morningGateEnabled && (
-            <>
-              <label className="text-field" style={{ marginTop: 12 }}>
-                <span>Dankbarkeits-Text (wird vorgelesen)</span>
-                <textarea
-                  rows={5}
-                  value={settings.morningRitual.gratitudeText}
-                  onChange={event => onChange({
-                    ...settings,
-                    morningRitual: { ...settings.morningRitual, gratitudeText: event.target.value.slice(0, 1200) },
-                  })}
-                />
-              </label>
-              <button
-                type="button"
-                className={settings.morningRitual.autoAdvance ? 'choice-button is-active' : 'choice-button'}
-                aria-pressed={settings.morningRitual.autoAdvance}
-                onClick={() => onChange({
-                  ...settings,
-                  morningRitual: { ...settings.morningRitual, autoAdvance: !settings.morningRitual.autoAdvance },
-                })}
-              >
-                {settings.morningRitual.autoAdvance ? 'Auto-Weiter an' : 'Auto-Weiter aus'}
-              </button>
-              <p className="settings-help">Reihenfolge und Dauer. Ausblendete Schritte werden übersprungen.</p>
-              <ul className="ritual-order-list">
-                {settings.morningRitual.stepOrder.map((id, index) => {
-                  const hidden = settings.morningRitual.hiddenSteps.includes(id)
-                  const meta = morningRitualMeta(id, settings.morningRitual)
+            <div className="ritual-card-overview">
+              <p className="settings-help">
+                Alle Karten in Ablauf-Reihenfolge. Regeln erscheinen direkt auf der jeweiligen Karte.
+                Timer-Zeiten steuern den echten Timer; Planzeiten sind Richtwerte.
+              </p>
+              <ol className="ritual-card-grid">
+                {ritualConfig.stepOrder.map((id, index) => {
+                  const hidden = ritualConfig.hiddenSteps.includes(id)
+                  const meta = morningRitualMeta(id, ritualConfig)
                   return (
-                    <li key={id} className={hidden ? 'ritual-order-item is-hidden' : 'ritual-order-item'}>
-                      <div className="ritual-order-item__move">
-                        <button
-                          type="button"
-                          className="icon-button"
-                          aria-label={`${meta.label} nach oben`}
-                          disabled={index === 0}
-                          onClick={() => onChange({
-                            ...settings,
-                            morningRitual: {
-                              ...settings.morningRitual,
-                              stepOrder: moveRitualStep(settings.morningRitual.stepOrder, index, -1),
-                            },
-                          })}
-                        >
-                          <ChevronUp size={15} />
-                        </button>
-                        <button
-                          type="button"
-                          className="icon-button"
-                          aria-label={`${meta.label} nach unten`}
-                          disabled={index === settings.morningRitual.stepOrder.length - 1}
-                          onClick={() => onChange({
-                            ...settings,
-                            morningRitual: {
-                              ...settings.morningRitual,
-                              stepOrder: moveRitualStep(settings.morningRitual.stepOrder, index, 1),
-                            },
-                          })}
-                        >
-                          <ChevronDown size={15} />
-                        </button>
+                    <li key={id} className={hidden ? 'ritual-config-card is-hidden' : 'ritual-config-card'}>
+                      <div className="ritual-config-card__head">
+                        <div className="ritual-config-card__number" aria-hidden="true">
+                          {String(index + 1).padStart(2, '0')}
+                        </div>
+                        <div className="ritual-config-card__title">
+                          <span>{ritualPhaseLabel(id)}</span>
+                          <strong>{meta.label}</strong>
+                          <small>{hidden ? 'Wird übersprungen' : meta.hint}</small>
+                        </div>
+                        <div className="ritual-config-card__actions">
+                          <IconButton
+                            label={`${meta.label} nach oben`}
+                            disabled={index === 0}
+                            onClick={() => onChange({
+                              ...settings,
+                              morningRitual: {
+                                ...ritualConfig,
+                                stepOrder: moveRitualStep(ritualConfig.stepOrder, index, -1),
+                              },
+                            })}
+                          >
+                            <ChevronUp size={15} />
+                          </IconButton>
+                          <IconButton
+                            label={`${meta.label} nach unten`}
+                            disabled={index === ritualConfig.stepOrder.length - 1}
+                            onClick={() => onChange({
+                              ...settings,
+                              morningRitual: {
+                                ...ritualConfig,
+                                stepOrder: moveRitualStep(ritualConfig.stepOrder, index, 1),
+                              },
+                            })}
+                          >
+                            <ChevronDown size={15} />
+                          </IconButton>
+                          <IconButton
+                            label={hidden ? `${meta.label} einblenden` : `${meta.label} ausblenden`}
+                            className={hidden ? '' : 'is-active'}
+                            onClick={() => {
+                              const hiddenSteps = hidden
+                                ? ritualConfig.hiddenSteps.filter(step => step !== id)
+                                : [...ritualConfig.hiddenSteps, id]
+                              onChange({
+                                ...settings,
+                                morningRitual: { ...ritualConfig, hiddenSteps },
+                              })
+                            }}
+                          >
+                            {hidden ? <EyeOff size={15} /> : <Eye size={15} />}
+                          </IconButton>
+                        </div>
                       </div>
-                      <div>
-                        <strong>{meta.label}</strong>
-                        <small>{meta.hint}</small>
+
+                      <div className="ritual-config-card__body">
+                        <label className="text-field ritual-rule-field">
+                          <span>Eigene Regel</span>
+                          <textarea
+                            rows={3}
+                            maxLength={240}
+                            value={ritualConfig.stepRules[id]}
+                            onChange={event => onChange({
+                              ...settings,
+                              morningRitual: {
+                                ...ritualConfig,
+                                stepRules: {
+                                  ...ritualConfig.stepRules,
+                                  [id]: event.target.value.slice(0, 240),
+                                },
+                              },
+                            })}
+                          />
+                        </label>
                         <RitualDurationFields
                           id={id}
-                          config={settings.morningRitual}
+                          config={ritualConfig}
                           onChange={morningRitual => onChange({ ...settings, morningRitual })}
                         />
+
+                        {id === 'gratitude' && (
+                          <label className="text-field ritual-card-wide-field">
+                            <span>Text zum lauten Vorlesen</span>
+                            <textarea
+                              rows={5}
+                              maxLength={1200}
+                              value={ritualConfig.gratitudeText}
+                              onChange={event => onChange({
+                                ...settings,
+                                morningRitual: {
+                                  ...ritualConfig,
+                                  gratitudeText: event.target.value.slice(0, 1200),
+                                },
+                              })}
+                            />
+                          </label>
+                        )}
+
+                        {id === 'selfcare' && (
+                          <div className="ritual-card-wide-field">
+                            <span className="ritual-config-card__field-label">Checkliste</span>
+                            <div className="habit-settings-list">
+                              {ritualConfig.selfcareItems.map(item => (
+                                <button
+                                  type="button"
+                                  key={item.id}
+                                  className="choice-button is-active"
+                                  onClick={() => {
+                                    if (ritualConfig.selfcareItems.length <= 1) return
+                                    onChange({
+                                      ...settings,
+                                      morningRitual: {
+                                        ...ritualConfig,
+                                        selfcareItems: ritualConfig.selfcareItems.filter(entry => entry.id !== item.id),
+                                      },
+                                    })
+                                  }}
+                                >
+                                  {item.label}
+                                </button>
+                              ))}
+                            </div>
+                            <label className="text-field" style={{ marginTop: 8 }}>
+                              <span>Selfcare-Punkt hinzufügen</span>
+                              <input
+                                value={selfcareDraft}
+                                placeholder="z. B. Haar stylen"
+                                onChange={event => setSelfcareDraft(event.target.value)}
+                                onKeyDown={event => {
+                                  if (event.key !== 'Enter') return
+                                  event.preventDefault()
+                                  const label = selfcareDraft.trim()
+                                  if (!label) return
+                                  onChange({
+                                    ...settings,
+                                    morningRitual: {
+                                      ...ritualConfig,
+                                      selfcareItems: normalizeSelfcareItems([
+                                        ...ritualConfig.selfcareItems,
+                                        { id: `selfcare-${Date.now()}`, label },
+                                      ]),
+                                    },
+                                  })
+                                  setSelfcareDraft('')
+                                }}
+                              />
+                            </label>
+                          </div>
+                        )}
                       </div>
-                      <button
-                        type="button"
-                        className="icon-button"
-                        aria-label={hidden ? `${meta.label} einblenden` : `${meta.label} ausblenden`}
-                        onClick={() => {
-                          const hiddenSteps = hidden
-                            ? settings.morningRitual.hiddenSteps.filter(step => step !== id)
-                            : [...settings.morningRitual.hiddenSteps, id]
-                          onChange({
-                            ...settings,
-                            morningRitual: { ...settings.morningRitual, hiddenSteps },
-                          })
-                        }}
-                      >
-                        {hidden ? <EyeOff size={15} /> : <Eye size={15} />}
-                      </button>
                     </li>
                   )
                 })}
-              </ul>
-              <p className="settings-help">Selfcare — tippe zum Entfernen, unten hinzufügen:</p>
-              <div className="habit-settings-list">
-                {settings.morningRitual.selfcareItems.map(item => (
-                  <button
-                    type="button"
-                    key={item.id}
-                    className="choice-button is-active"
-                    onClick={() => {
-                      if (settings.morningRitual.selfcareItems.length <= 1) return
-                      onChange({
-                        ...settings,
-                        morningRitual: {
-                          ...settings.morningRitual,
-                          selfcareItems: settings.morningRitual.selfcareItems.filter(entry => entry.id !== item.id),
-                        },
-                      })
-                    }}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-              <label className="text-field" style={{ marginTop: 8 }}>
-                <span>Selfcare-Punkt hinzufügen</span>
-                <input
-                  value={selfcareDraft}
-                  placeholder="z. B. Haar stylen"
-                  onChange={event => setSelfcareDraft(event.target.value)}
-                  onKeyDown={event => {
-                    if (event.key !== 'Enter') return
-                    event.preventDefault()
-                    const label = selfcareDraft.trim()
-                    if (!label) return
-                    onChange({
-                      ...settings,
-                      morningRitual: {
-                        ...settings.morningRitual,
-                        selfcareItems: normalizeSelfcareItems([
-                          ...settings.morningRitual.selfcareItems,
-                          { id: `selfcare-${Date.now()}`, label },
-                        ]),
-                      },
-                    })
-                    setSelfcareDraft('')
-                  }}
-                />
-              </label>
-            </>
+              </ol>
+            </div>
           )}
         </div>
 
@@ -6691,6 +6889,50 @@ function SettingsModal({
                 · Aufgabe: <code>{`{"type":"task","title":"Creatine holen"}`}</code>
                 · Energie: <code>{`{"type":"log","energy":"high"}`}</code>
                 · Notiz: <code>{`{"type":"note","text":"Idee vom Gehen"}`}</code>
+              </p>
+              <div className="shortcut-recipe-list" style={{ marginTop: 16 }}>
+                <div className="shortcut-recipe">
+                  <div>
+                    <strong>Apple Health Ingest</strong>
+                    <span>Health Auto Export: Fitdays → Apple Health → dieser Endpunkt</span>
+                    <code>{`${window.location.origin}/api/health/ingest`}</code>
+                  </div>
+                  <button
+                    type="button"
+                    className="small-button"
+                    onClick={async () => {
+                      const ok = await copyText(`${window.location.origin}/api/health/ingest`)
+                      if (!ok) return
+                      setCopiedShortcut('health-url')
+                      window.setTimeout(() => setCopiedShortcut(current => (current === 'health-url' ? null : current)), 1600)
+                    }}
+                  >
+                    {copiedShortcut === 'health-url' ? 'Kopiert' : 'URL kopieren'}
+                  </button>
+                </div>
+                <div className="shortcut-recipe">
+                  <div>
+                    <strong>Health-Header</strong>
+                    <span>In Health Auto Export als eigene HTTP-Header setzen</span>
+                    <code>{`Authorization: Bearer ${deviceSync.deviceToken}\nX-Life-Os-Room: ${deviceSync.roomId}`}</code>
+                  </div>
+                  <button
+                    type="button"
+                    className="small-button"
+                    onClick={async () => {
+                      const ok = await copyText(`Authorization: Bearer ${deviceSync.deviceToken}\nX-Life-Os-Room: ${deviceSync.roomId}`)
+                      if (!ok) return
+                      setCopiedShortcut('health-headers')
+                      window.setTimeout(() => setCopiedShortcut(current => (current === 'health-headers' ? null : current)), 1600)
+                    }}
+                  >
+                    {copiedShortcut === 'health-headers' ? 'Kopiert' : 'Header kopieren'}
+                  </button>
+                </div>
+              </div>
+              <p className="settings-help">
+                Health Auto Export kann das native JSON schicken. Einfacher Test:
+                <code>{`{"metric":"weight","value":56.8,"unit":"kg","date":"2026-09-13T07:42:00+02:00","source":"Fitdays"}`}</code>
               </p>
             </>
           ) : (

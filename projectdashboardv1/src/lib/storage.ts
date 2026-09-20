@@ -1,13 +1,21 @@
 import type { DashboardEntry } from '../types/DashboardEntry'
+import { loadBodyMeasurements, mergeSavedBodyMeasurements, normalizeBodyMeasurements, type BodyMeasurement } from './bodyMeasurement'
 import { calculateScore } from './score'
 import { loadXP, saveXP, type XPStore, XP_KEY } from './xp-store'
+import {
+  loadMorningRitualProgress,
+  normalizeMorningRitualProgress,
+  saveMorningRitualProgress,
+  type MorningRitualProgress,
+} from './morningGate'
 
 const ENTRIES_KEY = 'project-life-entries'
 const USER_ID_KEY = 'project-life-user-id'
 const SETTINGS_KEY = 'life-os-v1-settings'
 const DASHBOARD_PLUS_KEY = 'life-os-v1-dashboard-plus'
+const QUICK_NOTE_KEY = 'life-os-quick-note'
 const LAST_BACKUP_KEY = 'life-os-v1-last-backup-at'
-export const BACKUP_VERSION = 2
+export const BACKUP_VERSION = 3
 
 export { ENTRIES_KEY }
 
@@ -18,6 +26,9 @@ export type LifeOsBackupBundle = {
   settings?: unknown
   dashboardPlus?: unknown
   xp?: XPStore
+  bodyMeasurements?: BodyMeasurement[]
+  morningRitualProgress?: MorningRitualProgress
+  quickNote?: unknown
 }
 
 // ─── User identity (UUID stored in localStorage) ──────────────────────────────
@@ -120,6 +131,9 @@ export function exportBackupBundle(input: {
     settings: input.settings,
     dashboardPlus: input.dashboardPlus,
     xp: loadXP(),
+    bodyMeasurements: loadBodyMeasurements(),
+    morningRitualProgress: loadMorningRitualProgress(todayKeyLocal()),
+    quickNote: parseStoredJson(QUICK_NOTE_KEY),
   }
   const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
@@ -143,6 +157,9 @@ export type ImportResult = {
   settings?: unknown
   dashboardPlus?: unknown
   xp?: XPStore
+  bodyMeasurements?: BodyMeasurement[]
+  morningRitualProgress?: MorningRitualProgress
+  quickNote?: unknown
   mode: 'bundle' | 'entries'
   entryCount: number
 }
@@ -168,6 +185,11 @@ export function importBackupFile(file: File): Promise<ImportResult> {
             settings: data.settings,
             dashboardPlus: data.dashboardPlus,
             xp: data.xp,
+            bodyMeasurements: Array.isArray(data.bodyMeasurements)
+              ? normalizeBodyMeasurements(data.bodyMeasurements)
+              : undefined,
+            morningRitualProgress: normalizeMorningRitualProgress(data.morningRitualProgress) ?? undefined,
+            quickNote: data.quickNote,
             mode: 'bundle',
             entryCount: entries.length,
           })
@@ -210,10 +232,29 @@ export function applyBackupExtras(result: ImportResult): void {
   if (result.settings) safeSetItem(SETTINGS_KEY, JSON.stringify(result.settings))
   if (result.dashboardPlus) safeSetItem(DASHBOARD_PLUS_KEY, JSON.stringify(result.dashboardPlus))
   if (result.xp) saveXP({ ...loadXP(), ...result.xp })
+  if (result.bodyMeasurements?.length) mergeSavedBodyMeasurements(result.bodyMeasurements)
+  if (result.morningRitualProgress) saveMorningRitualProgress(result.morningRitualProgress)
+  if (result.quickNote != null) safeSetItem(QUICK_NOTE_KEY, JSON.stringify(result.quickNote))
   safeSetItem(LAST_BACKUP_KEY, new Date().toISOString())
 }
 
 export { SETTINGS_KEY, DASHBOARD_PLUS_KEY, XP_KEY }
+
+function todayKeyLocal(): string {
+  const date = new Date()
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function parseStoredJson(key: string): unknown {
+  try {
+    return JSON.parse(safeGetItem(key) ?? 'null')
+  } catch {
+    return undefined
+  }
+}
 
 // ─── Legacy schema migration ─────────────────────────────────────────────────
 function migrateLegacy(raw: Record<string, unknown>): DashboardEntry {
@@ -250,6 +291,8 @@ function migrateLegacy(raw: Record<string, unknown>): DashboardEntry {
     journalText: String(raw.journalText ?? ''),
     familyTimeDone: Boolean(raw.familyTimeDone),
     weightKg: Number(raw.weightKg) || 0,
+    weightMeasuredAt: typeof raw.weightMeasuredAt === 'string' ? raw.weightMeasuredAt : undefined,
+    bodyFatPercent: Number(raw.bodyFatPercent) > 0 ? Number(raw.bodyFatPercent) : undefined,
     waterLiters: Number(raw.waterLiters) || 0,
     deepWorkHours: Number(raw.deepWorkHours) || 0,
     steps: Number(raw.steps) || 0,

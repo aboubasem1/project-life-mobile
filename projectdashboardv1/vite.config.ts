@@ -38,12 +38,16 @@ function lifeOsSyncDevPlugin(): Plugin {
             })
 
             const bodyText = Buffer.concat(chunks).toString('utf8')
+            const forwarded: Record<string, string> = {
+              'Content-Type': req.headers['content-type'] ?? 'application/json',
+            }
+            if (req.headers.authorization) forwarded.Authorization = req.headers.authorization
+            if (req.headers['x-life-os-room']) forwarded['X-Life-Os-Room'] = String(req.headers['x-life-os-room'])
+            if (req.headers['x-life-os-token']) forwarded['X-Life-Os-Token'] = String(req.headers['x-life-os-token'])
+
             const request = new Request(`http://127.0.0.1${url}`, {
               method: req.method ?? 'GET',
-              headers: {
-                'Content-Type': req.headers['content-type'] ?? 'application/json',
-                ...(req.headers.authorization ? { Authorization: req.headers.authorization } : {}),
-              },
+              headers: forwarded,
               body: req.method && !['GET', 'HEAD'].includes(req.method) ? bodyText : undefined,
             })
 
@@ -90,6 +94,9 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Workbox's terser worker exits early on the supported local Node setup.
+        // Development mode skips that fragile minification step; caching behavior is unchanged.
+        mode: 'development',
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         navigateFallbackDenylist: [
           /^\/developer(?:\/|$)/,
