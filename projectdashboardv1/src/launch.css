@@ -1113,6 +1113,102 @@ button:disabled {
   gap: 8px;
 }
 
+.daily-timeline-card {
+  grid-column: 1 / -1;
+}
+
+.day-close-card {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 12px;
+}
+
+.day-close-card.is-closed {
+  border-color: color-mix(in srgb, var(--success) 35%, var(--border));
+}
+
+.day-close-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.day-close-summary {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.day-close-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.day-close-gaps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.day-close-gaps .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.day-close-card .primary-button,
+.day-close-card .secondary-button {
+  width: 100%;
+  justify-content: center;
+}
+
+.daily-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.daily-timeline__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.daily-timeline__copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.daily-timeline__copy strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.daily-timeline__copy span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.daily-timeline__row .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 .status-row {
   display: flex;
   align-items: center;

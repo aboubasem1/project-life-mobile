@@ -72,6 +72,8 @@ export interface DashboardEntry {
 
   /** Conscious rest day — not a miss, not a win. */
   dayShield?: boolean
+  /** ISO timestamp when the user consciously closed the day. Null clears a close. */
+  dayClosedAt?: string | null
   /** Progress toward amount / timer / step habits. */
   habitLogs?: Record<string, { value?: number; elapsed?: number; checked?: string[] }>
 }

@@ -54,9 +54,9 @@ npm run preview
 - Labor: `life-os-v1-dashboard-plus`
 - XP: `lifeos-xp-v1`
 
-Einstellungen → **Backup exportieren / importieren**. Vollbackup v3 enthält Tage,
-Settings, Labor, XP, Körpermessungen, Kurznotiz und den aktuellen
-Morgenritual-Fortschritt. Neuere Backup-Versionen als die App werden abgelehnt.
+Einstellungen → **Backup exportieren / importieren**. Vollbackup v4 enthält Tage,
+Settings, Labor, XP, Körpermessungen, Kurznotiz, Morgenritual-Fortschritt und das
+append-only Tagesereignisprotokoll. Neuere Backup-Versionen als die App werden abgelehnt.
 
 ## Optionaler Sync und Automatisierung
 

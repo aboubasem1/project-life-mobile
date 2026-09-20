@@ -2,6 +2,12 @@ import { getRoom, saveRoom, type SyncSnapshot } from './sync-store.js'
 import { SyncHttpError } from './sync-core.js'
 import { appendJournal, formatNoteLine, mergeQuickNote, parseQuickNote } from './inbound-note.js'
 import { scoreInboundEntry } from './entry-score.js'
+import {
+  createEntryPatchEvent,
+  capturePreviousValues,
+  diffEntryChanges,
+  mergeDailyEvents,
+} from '../projectdashboardv1/src/lib/dailyEvents.js'
 
 const HABIT_KEYS = new Set([
   'breathingDone',
@@ -260,6 +266,14 @@ export async function applyInboundHook(raw: InboundHook): Promise<{
     weightKg: finiteNumber(raw.weightKg) ?? undefined,
     energy: validEnergy(raw.energy),
   }), snapshot?.settings)
+  const changes = diffEntryChanges(current, patched)
+  const event = createEntryPatchEvent({
+    date,
+    changes,
+    previous: capturePreviousValues(current, changes),
+    source: 'webhook',
+    occurredAt: typeof patched.updatedAt === 'string' ? patched.updatedAt : undefined,
+  })
 
   if (index >= 0) entries[index] = patched
   else entries.push(patched)
@@ -279,6 +293,7 @@ export async function applyInboundHook(raw: InboundHook): Promise<{
     bodyMeasurements: snapshot?.bodyMeasurements,
     healthIngest: snapshot?.healthIngest,
     morningRitualProgress: snapshot?.morningRitualProgress,
+    dailyEvents: mergeDailyEvents(snapshot?.dailyEvents, event ? [event] : []),
   }
   room.snapshot = nextSnapshot
   room.updatedAt = updatedAt

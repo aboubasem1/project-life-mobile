@@ -11,6 +11,12 @@ import {
 import { SyncHttpError } from './sync-core.js'
 import { getRoom, saveRoom, type SyncSnapshot } from './sync-store.js'
 import { scoreInboundEntry } from './entry-score.js'
+import {
+  createEntryPatchEvent,
+  capturePreviousValues,
+  diffEntryChanges,
+  mergeDailyEvents,
+} from '../projectdashboardv1/src/lib/dailyEvents.js'
 
 type LooseEntry = Record<string, unknown> & { date: string }
 
@@ -160,6 +166,19 @@ export async function applyHealthIngest(request: Request, body: unknown): Promis
     ? snapshot.entries.filter((item): item is LooseEntry => Boolean(item && typeof item === 'object' && typeof (item as { date?: unknown }).date === 'string'))
     : []
   const patched = applyPatches(entries, parsed.dailyPatches, snapshot?.settings)
+  const ingestEvents = patched.dates.map(date => {
+    const before = entries.find(item => item.date === date) ?? seedEntry(date)
+    const after = patched.entries.find(item => item.date === date)
+    if (!after) return null
+    const changes = diffEntryChanges(before, after)
+    return createEntryPatchEvent({
+      date,
+      changes,
+      previous: capturePreviousValues(before, changes),
+      source: 'health',
+      occurredAt: typeof after.updatedAt === 'string' ? after.updatedAt : undefined,
+    })
+  })
   const nextIngest: HealthIngestState = mergeHealthIngestState(dedup.next, snapshot?.healthIngest)
   const updatedAt = new Date().toISOString()
   const nextRevision = (snapshot?.revision ?? 0) + 1
@@ -174,6 +193,7 @@ export async function applyHealthIngest(request: Request, body: unknown): Promis
     bodyMeasurements: measurements,
     healthIngest: nextIngest,
     morningRitualProgress: snapshot?.morningRitualProgress,
+    dailyEvents: mergeDailyEvents(snapshot?.dailyEvents, ingestEvents),
   }
   room.snapshot = nextSnapshot
   room.updatedAt = updatedAt

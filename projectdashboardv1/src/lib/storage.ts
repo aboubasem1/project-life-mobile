@@ -8,6 +8,13 @@ import {
   saveMorningRitualProgress,
   type MorningRitualProgress,
 } from './morningGate'
+import {
+  loadDailyEvents,
+  mergeDailyEvents,
+  normalizeDailyEvents,
+  saveDailyEvents,
+  type DailyEvent,
+} from './dailyEvents'
 
 const ENTRIES_KEY = 'project-life-entries'
 const USER_ID_KEY = 'project-life-user-id'
@@ -15,7 +22,7 @@ const SETTINGS_KEY = 'life-os-v1-settings'
 const DASHBOARD_PLUS_KEY = 'life-os-v1-dashboard-plus'
 const QUICK_NOTE_KEY = 'life-os-quick-note'
 const LAST_BACKUP_KEY = 'life-os-v1-last-backup-at'
-export const BACKUP_VERSION = 3
+export const BACKUP_VERSION = 4
 
 export { ENTRIES_KEY }
 
@@ -29,6 +36,7 @@ export type LifeOsBackupBundle = {
   bodyMeasurements?: BodyMeasurement[]
   morningRitualProgress?: MorningRitualProgress
   quickNote?: unknown
+  dailyEvents?: DailyEvent[]
 }
 
 // ─── User identity (UUID stored in localStorage) ──────────────────────────────
@@ -134,6 +142,7 @@ export function exportBackupBundle(input: {
     bodyMeasurements: loadBodyMeasurements(),
     morningRitualProgress: loadMorningRitualProgress(todayKeyLocal()),
     quickNote: parseStoredJson(QUICK_NOTE_KEY),
+    dailyEvents: loadDailyEvents(),
   }
   const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
@@ -160,6 +169,7 @@ export type ImportResult = {
   bodyMeasurements?: BodyMeasurement[]
   morningRitualProgress?: MorningRitualProgress
   quickNote?: unknown
+  dailyEvents?: DailyEvent[]
   mode: 'bundle' | 'entries'
   entryCount: number
 }
@@ -190,6 +200,7 @@ export function importBackupFile(file: File): Promise<ImportResult> {
               : undefined,
             morningRitualProgress: normalizeMorningRitualProgress(data.morningRitualProgress) ?? undefined,
             quickNote: data.quickNote,
+            dailyEvents: normalizeDailyEvents(data.dailyEvents),
             mode: 'bundle',
             entryCount: entries.length,
           })
@@ -235,6 +246,9 @@ export function applyBackupExtras(result: ImportResult): void {
   if (result.bodyMeasurements?.length) mergeSavedBodyMeasurements(result.bodyMeasurements)
   if (result.morningRitualProgress) saveMorningRitualProgress(result.morningRitualProgress)
   if (result.quickNote != null) safeSetItem(QUICK_NOTE_KEY, JSON.stringify(result.quickNote))
+  if (result.dailyEvents?.length) {
+    saveDailyEvents(mergeDailyEvents(loadDailyEvents(), result.dailyEvents))
+  }
   safeSetItem(LAST_BACKUP_KEY, new Date().toISOString())
 }
 
@@ -312,6 +326,11 @@ function migrateLegacy(raw: Record<string, unknown>): DashboardEntry {
     bedTime: typeof raw.bedTime === 'string' ? raw.bedTime : undefined,
     wakeTime: typeof raw.wakeTime === 'string' ? raw.wakeTime : undefined,
     dayShield: raw.dayShield === true,
+    dayClosedAt: typeof raw.dayClosedAt === 'string' && raw.dayClosedAt
+      ? raw.dayClosedAt
+      : raw.dayClosedAt === null
+        ? null
+        : undefined,
     habitLogs: normalizeMigratedLogs(raw.habitLogs),
   }
 }

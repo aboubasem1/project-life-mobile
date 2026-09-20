@@ -35,6 +35,7 @@ import {
   Fish,
   Eye,
   EyeOff,
+  Flag,
   FlaskConical,
   Focus,
   GripVertical,
@@ -152,6 +153,32 @@ import { WeightDailyCard } from './components/WeightDailyCard'
 import { defaultHabitKind, isHabitComplete, isHabitKey, patchHabitLog } from './lib/habitKinds'
 import { moodHabitLine } from './lib/moodHabit'
 import { appendJournal, formatNoteLine, mergeQuickNote, parseQuickNote } from './lib/inboundNote'
+import {
+  assessDayCompleteness,
+  closeDayPatch,
+  formatClosedAt,
+  reopenDayPatch,
+  type DayCloseAction,
+} from './lib/dayClose'
+import {
+  LIFE_OS_DAILY_EVENTS_EVENT,
+  appendDailyEvent,
+  buildUndoPatch,
+  canUndoEntryPatch,
+  canUndoRitualStep,
+  capturePreviousValues,
+  createEntryPatchEvent,
+  createRitualStepEvent,
+  DAILY_EVENTS_KEY,
+  eventsForDate,
+  formatEventTime,
+  loadDailyEvents,
+  sourceLabel,
+  summarizeDailyEvent,
+  type DailyEvent,
+  type DailyEventSource,
+  type EntryPatchEvent,
+} from './lib/dailyEvents'
 import './launch.css'
 
 type View = 'today' | 'plan' | 'checkin' | 'progress' | 'dashboardPlus'
@@ -1327,6 +1354,7 @@ function App() {
   const [gateBypass, setGateBypass] = useState(() => shouldBypassMorningGate(peekAppAction()))
   const [gateSkipped, setGateSkipped] = useState(() => loadMorningGateSkip(dateKey(new Date())))
   const [ritualProgress, setRitualProgress] = useState<MorningRitualProgress>(() => loadMorningRitualProgress(dateKey(new Date())))
+  const [dailyEvents, setDailyEvents] = useState<DailyEvent[]>(() => loadDailyEvents())
 
   const today = dateKey(new Date())
   const nowHour = new Date().getHours()
@@ -1536,13 +1564,17 @@ function App() {
       setDashboardPlus(loadDashboardPlusState())
       setDeviceSyncCreds(loadSyncCredentials())
       setRitualProgress(loadMorningRitualProgress(today))
+      setDailyEvents(loadDailyEvents())
     }
+    const reloadEvents = () => setDailyEvents(loadDailyEvents())
     window.addEventListener(LIFE_OS_SYNC_EXTRAS_EVENT, reloadExtras)
+    window.addEventListener(LIFE_OS_DAILY_EVENTS_EVENT, reloadEvents)
     const onStorage = (event: StorageEvent) => {
       if (
         event.key === SETTINGS_KEY
         || event.key === DASHBOARD_PLUS_KEY
         || event.key === MORNING_RITUAL_PROGRESS_KEY
+        || event.key === DAILY_EVENTS_KEY
         || event.key === null
       ) {
         reloadExtras()
@@ -1551,6 +1583,7 @@ function App() {
     window.addEventListener('storage', onStorage)
     return () => {
       window.removeEventListener(LIFE_OS_SYNC_EXTRAS_EVENT, reloadExtras)
+      window.removeEventListener(LIFE_OS_DAILY_EVENTS_EVENT, reloadEvents)
       window.removeEventListener('storage', onStorage)
     }
   }, [today])
@@ -1651,28 +1684,119 @@ function App() {
     }
   }, [settings.medisRemindersEnabled, dashboardPlus.medications, today])
 
-  const updateEntry = (patch: Partial<DashboardEntry>) => {
+  const updateEntry = (
+    patch: Partial<DashboardEntry>,
+    source: DailyEventSource = 'ui',
+    options?: { undoOf?: string; offerUndo?: boolean; toastMessage?: string },
+  ) => {
     const before = loadXP()
+    const previous = capturePreviousValues(
+      entry as unknown as Record<string, unknown>,
+      patch as Record<string, unknown>,
+    )
     void saveEntry({ ...entry, ...patch }).then(ok => {
       if (!ok) {
         showToast('Speichern fehlgeschlagen — Speicher voll oder blockiert.')
         return
       }
+      const event = createEntryPatchEvent({
+        date: entry.date,
+        changes: patch as Record<string, unknown>,
+        previous,
+        source,
+        undoOf: options?.undoOf,
+      })
+      appendDailyEvent(event)
       const after = loadXP()
       const gained = after.totalXP - before.totalXP
+      if (options?.undoOf) {
+        showToast('Änderung rückgängig gemacht.')
+        return
+      }
       if (after.level > before.level) {
         showToast(`Level ${after.level} · +${gained} XP`)
-      } else if (gained > 0) {
-        showToast(`+${gained} XP`)
+        return
       }
+      if (gained > 0) {
+        showToast(`+${gained} XP`)
+        return
+      }
+      if (options?.offerUndo && event && Object.keys(previous).length > 0) {
+        showToast(options.toastMessage ?? 'Gespeichert.', 'Rückgängig', () => {
+          undoDailyEvent(event)
+        })
+        return
+      }
+      if (options?.toastMessage) showToast(options.toastMessage)
     })
   }
 
-  const saveEntryForDate = async (date: string, patch: Partial<DashboardEntry>) => {
+  const saveEntryForDate = async (
+    date: string,
+    patch: Partial<DashboardEntry>,
+    source: DailyEventSource = 'ui',
+    options?: { undoOf?: string },
+  ) => {
     const base = entries.find(item => item.date === date) ?? createDefaultEntry(date)
+    const previous = capturePreviousValues(
+      base as unknown as Record<string, unknown>,
+      patch as Record<string, unknown>,
+    )
     const ok = await saveEntry({ ...base, ...patch })
-    if (!ok) showToast('Speichern fehlgeschlagen — Speicher voll oder blockiert.')
+    if (!ok) {
+      showToast('Speichern fehlgeschlagen — Speicher voll oder blockiert.')
+    } else {
+      appendDailyEvent(createEntryPatchEvent({
+        date,
+        changes: patch as Record<string, unknown>,
+        previous,
+        source,
+        undoOf: options?.undoOf,
+      }))
+    }
     return ok
+  }
+
+  const undoDailyEvent = (event: EntryPatchEvent) => {
+    if (!canUndoEntryPatch(event, loadDailyEvents())) {
+      showToast('Bereits rückgängig oder nicht mehr möglich.')
+      return
+    }
+    const patch = buildUndoPatch(event)
+    if (!patch) {
+      showToast('Diese Änderung lässt sich nicht rückgängig machen.')
+      return
+    }
+    if (event.date === entry.date) {
+      updateEntry(patch as Partial<DashboardEntry>, 'ui', { undoOf: event.id })
+      return
+    }
+    void saveEntryForDate(event.date, patch as Partial<DashboardEntry>, 'ui', { undoOf: event.id }).then(ok => {
+      if (ok) showToast('Änderung rückgängig gemacht.')
+    })
+  }
+
+  const undoRitualEvent = (event: DailyEvent) => {
+    if (!canUndoRitualStep(event, loadDailyEvents())) {
+      showToast('Bereits rückgängig oder nicht mehr möglich.')
+      return
+    }
+    appendDailyEvent(createRitualStepEvent({
+      date: event.date,
+      stepId: event.stepId,
+      status: 'reopened',
+    }))
+    if (event.date === today) {
+      setRitualProgress(current => {
+        const next = {
+          ...current,
+          done: current.done.filter(step => step !== event.stepId),
+        }
+        saveMorningRitualProgress(next)
+        return next
+      })
+    }
+    showToast('Ritualschritt wieder geöffnet.')
   }
 
   const handleExport = () => {
@@ -1775,51 +1899,67 @@ function App() {
   }
 
   const quickAddWeight = (value: number) => {
-    updateEntry({ weightKg: value })
+    updateEntry({ weightKg: value }, 'quick_add', {
+      offerUndo: true,
+      toastMessage: `Gewicht gespeichert: ${value} kg`,
+    })
     setQuickAddOpen(false)
-    showToast(`Gewicht gespeichert: ${value} kg`)
   }
 
   const quickAddCalories = (value: number) => {
-    updateEntry({ calories: value, caloriesReached: value >= settings.calorieGoal })
+    updateEntry({ calories: value, caloriesReached: value >= settings.calorieGoal }, 'quick_add', {
+      offerUndo: true,
+      toastMessage: `Kalorien gespeichert: ${value} kcal`,
+    })
     setQuickAddOpen(false)
-    showToast(`Kalorien gespeichert: ${value} kcal`)
   }
 
   const quickAddWater = (value: number) => {
-    updateEntry({ waterLiters: value })
+    updateEntry({ waterLiters: value }, 'quick_add', {
+      offerUndo: true,
+      toastMessage: `Wasser gespeichert: ${value} L`,
+    })
     setQuickAddOpen(false)
-    showToast(`Wasser gespeichert: ${value} L`)
   }
 
   const quickAddProtein = (value: number) => {
-    updateEntry({ proteinGrams: value, proteinReached: value >= settings.proteinGoal })
+    updateEntry({ proteinGrams: value, proteinReached: value >= settings.proteinGoal }, 'quick_add', {
+      offerUndo: true,
+      toastMessage: `Protein gespeichert: ${value} g`,
+    })
     setQuickAddOpen(false)
-    showToast(`Protein gespeichert: ${value} g`)
   }
 
   const quickAddFat = (value: number) => {
-    updateEntry({ fatGrams: value })
+    updateEntry({ fatGrams: value }, 'quick_add', {
+      offerUndo: true,
+      toastMessage: `Fett gespeichert: ${value} g`,
+    })
     setQuickAddOpen(false)
-    showToast(`Fett gespeichert: ${value} g`)
   }
 
   const quickAddCarbs = (value: number) => {
-    updateEntry({ carbsGrams: value })
+    updateEntry({ carbsGrams: value }, 'quick_add', {
+      offerUndo: true,
+      toastMessage: `Kohlenhydrate gespeichert: ${value} g`,
+    })
     setQuickAddOpen(false)
-    showToast(`Kohlenhydrate gespeichert: ${value} g`)
   }
 
   const quickAddFiber = (value: number) => {
-    updateEntry({ fiberGrams: value })
+    updateEntry({ fiberGrams: value }, 'quick_add', {
+      offerUndo: true,
+      toastMessage: `Ballaststoffe gespeichert: ${value} g`,
+    })
     setQuickAddOpen(false)
-    showToast(`Ballaststoffe gespeichert: ${value} g`)
   }
 
   const quickAddSteps = (value: number) => {
-    updateEntry({ steps: value })
+    updateEntry({ steps: value }, 'quick_add', {
+      offerUndo: true,
+      toastMessage: `Schritte gespeichert: ${value}`,
+    })
     setQuickAddOpen(false)
-    showToast(`Schritte gespeichert: ${value}`)
   }
 
   const deleteTask = (index: number) => {
@@ -1870,13 +2010,13 @@ function App() {
         itemIndex === index ? true : Boolean(anchorsDone[itemIndex]),
       )
       setAnchors(anchors, nextDone, anchorMinutes)
-      updateEntry({ focusDone: true } as Partial<DashboardEntry>)
+      updateEntry({ focusDone: true } as Partial<DashboardEntry>, 'focus')
     } else if (focusSession.routineKey) {
       updateEntry({
         [focusSession.routineKey]: true,
-      } as Partial<DashboardEntry>)
+      } as Partial<DashboardEntry>, 'focus')
     } else {
-      updateEntry({ focusDone: true } as Partial<DashboardEntry>)
+      updateEntry({ focusDone: true } as Partial<DashboardEntry>, 'focus')
     }
     setFocusSession(null)
     showToast('Fokusblock abgeschlossen — erledigt.')
@@ -1995,7 +2135,7 @@ function App() {
           if (patch.calories !== undefined) {
             patch.caloriesReached = patch.calories >= settings.calorieGoal
           }
-          if (Object.keys(patch).length > 0) updateEntry(patch)
+          if (Object.keys(patch).length > 0) updateEntry(patch, 'quick_add')
           showToast('Kurzbefehl: Wert gespeichert')
           break
         }
@@ -2148,6 +2288,8 @@ function App() {
               onReorderHabits={ids => setSettings(current => ({ ...current, activeHabits: ids }))}
               onOpenPlan={() => navigateTo('plan')}
               onOpenCheckin={() => navigateTo('checkin')}
+              syncLabel={storageStatusLabel(syncStatus, isOnline, Boolean(deviceSyncCreds))}
+              syncStatus={syncStatus}
               onPromoteThoughtToTomorrow={async text => {
                 const tomorrow = addDays(today, 1)
                 const tomorrowEntry = entries.find(item => item.date === tomorrow) ?? createDefaultEntry(tomorrow)
@@ -2176,8 +2318,12 @@ function App() {
               highlightQuickNote={highlightQuickNote}
               onQuickNoteHighlightHandled={() => setHighlightQuickNote(false)}
               ritualLock={ritualHeuteLock === 'energy' || ritualHeuteLock === 'todos' ? ritualHeuteLock : null}
+              dailyEvents={dailyEvents}
+              onUndoDailyEvent={undoDailyEvent}
+              onUndoRitualEvent={undoRitualEvent}
               onContinueRitualTodos={() => {
                 setRitualProgress(current => markRitualStepDone(current, 'todos'))
+                appendDailyEvent(createRitualStepEvent({ date: today, stepId: 'todos' }))
               }}
             />
           )}
@@ -2380,6 +2526,8 @@ function App() {
           ko={ritualProgress.ko}
           selfcareChecked={ritualProgress.selfcareChecked}
           onToggleMed={id => {
+            const medication = dashboardPlus.medications.find(item => item.id === id)
+            const nextTaken = medication ? !isMedicationTakenToday(medication, today) : true
             setDashboardPlus(current => ({
               ...current,
               medications: current.medications.map(item => {
@@ -2392,6 +2540,12 @@ function App() {
                 }
               }),
             }))
+            appendDailyEvent(createRitualStepEvent({
+              date: today,
+              stepId: 'medsShake',
+              status: 'updated',
+              details: { medicationId: id, taken: nextTaken },
+            }))
           }}
           onConfirmAllMeds={() => {
             setDashboardPlus(current => ({
@@ -2402,29 +2556,43 @@ function App() {
                 taken: true,
               })),
             }))
+            appendDailyEvent(createRitualStepEvent({
+              date: today,
+              stepId: 'medsShake',
+              status: 'updated',
+              details: { allMedicationsTaken: true },
+            }))
           }}
-          onToggleProtein={() => updateEntry({ proteinShake: !entry.proteinShake })}
+          onToggleProtein={() => updateEntry({ proteinShake: !entry.proteinShake }, 'morning_gate')}
           onCompleteGratitude={() => {
             const time = new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' }).format(new Date())
             const line = `${time} — Dankbarkeit vorgelesen`
             updateEntry({
               gratitudeDone: true,
               journalText: entry.journalText ? `${entry.journalText}\n${line}` : line,
-            })
+            }, 'morning_gate')
           }}
           onPickEnergy={energy => {
-            updateEntry({ energyLevel: energy })
+            updateEntry({ energyLevel: energy }, 'morning_gate')
             setRitualProgress(current => markRitualStepDone(current, 'energy'))
+            appendDailyEvent(createRitualStepEvent({ date: today, stepId: 'energy' }))
             if (gatePreview) setPreviewIndex(value => value + 1)
           }}
           onCompleteTimer={kind => {
-            if (kind === 'coldShower') updateEntry({ coldShower: true })
-            if (kind === 'winnerPose') updateEntry({ winnerModeDone: true })
+            if (kind === 'coldShower') updateEntry({ coldShower: true }, 'morning_gate')
+            if (kind === 'winnerPose') updateEntry({ winnerModeDone: true }, 'morning_gate')
             setRitualProgress(current => markRitualStepDone(current, kind))
+            appendDailyEvent(createRitualStepEvent({ date: today, stepId: kind }))
             if (kind === 'prayer') navigateTo('today')
             if (gatePreview) setPreviewIndex(value => Math.min(ritualSteps.length - 1, value + 1))
           }}
           onSetPushups={value => {
+            appendDailyEvent(createRitualStepEvent({
+              date: today,
+              stepId: 'workout',
+              status: 'updated',
+              details: { pushups: value },
+            }))
             setRitualProgress(current => {
               const next = { ...current, pushups: value }
               saveMorningRitualProgress(next)
@@ -2432,6 +2600,12 @@ function App() {
             })
           }}
           onSetKo={value => {
+            appendDailyEvent(createRitualStepEvent({
+              date: today,
+              stepId: 'workout',
+              status: 'updated',
+              details: { knockouts: value },
+            }))
             setRitualProgress(current => {
               const next = { ...current, ko: value }
               saveMorningRitualProgress(next)
@@ -2439,6 +2613,15 @@ function App() {
             })
           }}
           onToggleSelfcare={id => {
+            appendDailyEvent(createRitualStepEvent({
+              date: today,
+              stepId: 'selfcare',
+              status: 'updated',
+              details: {
+                itemId: id,
+                checked: !ritualProgress.selfcareChecked.includes(id),
+              },
+            }))
             setRitualProgress(current => {
               const checked = current.selfcareChecked.includes(id)
                 ? current.selfcareChecked.filter(item => item !== id)
@@ -2449,9 +2632,10 @@ function App() {
             })
           }}
           onCompleteStep={step => {
-            if (step === 'medsShake' && !entry.proteinShake) updateEntry({ proteinShake: true })
-            if (step === 'workout') updateEntry({ pushupsDone: true })
+            if (step === 'medsShake' && !entry.proteinShake) updateEntry({ proteinShake: true }, 'morning_gate')
+            if (step === 'workout') updateEntry({ pushupsDone: true }, 'morning_gate')
             setRitualProgress(current => markRitualStepDone(current, step))
+            appendDailyEvent(createRitualStepEvent({ date: today, stepId: step }))
             if (gatePreview) {
               if (previewIndex >= ritualSteps.length - 1) {
                 setGatePreview(false)
@@ -2695,6 +2879,11 @@ function TodayView({
   onExportToCalendar,
   ritualLock = null,
   onContinueRitualTodos,
+  dailyEvents = [],
+  onUndoDailyEvent,
+  onUndoRitualEvent,
+  syncLabel = 'Lokal',
+  syncStatus = 'idle',
 }: {
   entry: DashboardEntry
   entries: DashboardEntry[]
@@ -2722,13 +2911,27 @@ function TodayView({
   onExportToCalendar: (title: string, minutes: number) => Promise<void>
   ritualLock?: 'energy' | 'todos' | null
   onContinueRitualTodos?: () => void
+  dailyEvents?: DailyEvent[]
+  onUndoDailyEvent?: (event: EntryPatchEvent) => void
+  onUndoRitualEvent?: (event: DailyEvent) => void
+  syncLabel?: string
+  syncStatus?: string
 }) {
   const [capture, setCapture] = useState('')
+  const [timelineOpen, setTimelineOpen] = useState(false)
   const [dragIdx,     setDragIdx]     = useState<number | null>(null)
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
   const [habitDetail, setHabitDetail] = useState<{ key: HabitKey; label: string } | null>(null)
   const touchRef = useRef<{ sourceIdx: number } | null>(null)
   const energy = entry.energyLevel
+  const dayEvents = eventsForDate(dailyEvents, date).slice(0, 12)
+  const completeness = assessDayCompleteness({
+    entry,
+    activeHabits: settings.activeHabits,
+    habitSchedules: settings.habitSchedules,
+    focusMinutes: settings.focusMinutes,
+    hour: date === today ? new Date().getHours() : 20,
+  })
   const habitGoals = {
     proteinGoal: settings.proteinGoal,
     focusMinutes: settings.focusMinutes,
@@ -2873,6 +3076,31 @@ function TodayView({
     showToast('Für heute in die Routine geholt.')
   }
 
+  const openGap = (action: DayCloseAction) => {
+    if (action === 'checkin') onOpenCheckin()
+    else if (action === 'plan') onOpenPlan()
+  }
+
+  const closeOrReopenDay = () => {
+    if (completeness.closed) {
+      onUpdate(reopenDayPatch())
+      showToast('Abschluss geöffnet — Korrekturen möglich.')
+      return
+    }
+    if (completeness.gaps.length > 0 && !completeness.readyToClose) {
+      const ok = window.confirm(
+        `Noch ${completeness.gaps.length} Punkte offen.\nTrotzdem bewusst abschließen?`,
+      )
+      if (!ok) return
+    }
+    onUpdate(closeDayPatch())
+    showToast(
+      completeness.gaps.length === 0
+        ? 'Tag abgeschlossen.'
+        : 'Tag abgeschlossen — Lücken bleiben sichtbar.',
+    )
+  }
+
   return (
     <div className="view-stack">
       <DateStrip selected={date} today={today} onChange={onDateChange} />
@@ -2905,11 +3133,13 @@ function TodayView({
             <span className="eyebrow">Dein nächster Schritt</span>
             <h2>{focusTitle}</h2>
             <p>
-              {nextStep?.kind === 'anchor'
-                ? 'Nur diese eine Aufgabe. Der Rest darf kurz warten.'
-                : nextStep?.kind === 'habit'
-                  ? policy.heroHabitCopy
-                  : getDailyQuote()}
+              {completeness.closed
+                ? `Abgeschlossen um ${formatClosedAt(completeness.closedAt ?? '')}. Korrekturen jederzeit möglich.`
+                : nextStep?.kind === 'anchor'
+                  ? 'Nur diese eine Aufgabe. Der Rest darf kurz warten.'
+                  : nextStep?.kind === 'habit'
+                    ? policy.heroHabitCopy
+                    : getDailyQuote()}
             </p>
             {nextStep?.streakHint && (
               <span className="streak-hint">{nextStep.streakHint}</span>
@@ -3273,6 +3503,57 @@ function TodayView({
           </button>
         </section>
 
+        <section className={`card day-close-card${completeness.closed ? ' is-closed' : ''}`}>
+          <SectionTitle
+            eyebrow="Tagesabschluss"
+            title={completeness.closed ? 'Abgeschlossen' : 'Tag schließen'}
+            action={<span className="counter-pill">{completeness.percent}%</span>}
+          />
+          <div className="day-close-meta">
+            <span className={`sync-pill sync-pill--${syncStatus}`}>
+              <Cloud size={14} />
+              {syncLabel}
+            </span>
+            <span className="day-close-summary">{completeness.summary}</span>
+          </div>
+          {completeness.closed && completeness.closedAt && (
+            <p className="day-close-note">
+              Geschlossen um {formatClosedAt(completeness.closedAt)}. Für rückwirkende Korrekturen
+              den Abschluss wieder öffnen.
+            </p>
+          )}
+          {!completeness.closed && completeness.gaps.length > 0 && (
+            <ul className="day-close-gaps">
+              {completeness.gaps.slice(0, 4).map(gap => (
+                <li key={gap.id}>
+                  <button type="button" className="text-button" onClick={() => openGap(gap.action)}>
+                    {gap.label}
+                    <ChevronRight size={14} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {!completeness.closed && completeness.gaps.length === 0 && (
+            <p className="day-close-note">Alles Wesentliche ist da — Abschluss speichert den Stand.</p>
+          )}
+          <button
+            type="button"
+            className={completeness.closed ? 'secondary-button secondary-button--full' : 'primary-button'}
+            onClick={closeOrReopenDay}
+          >
+            {completeness.closed ? (
+              <>
+                <RotateCcw size={16} /> Abschluss öffnen
+              </>
+            ) : (
+              <>
+                <Flag size={16} /> Tag abschließen
+              </>
+            )}
+          </button>
+        </section>
+
         <section className="card capture-card">
           <SectionTitle eyebrow="Kopf frei" title="Gedanke parken" />
           <p>Schreib ihn kurz auf und geh zurück zu dem, was gerade wichtig ist.</p>
@@ -3295,6 +3576,59 @@ function TodayView({
           onHighlightHandled={onQuickNoteHighlightHandled}
           onToast={message => showToast(message)}
         />
+
+        {dayEvents.length > 0 && (
+          <section className="card daily-timeline-card">
+            <SectionTitle
+              eyebrow="Protokoll"
+              title={date === today ? 'Heute gelaufen' : 'Tagesverlauf'}
+              action={<span className="counter-pill">{dayEvents.length}</span>}
+            />
+            <ul className="daily-timeline">
+              {(timelineOpen ? dayEvents : dayEvents.slice(0, 3)).map(event => {
+                const undoEntry = onUndoDailyEvent != null && canUndoEntryPatch(event, dailyEvents)
+                const undoRitual = onUndoRitualEvent != null && canUndoRitualStep(event, dailyEvents)
+                return (
+                  <li key={event.id} className="daily-timeline__row">
+                    <div className="daily-timeline__copy">
+                      <strong>{summarizeDailyEvent(event)}</strong>
+                      <span>
+                        {formatEventTime(event.occurredAt)}
+                        {' · '}
+                        {sourceLabel(event.source)}
+                        {event.type === 'entry_patch' && event.undoOf ? ' · rückgängig' : ''}
+                        {event.type === 'ritual_step' && event.status === 'reopened' ? ' · wieder geöffnet' : ''}
+                      </span>
+                    </div>
+                    {(undoEntry || undoRitual) && (
+                      <button
+                        type="button"
+                        className="text-button"
+                        onClick={() => {
+                          if (undoEntry && canUndoEntryPatch(event, dailyEvents)) onUndoDailyEvent(event)
+                          else if (undoRitual && canUndoRitualStep(event, dailyEvents)) onUndoRitualEvent(event)
+                        }}
+                      >
+                        <RotateCcw size={14} />
+                        Undo
+                      </button>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+            {dayEvents.length > 3 && (
+              <button
+                type="button"
+                className="card-link"
+                onClick={() => setTimelineOpen(open => !open)}
+              >
+                {timelineOpen ? 'Weniger zeigen' : `Alle ${dayEvents.length} Einträge`}
+                <ChevronRight size={16} />
+              </button>
+            )}
+          </section>
+        )}
       </div>
       )}
       {habitDetail && (

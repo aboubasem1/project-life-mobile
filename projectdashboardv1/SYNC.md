@@ -1,6 +1,7 @@
 # Geräte-Sync (Life OS)
 
-Nach **einmaligem Koppeln** synchronisieren sich Tage, Settings, Labor, XP und Kurznotiz automatisch.
+Nach **einmaligem Koppeln** synchronisieren sich Tage, Settings, Labor, XP,
+Kurznotiz, Morning-Gate-Fortschritt und Tagesereignisse automatisch.
 
 ## Lokal testen
 
@@ -90,3 +91,19 @@ curl -X POST https://DEINE-DOMAIN/api/health/ingest \
 ```
 
 Der Endpunkt akzeptiert außerdem das native Health-Auto-Export-JSON (`data.metrics`) und gruppiert Gewicht, Körperfett, Lean Mass, Muskelmasse, Knochenmasse, Körperwasser und BMI zu einem `BodyMeasurement`. Derselbe Eingang schreibt Schritte auf den Tageseintrag. Deduplizierung läuft über Sample-IDs. Das Heute-Widget zeigt den neuesten gültigen Messpunkt des Tages.
+
+## Tagesereignisse
+
+Änderungen aus UI, Quick Add, Fokus, Morning Gate, Webhook und Health werden
+zusätzlich als append-only Ereignisse mit Quelle und Zeitstempel gespeichert.
+Die bestehenden Tageseinträge bleiben die aktuelle, rückwärtskompatible Ansicht.
+Ereignisse werden per ID zusammengeführt und auf die neuesten 2.500 begrenzt.
+
+Unter **Heute** zeigt „Heute gelaufen“ die letzten Ereignisse. Undo stellt den
+vorherigen Feldwert wieder her und schreibt dazu ein neues Ereignis
+(`undoOf`) — es wird nichts gelöscht. Ritualschritte bekommen ein
+`reopened`-Ereignis. Beim Sync gewinnen die jeweils neuesten Event-Felder
+pro Tag, damit Undo geräteübergreifend greift.
+
+Unter **Heute → Tagesabschluss** siehst du Vollständigkeit, Sync-Status und
+kannst den Tag bewusst schließen oder für Korrekturen wieder öffnen.

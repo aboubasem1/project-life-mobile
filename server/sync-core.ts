@@ -8,6 +8,7 @@ import {
   type SyncSnapshot,
 } from './sync-store.js'
 import { mergeBodyMeasurements, mergeHealthIngestState, normalizeBodyMeasurements } from '../projectdashboardv1/src/lib/bodyMeasurement.js'
+import { applyEventFieldsToEntry, mergeDailyEvents, projectRitualDoneFromEvents } from '../projectdashboardv1/src/lib/dailyEvents.js'
 import { mergeDayJournal, mergeQuickNoteStates, parseQuickNote } from './inbound-note.js'
 
 const PAIR_TTL_MS = 30 * 60 * 1000
@@ -85,18 +86,27 @@ function normalizeRitualProgress(raw: unknown): LooseRitualProgress | null {
   }
 }
 
-function mergeRitualProgress(current: unknown, incoming: unknown): LooseRitualProgress | undefined {
+function mergeRitualProgress(current: unknown, incoming: unknown, events: unknown = []): LooseRitualProgress | undefined {
   const previous = normalizeRitualProgress(current)
   const next = normalizeRitualProgress(incoming)
-  if (!previous) return next ?? undefined
-  if (!next) return previous
-  if (previous.date !== next.date) return previous.date > next.date ? previous : next
+  if (!previous && !next) return undefined
+  let merged: LooseRitualProgress
+  if (!previous) merged = next!
+  else if (!next) merged = previous
+  else if (previous.date !== next.date) {
+    merged = previous.date > next.date ? previous : next
+  } else {
+    merged = {
+      date: previous.date,
+      done: [...new Set([...previous.done, ...next.done])],
+      selfcareChecked: [...new Set([...previous.selfcareChecked, ...next.selfcareChecked])],
+      pushups: Math.max(previous.pushups, next.pushups),
+      ko: Math.max(previous.ko, next.ko),
+    }
+  }
   return {
-    date: previous.date,
-    done: [...new Set([...previous.done, ...next.done])],
-    selfcareChecked: [...new Set([...previous.selfcareChecked, ...next.selfcareChecked])],
-    pushups: Math.max(previous.pushups, next.pushups),
-    ko: Math.max(previous.ko, next.ko),
+    ...merged,
+    done: projectRitualDoneFromEvents(merged.date, merged.done, mergeDailyEvents([], events)),
   }
 }
 
@@ -216,6 +226,7 @@ export async function pushSyncSnapshot(input: {
   const currentRevision = room.snapshot?.revision ?? 0
   const nextRevision = Math.max(currentRevision + 1, Number(incoming.revision) || currentRevision + 1)
   const updatedAt = new Date().toISOString()
+  const mergedEvents = mergeDailyEvents(room.snapshot?.dailyEvents, incoming.dailyEvents)
   const priorEntries = Array.isArray(room.snapshot?.entries) ? room.snapshot.entries : []
   const mergedByDate = new Map<string, { date?: string; updatedAt?: string; journalText?: unknown; journalDone?: unknown }>()
   for (const item of [...priorEntries, ...incoming.entries]) {
@@ -233,10 +244,14 @@ export async function pushSyncSnapshot(input: {
     const older = newer === entry ? existing : entry
     mergedByDate.set(entry.date, mergeDayJournal(newer, older))
   }
+  const mergedEntries = [...mergedByDate.values()].map(entry => {
+    if (!entry || typeof entry !== 'object' || typeof entry.date !== 'string') return entry
+    return applyEventFieldsToEntry(entry as { date: string }, mergedEvents)
+  })
   room.snapshot = {
     revision: nextRevision,
     updatedAt,
-    entries: [...mergedByDate.values()],
+    entries: mergedEntries,
     settings: incoming.settings ?? room.snapshot?.settings,
     dashboardPlus: incoming.dashboardPlus ?? room.snapshot?.dashboardPlus,
     xp: incoming.xp ?? room.snapshot?.xp,
@@ -252,7 +267,9 @@ export async function pushSyncSnapshot(input: {
     morningRitualProgress: mergeRitualProgress(
       room.snapshot?.morningRitualProgress,
       incoming.morningRitualProgress,
+      mergedEvents,
     ),
+    dailyEvents: mergedEvents,
   }
   room.updatedAt = updatedAt
   await saveRoom(room)

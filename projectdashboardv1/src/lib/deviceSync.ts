@@ -18,6 +18,15 @@ import {
 } from './bodyMeasurement'
 import { mergeDayJournal, mergeQuickNoteStates, parseQuickNote } from './inboundNote'
 import {
+  DAILY_EVENTS_KEY,
+  applyEventFieldsToEntry,
+  loadDailyEvents,
+  mergeDailyEvents,
+  projectRitualDoneFromEvents,
+  saveDailyEvents,
+  type DailyEvent,
+} from './dailyEvents'
+import {
   MORNING_RITUAL_PROGRESS_KEY,
   mergeMorningRitualProgress,
   type MorningRitualProgress,
@@ -66,6 +75,7 @@ export type DeviceSyncSnapshot = {
   bodyMeasurements?: BodyMeasurement[]
   healthIngest?: unknown
   morningRitualProgress?: MorningRitualProgress
+  dailyEvents?: DailyEvent[]
 }
 
 function safeGet(key: string): string | null {
@@ -206,6 +216,7 @@ function entryUpdatedAt(entry: DashboardEntry): number {
 export function mergeEntriesByUpdatedAt(
   local: DashboardEntry[],
   remote: DashboardEntry[],
+  events: DailyEvent[] = [],
 ): DashboardEntry[] {
   const map = new Map<string, DashboardEntry>()
   for (const entry of local) {
@@ -222,7 +233,9 @@ export function mergeEntriesByUpdatedAt(
     const older = newer === entry ? current : entry
     map.set(entry.date, mergeDayJournal(newer, older))
   }
-  return [...map.values()].sort((a, b) => a.date.localeCompare(b.date))
+  return [...map.values()]
+    .map(entry => applyEventFieldsToEntry(entry, events))
+    .sort((a, b) => a.date.localeCompare(b.date))
 }
 
 export function buildLocalSnapshot(): DeviceSyncSnapshot {
@@ -257,6 +270,7 @@ export function buildLocalSnapshot(): DeviceSyncSnapshot {
     quickNote,
     bodyMeasurements: loadBodyMeasurements(),
     morningRitualProgress,
+    dailyEvents: loadDailyEvents(),
   }
 }
 
@@ -288,7 +302,20 @@ function applyRemoteExtras(snapshot: DeviceSyncSnapshot): void {
       localProgress = null
     }
     const merged = mergeMorningRitualProgress(localProgress, snapshot.morningRitualProgress)
-    if (merged) safeSet(MORNING_RITUAL_PROGRESS_KEY, JSON.stringify(merged))
+    if (merged) {
+      const withEvents = {
+        ...merged,
+        done: projectRitualDoneFromEvents(
+          merged.date,
+          merged.done,
+          mergeDailyEvents(loadDailyEvents(), snapshot.dailyEvents),
+        ),
+      }
+      safeSet(MORNING_RITUAL_PROGRESS_KEY, JSON.stringify(withEvents))
+    }
+  }
+  if (snapshot.dailyEvents != null) {
+    saveDailyEvents(mergeDailyEvents(loadDailyEvents(), snapshot.dailyEvents))
   }
   notifySyncExtras()
 }
@@ -346,7 +373,13 @@ export async function pullDeviceSync(): Promise<{
     const remote = result.snapshot
     const localRevision = Number(safeGet(LOCAL_REVISION_KEY) || 0) || 0
     const remoteRevision = remote.revision ?? 0
-    const mergedEntries = mergeEntriesByUpdatedAt(localBefore, remote.entries ?? [])
+    const mergedEvents = mergeDailyEvents(loadDailyEvents(), remote.dailyEvents)
+    saveDailyEvents(mergedEvents)
+    const mergedEntries = mergeEntriesByUpdatedAt(
+      localBefore,
+      remote.entries ?? [],
+      mergedEvents,
+    )
 
     const remoteMeasurements = normalizeBodyMeasurements(remote.bodyMeasurements)
     if (remoteMeasurements.length > 0) {
@@ -395,4 +428,4 @@ export async function pullDeviceSync(): Promise<{
   })
 }
 
-export { SYNC_CRED_KEY, QUICK_NOTE_KEY, ENTRIES_KEY }
+export { SYNC_CRED_KEY, QUICK_NOTE_KEY, ENTRIES_KEY, DAILY_EVENTS_KEY }
