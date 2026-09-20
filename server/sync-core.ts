@@ -6,9 +6,9 @@ import {
   syncStorageMode,
   type SyncRoom,
   type SyncSnapshot,
-} from './sync-store'
-import { mergeBodyMeasurements, mergeHealthIngestState, normalizeBodyMeasurements } from '../projectdashboardv1/src/lib/bodyMeasurement'
-import { mergeDayJournal, mergeQuickNoteStates, parseQuickNote } from './inbound-note'
+} from './sync-store.js'
+import { mergeBodyMeasurements, mergeHealthIngestState, normalizeBodyMeasurements } from '../projectdashboardv1/src/lib/bodyMeasurement.js'
+import { mergeDayJournal, mergeQuickNoteStates, parseQuickNote } from './inbound-note.js'
 
 const PAIR_TTL_MS = 30 * 60 * 1000
 const MAX_DEVICES = 8

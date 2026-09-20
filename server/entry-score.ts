@@ -1,5 +1,5 @@
-import { calculateScore, type ScoreGoals } from '../projectdashboardv1/src/lib/score'
-import type { DashboardEntry } from '../projectdashboardv1/src/types/DashboardEntry'
+import { calculateScore, type ScoreGoals } from '../projectdashboardv1/src/lib/score.js'
+import type { DashboardEntry } from '../projectdashboardv1/src/types/DashboardEntry.js'
 
 type LooseEntry = Record<string, unknown> & { date: string }
 

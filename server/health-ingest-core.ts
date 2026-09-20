@@ -7,10 +7,10 @@ import {
   parseHealthIngestBody,
   type HealthDailyPatch,
   type HealthIngestState,
-} from '../projectdashboardv1/src/lib/bodyMeasurement'
-import { SyncHttpError } from './sync-core'
-import { getRoom, saveRoom, type SyncSnapshot } from './sync-store'
-import { scoreInboundEntry } from './entry-score'
+} from '../projectdashboardv1/src/lib/bodyMeasurement.js'
+import { SyncHttpError } from './sync-core.js'
+import { getRoom, saveRoom, type SyncSnapshot } from './sync-store.js'
+import { scoreInboundEntry } from './entry-score.js'
 
 type LooseEntry = Record<string, unknown> & { date: string }
 

@@ -1,5 +1,5 @@
-import { pushSyncSnapshot, readSyncJson, syncError, syncJson } from '../../server/sync-core'
-import type { SyncSnapshot } from '../../server/sync-store'
+import { pushSyncSnapshot, readSyncJson, syncError, syncJson } from '../../server/sync-core.js'
+import type { SyncSnapshot } from '../../server/sync-store.js'
 
 export const config = {
   maxDuration: 15,

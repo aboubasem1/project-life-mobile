@@ -1,4 +1,4 @@
-import { createSyncRoom, syncError, syncJson } from '../../server/sync-core'
+import { createSyncRoom, syncError, syncJson } from '../../server/sync-core.js'
 
 export const config = {
   maxDuration: 15,

@@ -1,4 +1,4 @@
-import { pullSyncSnapshot, refreshPairCode, readSyncJson, syncError, syncJson } from '../../server/sync-core'
+import { pullSyncSnapshot, refreshPairCode, readSyncJson, syncError, syncJson } from '../../server/sync-core.js'
 
 export const config = {
   maxDuration: 15,

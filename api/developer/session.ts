@@ -6,7 +6,7 @@ import {
   json,
   readJson,
   verifyAdminPassword,
-} from '../../server/developer-admin'
+} from '../../server/developer-admin.js'
 
 export default async function handler(request: Request): Promise<Response> {
   try {

@@ -1,7 +1,7 @@
-import { getRoom, saveRoom, type SyncSnapshot } from './sync-store'
-import { SyncHttpError } from './sync-core'
-import { appendJournal, formatNoteLine, mergeQuickNote, parseQuickNote } from './inbound-note'
-import { scoreInboundEntry } from './entry-score'
+import { getRoom, saveRoom, type SyncSnapshot } from './sync-store.js'
+import { SyncHttpError } from './sync-core.js'
+import { appendJournal, formatNoteLine, mergeQuickNote, parseQuickNote } from './inbound-note.js'
+import { scoreInboundEntry } from './entry-score.js'
 
 const HABIT_KEYS = new Set([
   'breathingDone',

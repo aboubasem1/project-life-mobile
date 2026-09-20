@@ -13,7 +13,7 @@ import {
   requireAdmin,
   sleep,
   validateRequestId,
-} from '../../server/developer-admin'
+} from '../../server/developer-admin.js'
 
 type DispatchResponse = {
   workflow_run_id?: number

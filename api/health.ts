@@ -1,5 +1,5 @@
-import { syncJson } from '../server/sync-core'
-import { probeSyncStorage } from '../server/sync-store'
+import { syncJson } from '../server/sync-core.js'
+import { probeSyncStorage } from '../server/sync-store.js'
 
 export const config = {
   maxDuration: 10,

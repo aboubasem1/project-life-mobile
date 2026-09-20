@@ -1,5 +1,5 @@
-import { applyInboundHook, resolveInboundHookType, type InboundHook } from '../server/hook-core'
-import { readSyncJson, syncError, syncJson } from '../server/sync-core'
+import { applyInboundHook, resolveInboundHookType, type InboundHook } from '../server/hook-core.js'
+import { readSyncJson, syncError, syncJson } from '../server/sync-core.js'
 
 export const config = {
   maxDuration: 15,

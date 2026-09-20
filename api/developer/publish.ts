@@ -8,7 +8,7 @@ import {
   readJson,
   requireAdmin,
   validateRequestId,
-} from '../../server/developer-admin'
+} from '../../server/developer-admin.js'
 
 type WorkflowRun = {
   status: string

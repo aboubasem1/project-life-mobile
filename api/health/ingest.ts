@@ -1,5 +1,5 @@
-import { applyHealthIngest } from '../../server/health-ingest-core'
-import { readSyncJson, syncError, syncJson } from '../../server/sync-core'
+import { applyHealthIngest } from '../../server/health-ingest-core.js'
+import { readSyncJson, syncError, syncJson } from '../../server/sync-core.js'
 
 export const config = {
   maxDuration: 15,

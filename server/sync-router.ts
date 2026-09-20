@@ -1,6 +1,6 @@
-import { applyHealthIngest } from './health-ingest-core'
-import { applyInboundHook, resolveInboundHookType, type InboundHook } from './hook-core'
-import { probeSyncStorage } from './sync-store'
+import { applyHealthIngest } from './health-ingest-core.js'
+import { applyInboundHook, resolveInboundHookType, type InboundHook } from './hook-core.js'
+import { probeSyncStorage } from './sync-store.js'
 import {
   createSyncRoom,
   joinSyncRoom,
@@ -10,8 +10,8 @@ import {
   refreshPairCode,
   syncError,
   syncJson,
-} from './sync-core'
-import { type SyncSnapshot } from './sync-store'
+} from './sync-core.js'
+import { type SyncSnapshot } from './sync-store.js'
 
 function bearerToken(request: Request): string {
   const header = request.headers.get('authorization') ?? ''
