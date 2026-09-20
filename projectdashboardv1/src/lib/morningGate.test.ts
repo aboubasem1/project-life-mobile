@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  FULLSCREEN_STEP_IDS,
   mergeMorningRitualProgress,
+  morningRitualPhase,
   normalizeMorningRitualProgress,
 } from './morningGate'
 
@@ -44,5 +46,13 @@ describe('morning ritual progress', () => {
 
   it('rejects malformed progress without a valid date', () => {
     expect(normalizeMorningRitualProgress({ date: 'today', done: [] })).toBeNull()
+  })
+})
+
+describe('energy ritual step', () => {
+  it('belongs to the fullscreen morning gate, not the Heute view', () => {
+    expect(morningRitualPhase('energy')).toBe('gate')
+    expect(FULLSCREEN_STEP_IDS).toContain('energy')
+    expect(morningRitualPhase('todos')).toBe('heute')
   })
 })

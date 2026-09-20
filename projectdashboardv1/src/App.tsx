@@ -41,6 +41,7 @@ import {
   GripVertical,
   Heart,
   Home,
+  Inbox,
   LayoutGrid,
   Leaf,
   ListTodo,
@@ -77,7 +78,7 @@ import { buildWeekInsights } from './lib/insights'
 import { deriveLaborOverview, deriveLaborStats, smartLaborHints } from './lib/laborLive'
 import { searchLabor } from './lib/laborSearch'
 import { buildMonthGrid, monthLabel } from './lib/calendarGrid'
-import { hashFromView, hashPathOnly, navigateHash, peekAppAction, takeAppActionFromLocation, viewFromHash, buildActionUrl, SHORTCUT_RECIPES, type AppAction } from './lib/routing'
+import { hashFromView, hashPathOnly, navigateHash, navigateHashWithId, peekAppAction, takeAppActionFromLocation, viewFromHash, entityIdFromHash, buildActionUrl, SHORTCUT_RECIPES, VIEW_LABELS, type AppAction, type AppView } from './lib/routing'
 import { shareOrDownloadIcs } from './lib/ics'
 import { copyText, shareText } from './lib/share'
 import { releaseScreenWakeLock, requestScreenWakeLock } from './lib/wakeLock'
@@ -146,6 +147,50 @@ import {
   type MorningRitualProgress,
   type MorningRitualStepId,
 } from './lib/morningGate'
+import { useLifeOs } from './hooks/useLifeOs'
+import {
+  LIFE_OS_CHANGE_EVENT,
+  buildDeterministicInsights,
+  completeReview,
+  createCapture,
+  createConnectorInstance,
+  createId,
+  createReviewDraft,
+  emitDomainEvent,
+  hashSecret,
+  interpretInsights,
+  nowIso,
+  periodForReviewType,
+  relatedIds,
+  refreshDecisionStatus,
+  groupByResolvedArea,
+  lifeAreaTransitionEvents,
+  matchesAreaFilter,
+  parseLifeArea,
+  resolveLifeArea,
+  type AreaFilter,
+  type CaptureTargetType,
+  type Decision,
+  type DomainEventType,
+  type Insight,
+  type KnowledgeItem,
+  type LifeAreaKey,
+  type Review,
+  type ReviewType,
+} from './lib/lifeos'
+import { applyConvertToDashboard } from './lib/lifeos/dashboardBridge'
+import { CaptureSheet } from './views/lifeos/CaptureSheet'
+import { CommandPalette } from './views/lifeos/CommandPalette'
+import { DecisionView } from './views/lifeos/DecisionView'
+import { GoalDetailView } from './views/lifeos/GoalDetailView'
+import { InboxView } from './views/lifeos/InboxView'
+import { InsightsView } from './views/lifeos/InsightsView'
+import { IntegrationsView } from './views/lifeos/IntegrationsView'
+import { KnowledgeView } from './views/lifeos/KnowledgeView'
+import { ProjectDetailView } from './views/lifeos/ProjectDetailView'
+import { ReviewView } from './views/lifeos/ReviewView'
+import { SignalsView } from './views/lifeos/SignalsView'
+import { LifeAreaFilter, LifeAreaMark, LifeAreaSelect } from './views/lifeos/lifeosUi'
 import { MorningGate } from './components/MorningGate'
 import { HabitDetailSheet } from './components/HabitDetailSheet'
 import { HabitKindControls } from './components/HabitKindRow'
@@ -181,7 +226,7 @@ import {
 } from './lib/dailyEvents'
 import './launch.css'
 
-type View = 'today' | 'plan' | 'checkin' | 'progress' | 'dashboardPlus'
+type View = AppView
 type ThemePreference = 'light' | 'dark' | 'system'
 type AccentPreference = 'terracotta' | 'sage' | 'ocean' | 'lilac' | 'amber'
 
@@ -269,6 +314,9 @@ type DashboardPlusTask = {
   time: string
   done: boolean
   priority: DashboardPlusPriority
+  plannedMinutes?: number
+  actualMinutes?: number
+  lifeArea?: LifeAreaKey
 }
 
 type DashboardPlusSupplement = {
@@ -309,11 +357,27 @@ function supplementDaysRemaining(stock: number, dailyUse: number): number | null
   return Math.floor(stock / dailyUse)
 }
 
+type ProjectStatus = 'active' | 'paused' | 'done' | 'archived'
+
+type ProjectMilestone = { id: string; title: string; done: boolean; due?: string }
+
 type DashboardPlusBoard = {
   id: string
   label: string
   count: number
   tasks: DashboardPlusTask[]
+  description?: string
+  outcome?: string
+  status?: ProjectStatus
+  priority?: DashboardPlusPriority
+  startDate?: string
+  targetDate?: string
+  nextAction?: string
+  nextActionTaskId?: string
+  milestones?: ProjectMilestone[]
+  goalId?: string
+  lastActivityAt?: string
+  lifeArea?: LifeAreaKey
 }
 
 type ShoppingIconKey = 'flask' | 'fish' | 'pill' | 'bag' | 'droplet'
@@ -391,6 +455,8 @@ function normalizeMedication(item: DashboardPlusMedication, today: string): Dash
 
 type DashboardPlusGoalTimeframe = 'Jahr' | 'Quartal' | 'Monat' | 'Woche'
 
+type GoalCheckIn = { id: string; at: string; note: string; value?: number }
+
 type DashboardPlusGoal = {
   id: string
   title: string
@@ -398,6 +464,15 @@ type DashboardPlusGoal = {
   percent: number
   dueDate: string
   color: string
+  description?: string
+  outcome?: string
+  metric?: string
+  target?: number
+  current?: number
+  unit?: string
+  status?: 'active' | 'paused' | 'done' | 'dropped'
+  checkIns?: GoalCheckIn[]
+  lifeArea?: LifeAreaKey
 }
 
 type FinanceSummary = {
@@ -607,6 +682,7 @@ function shouldBypassMorningGate(action: AppAction | null): boolean {
     || action?.kind === 'log'
     || action?.kind === 'add-task'
     || action?.kind === 'focus'
+    || action?.kind === 'capture'
 }
 
 // ── Data from projectbaby ────────────────────────────────────────────────────
@@ -757,7 +833,19 @@ function normalizeTaskPriority(task: DashboardPlusTask): DashboardPlusTask {
   }
   const raw = task.priority as string
   const mapped = (legacyPriority[raw] ?? raw) as DashboardPlusPriority
-  return PRIORITY_ORDER.includes(mapped) ? { ...task, priority: mapped } : { ...task, priority: 'p3' }
+  return {
+    ...(PRIORITY_ORDER.includes(mapped) ? { ...task, priority: mapped } : { ...task, priority: 'p3' }),
+    lifeArea: parseLifeArea(task.lifeArea),
+  }
+}
+
+function resolveDashboardTaskArea(
+  task: DashboardPlusTask,
+  board: DashboardPlusBoard | undefined,
+  goals: DashboardPlusGoal[],
+) {
+  const goal = board?.goalId ? goals.find(item => item.id === board.goalId) : undefined
+  return resolveLifeArea({ explicit: task.lifeArea, project: board, goal })
 }
 
 function normalizeDashboardPlusState(parsed: Partial<DashboardPlusState> | null | undefined): DashboardPlusState {
@@ -771,11 +859,17 @@ function normalizeDashboardPlusState(parsed: Partial<DashboardPlusState> | null 
     medications: Array.isArray(parsed.medications)
       ? parsed.medications.map(item => normalizeMedication(item, dateKey(new Date())))
       : seed.medications,
-    goals: Array.isArray(parsed.goals) ? parsed.goals : seed.goals,
+    goals: Array.isArray(parsed.goals) ? parsed.goals.map(goal => ({
+      ...goal,
+      checkIns: Array.isArray(goal.checkIns) ? goal.checkIns : [],
+      lifeArea: parseLifeArea(goal.lifeArea),
+    })) : seed.goals,
     boards: Array.isArray(parsed.boards)
       ? syncBoardCounts(parsed.boards.map(board => ({
         ...board,
+        lifeArea: parseLifeArea(board.lifeArea),
         tasks: Array.isArray(board.tasks) ? board.tasks.map(normalizeTaskPriority) : [],
+        milestones: Array.isArray(board.milestones) ? board.milestones : [],
       })))
       : seed.boards,
     shopping: {
@@ -1355,6 +1449,13 @@ function App() {
   const [gateSkipped, setGateSkipped] = useState(() => loadMorningGateSkip(dateKey(new Date())))
   const [ritualProgress, setRitualProgress] = useState<MorningRitualProgress>(() => loadMorningRitualProgress(dateKey(new Date())))
   const [dailyEvents, setDailyEvents] = useState<DailyEvent[]>(() => loadDailyEvents())
+  const lifeOs = useLifeOs()
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [captureOpen, setCaptureOpen] = useState(false)
+  const [capturePreset, setCapturePreset] = useState('')
+  const [lifeOsEntityId, setLifeOsEntityId] = useState<string | undefined>(() => entityIdFromHash())
+  const [reviewType, setReviewType] = useState<ReviewType>('weekly')
+  const [reviewDraft, setReviewDraft] = useState<Review | null>(null)
 
   const today = dateKey(new Date())
   const nowHour = new Date().getHours()
@@ -1484,6 +1585,7 @@ function App() {
 
     const onHash = () => {
       setView(viewFromHash())
+      setLifeOsEntityId(entityIdFromHash())
       consumeAction()
     }
 
@@ -1491,6 +1593,25 @@ function App() {
     if (!window.location.hash) navigateHash(view, true)
     else consumeAction()
     return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setPaletteOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  useEffect(() => {
+    const onChange = () => {
+      window.setTimeout(() => { void pushDeviceSync().catch(() => {}) }, 600)
+    }
+    window.addEventListener(LIFE_OS_CHANGE_EVENT, onChange)
+    return () => window.removeEventListener(LIFE_OS_CHANGE_EVENT, onChange)
   }, [])
 
   useEffect(() => {
@@ -2019,6 +2140,14 @@ function App() {
       updateEntry({ focusDone: true } as Partial<DashboardEntry>, 'focus')
     }
     setFocusSession(null)
+    lifeOs.addActivity({
+      title: focusSession.title,
+      date: today,
+      kind: 'focus',
+      plannedDurationMin: focusSession.minutes,
+      actualDurationMin: focusSession.minutes,
+      source: 'timer',
+    })
     showToast('Fokusblock abgeschlossen — erledigt.')
   }
 
@@ -2030,11 +2159,99 @@ function App() {
     }))
   }
 
-  const currentViewLabel = NAV_ITEMS.find(item => item.id === view)?.label ?? 'Heute'
-  const navigateTo = (nextView: View) => {
+  const currentViewLabel = VIEW_LABELS[view] ?? NAV_ITEMS.find(item => item.id === view)?.label ?? 'Heute'
+  const navigateTo = (nextView: View, entityId?: string) => {
     setView(nextView)
-    navigateHash(nextView)
+    setLifeOsEntityId(entityId)
+    if (entityId) navigateHashWithId(nextView, entityId)
+    else navigateHash(nextView)
     if (nextView === 'today' || nextView === 'dashboardPlus') setSelectedDate(today)
+  }
+
+  const handleLifeOsCapture = (input: {
+    raw: string
+    url?: string
+    fileName?: string
+    fileKind?: 'file' | 'screenshot'
+    fileDataUrl?: string
+    classifyAs?: CaptureTargetType
+    lifeArea?: LifeAreaKey
+  }) => {
+    const capture = createCapture(input)
+    const classified = input.classifyAs && input.classifyAs !== 'inbox'
+      ? { ...capture, targetType: input.classifyAs, status: 'classified' as const }
+      : capture
+    lifeOs.commit(current => ({
+      ...current,
+      captures: [classified, ...current.captures],
+      events: [...current.events, emitDomainEvent('capture.created', { title: classified.title }, { kind: 'capture', id: classified.id })],
+    }))
+    setCaptureOpen(false)
+    setCapturePreset('')
+    navigateTo('inbox', classified.id)
+    showToast('In Inbox gelegt')
+  }
+
+  const handleConvertCapture = (id: string) => {
+    const result = lifeOs.convert(id)
+    if (!result) {
+      showToast('Umwandeln braucht zuerst einen Typ.')
+      return
+    }
+    if (result.task || result.goal) {
+      setDashboardPlus(current => {
+        const next = applyConvertToDashboard(current, result, today)
+        return { ...current, ...next }
+      })
+    }
+    if (result.decision) navigateTo('decisions', result.decision.id)
+    else if (result.knowledge) navigateTo('knowledge', result.knowledge.id)
+    else if (result.goal) navigateTo('goal', result.goal.id)
+    else if (result.task?.projectId) navigateTo('project', result.task.projectId)
+    showToast('Capture umgewandelt')
+  }
+
+  const startReview = (type: ReviewType = reviewType) => {
+    const period = periodForReviewType(type, today)
+    const completedTasks = dashboardPlus.boards.reduce((sum, board) => sum + board.tasks.filter(task => task.done).length, 0)
+      + dashboardPlus.focusTodos.filter(task => task.done).length
+    const openTasks = dashboardPlus.boards.reduce((sum, board) => sum + board.tasks.filter(task => !task.done).length, 0)
+      + dashboardPlus.focusTodos.filter(task => !task.done).length
+    const draft = createReviewDraft(type, {
+      today,
+      periodStart: period.start,
+      periodEnd: period.end,
+      completedTasks,
+      openTasks,
+      projects: dashboardPlus.boards,
+      goals: dashboardPlus.goals,
+      captures: lifeOs.state.captures,
+      knowledge: lifeOs.state.knowledge,
+      decisions: lifeOs.state.decisions,
+      signals: lifeOs.state.signals,
+      activities: lifeOs.state.activities,
+      focusMinutes: lifeOs.state.activities
+        .filter(item => item.kind === 'focus' && item.date >= period.start && item.date <= period.end)
+        .reduce((sum, item) => sum + (item.actualDurationMin ?? 0), 0),
+    })
+    setReviewDraft(draft)
+    setReviewType(type)
+  }
+
+  const refreshInsights = (): Insight[] => {
+    const computed = buildDeterministicInsights({
+      today,
+      inboxCount: lifeOs.inboxCount,
+      projects: dashboardPlus.boards,
+      goals: dashboardPlus.goals,
+      decisions: lifeOs.state.decisions.map(item => refreshDecisionStatus(item, today)),
+      activities: lifeOs.state.activities,
+      signals: lifeOs.state.signals,
+    })
+    const story = interpretInsights(computed)
+    const next = story ? [...computed, story] : computed
+    lifeOs.commit(current => ({ ...current, insights: next }))
+    return next
   }
 
   const exportTaskToCalendar = async (title: string, minutes: number) => {
@@ -2139,6 +2356,15 @@ function App() {
           showToast('Kurzbefehl: Wert gespeichert')
           break
         }
+        case 'capture': {
+          if (action.text?.trim()) {
+            lifeOs.captureQuick(action.text.trim())
+            showToast('Capture in Inbox')
+          }
+          navigateTo('inbox')
+          if (!action.text?.trim()) setCaptureOpen(true)
+          break
+        }
         case 'focus': {
           navigateTo('today')
           const nextIndex = anchors.findIndex((_, index) => !anchorsDone[index])
@@ -2194,6 +2420,17 @@ function App() {
             )
           })}
         </nav>
+        <nav className="sidebar-nav" aria-label="Inbox">
+          <span className="nav-group-label">System</span>
+          <button
+            type="button"
+            className={view === 'inbox' ? 'nav-item is-active' : 'nav-item'}
+            onClick={() => navigateTo('inbox')}
+          >
+            <Inbox size={18} />
+            <span>Inbox{lifeOs.inboxCount > 0 ? ` (${lifeOs.inboxCount})` : ''}</span>
+          </button>
+        </nav>
 
         <div className="sidebar-spacer" />
 
@@ -2232,6 +2469,12 @@ function App() {
             <IconButton label="Theme wechseln" onClick={quickToggleTheme}>
               {resolvedTheme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </IconButton>
+            <IconButton label="Suchen" onClick={() => setPaletteOpen(true)}>
+              <Search size={18} />
+            </IconButton>
+            <IconButton label={`Inbox${lifeOs.inboxCount > 0 ? ` (${lifeOs.inboxCount})` : ''}`} onClick={() => navigateTo('inbox')}>
+              <Inbox size={18} />
+            </IconButton>
             <IconButton label="Einstellungen öffnen" onClick={() => setSettingsOpen(true)}>
               <Settings size={18} />
             </IconButton>
@@ -2252,6 +2495,9 @@ function App() {
                 <Cloud size={14} />
                 {storageStatusLabel(syncStatus, isOnline, Boolean(deviceSyncCreds))}
               </span>
+              <IconButton label="Suchen oder erfassen" onClick={() => setPaletteOpen(true)}>
+                <Search size={18} />
+              </IconButton>
               <IconButton label="Einstellungen öffnen" onClick={() => setSettingsOpen(true)}>
                 <Settings size={18} />
               </IconButton>
@@ -2317,7 +2563,7 @@ function App() {
               showToast={showToast}
               highlightQuickNote={highlightQuickNote}
               onQuickNoteHighlightHandled={() => setHighlightQuickNote(false)}
-              ritualLock={ritualHeuteLock === 'energy' || ritualHeuteLock === 'todos' ? ritualHeuteLock : null}
+              ritualLock={ritualHeuteLock === 'todos' ? 'todos' : null}
               dailyEvents={dailyEvents}
               onUndoDailyEvent={undoDailyEvent}
               onUndoRitualEvent={undoRitualEvent}
@@ -2396,7 +2642,354 @@ function App() {
               layout={settings.dashboardPlusLayout}
               medisRemindersEnabled={settings.medisRemindersEnabled}
               onOpenSettings={() => setSettingsOpen(true)}
+              onOpenProject={id => navigateTo('project', id)}
+              onOpenGoal={id => navigateTo('goal', id)}
               showToast={showToast}
+            />
+          )}
+          {view === 'inbox' && (
+            <InboxView
+              items={lifeOs.inbox}
+              projects={dashboardPlus.boards.map(board => ({ id: board.id, label: board.label }))}
+              goals={dashboardPlus.goals.map(goal => ({ id: goal.id, title: goal.title }))}
+              onCapture={() => setCaptureOpen(true)}
+              onOpen={id => setLifeOsEntityId(id)}
+              onClassify={lifeOs.classify}
+              onConvert={handleConvertCapture}
+              onArchive={lifeOs.archive}
+              onDelete={lifeOs.removeCapture}
+              onLink={(id, links) => lifeOs.updateCapture(id, links)}
+            />
+          )}
+          {view === 'project' && (
+            <ProjectDetailView
+              project={dashboardPlus.boards.find(board => board.id === lifeOsEntityId) ?? dashboardPlus.boards[0] ?? null}
+              goals={dashboardPlus.goals}
+              knowledge={lifeOs.state.knowledge.filter(item => relatedIds(lifeOs.state, 'knowledge', item.id, 'project').includes(lifeOsEntityId ?? '') || lifeOs.state.captures.some(capture => capture.converted?.id === item.id && capture.projectId === lifeOsEntityId))}
+              decisions={lifeOs.state.decisions.filter(item => item.projectId === lifeOsEntityId)}
+              activities={lifeOs.state.activities.filter(item => item.projectId === lifeOsEntityId)}
+              notes={lifeOs.state.captures.filter(item => item.projectId === lifeOsEntityId && item.status === 'converted' && item.converted?.kind === 'knowledge').map(item => item.title)}
+              onBack={() => navigateTo('dashboardPlus')}
+              onChange={patch => {
+                const id = lifeOsEntityId ?? dashboardPlus.boards[0]?.id
+                if (!id) return
+                setDashboardPlus(current => ({
+                  ...current,
+                  boards: current.boards.map(board => board.id === id
+                    ? {
+                      ...board,
+                      label: patch.label ?? board.label,
+                      description: patch.description ?? board.description,
+                      outcome: patch.outcome ?? board.outcome,
+                      status: patch.status ?? board.status,
+                      priority: patch.priority ?? board.priority,
+                      startDate: patch.startDate ?? board.startDate,
+                      targetDate: patch.targetDate ?? board.targetDate,
+                      nextAction: patch.nextAction ?? board.nextAction,
+                      nextActionTaskId: patch.nextActionTaskId ?? board.nextActionTaskId,
+                      milestones: patch.milestones ?? board.milestones,
+                      goalId: patch.goalId ?? board.goalId,
+                      lifeArea: 'lifeArea' in patch ? patch.lifeArea : board.lifeArea,
+                      lastActivityAt: nowIso(),
+                    }
+                    : board),
+                }))
+                const previous = dashboardPlus.boards.find(board => board.id === id)
+                const nextArea = 'lifeArea' in patch ? patch.lifeArea : previous?.lifeArea
+                lifeOs.commit(current => ({
+                  ...current,
+                  events: [
+                    ...current.events,
+                    emitDomainEvent('project.updated', { id, ...(nextArea ? { lifeArea: nextArea } : {}) }, { kind: 'project', id }),
+                    ...lifeAreaTransitionEvents(previous?.lifeArea, nextArea, { kind: 'project', id }),
+                  ],
+                }))
+              }}
+              onAddTask={title => {
+                const id = lifeOsEntityId ?? dashboardPlus.boards[0]?.id
+                if (!id) return
+                setDashboardPlus(current => ({
+                  ...current,
+                  boards: current.boards.map(board => board.id === id
+                    ? { ...board, tasks: [...board.tasks, { id: crypto.randomUUID(), title, tag: '', time: '', done: false, priority: 'p3' }], lastActivityAt: nowIso() }
+                    : board),
+                }))
+              }}
+              onToggleTask={taskId => {
+                const id = lifeOsEntityId ?? dashboardPlus.boards[0]?.id
+                if (!id) return
+                setDashboardPlus(current => ({
+                  ...current,
+                  boards: current.boards.map(board => board.id === id
+                    ? {
+                      ...board,
+                      lastActivityAt: nowIso(),
+                      tasks: board.tasks.map(task => {
+                        if (task.id !== taskId) return task
+                        const done = !task.done
+                        if (done) {
+                          lifeOs.commit(state => ({
+                            ...state,
+                            events: [...state.events, emitDomainEvent('task.completed', { title: task.title }, { kind: 'task', id: task.id })],
+                          }))
+                        }
+                        return { ...task, done }
+                      }),
+                    }
+                    : board),
+                }))
+              }}
+              onPatchTask={(taskId, patch) => {
+                const id = lifeOsEntityId ?? dashboardPlus.boards[0]?.id
+                if (!id) return
+                const previous = dashboardPlus.boards.find(board => board.id === id)?.tasks.find(task => task.id === taskId)
+                setDashboardPlus(current => ({
+                  ...current,
+                  boards: current.boards.map(board => board.id === id
+                    ? {
+                      ...board,
+                      lastActivityAt: nowIso(),
+                      tasks: board.tasks.map(task => task.id === taskId
+                        ? { ...task, lifeArea: 'lifeArea' in patch ? patch.lifeArea : task.lifeArea }
+                        : task),
+                    }
+                    : board),
+                }))
+                lifeOs.commit(current => ({
+                  ...current,
+                  events: [
+                    ...current.events,
+                    ...lifeAreaTransitionEvents(previous?.lifeArea, patch.lifeArea, { kind: 'task', id: taskId }),
+                  ],
+                }))
+              }}
+              onOpenDecision={id => navigateTo('decisions', id)}
+              onOpenKnowledge={id => navigateTo('knowledge', id)}
+            />
+          )}
+          {view === 'goal' && (
+            <GoalDetailView
+              goal={dashboardPlus.goals.find(item => item.id === lifeOsEntityId) ?? dashboardPlus.goals[0] ?? null}
+              projects={dashboardPlus.boards}
+              onBack={() => navigateTo('dashboardPlus')}
+              onChange={patch => {
+                const id = lifeOsEntityId ?? dashboardPlus.goals[0]?.id
+                if (!id) return
+                setDashboardPlus(current => ({
+                  ...current,
+                  goals: current.goals.map(goal => {
+                    if (goal.id !== id) return goal
+                    const timeframe = patch.timeframe
+                    const nextTimeframe = timeframe === 'Jahr' || timeframe === 'Quartal' || timeframe === 'Monat' || timeframe === 'Woche'
+                      ? timeframe
+                      : goal.timeframe
+                    return { ...goal, ...patch, timeframe: nextTimeframe }
+                  }),
+                }))
+                const previous = dashboardPlus.goals.find(goal => goal.id === id)
+                const nextArea = 'lifeArea' in patch ? patch.lifeArea : previous?.lifeArea
+                lifeOs.commit(current => ({
+                  ...current,
+                  events: [
+                    ...current.events,
+                    emitDomainEvent('goal.updated', { id, ...(nextArea ? { lifeArea: nextArea } : {}) }, { kind: 'goal', id }),
+                    ...lifeAreaTransitionEvents(previous?.lifeArea, nextArea, { kind: 'goal', id }),
+                  ],
+                }))
+              }}
+              onAddCheckIn={(note, value) => {
+                const id = lifeOsEntityId ?? dashboardPlus.goals[0]?.id
+                if (!id) return
+                setDashboardPlus(current => ({
+                  ...current,
+                  goals: current.goals.map(goal => goal.id === id
+                    ? { ...goal, checkIns: [...(goal.checkIns ?? []), { id: crypto.randomUUID(), at: today, note, value }] }
+                    : goal),
+                }))
+              }}
+            />
+          )}
+          {view === 'knowledge' && (
+            <KnowledgeView
+              items={lifeOs.state.knowledge}
+              selectedId={lifeOsEntityId}
+              related={(lifeOsEntityId ? relatedIds(lifeOs.state, 'knowledge', lifeOsEntityId, 'project') : []).map(id => ({
+                id,
+                kind: 'project',
+                title: dashboardPlus.boards.find(board => board.id === id)?.label ?? id,
+              }))}
+              onSelect={id => setLifeOsEntityId(id)}
+              onCreate={() => {
+                const id = createId()
+                const now = nowIso()
+                const item: KnowledgeItem = {
+                  id, title: 'Neuer Eintrag', content: '', summary: '', source: '', type: 'thought', topics: [], tags: [], createdAt: now, updatedAt: now,
+                }
+                lifeOs.commit(current => ({
+                  ...current,
+                  knowledge: [item, ...current.knowledge],
+                  events: [...current.events, emitDomainEvent('knowledge.created', { title: item.title }, { kind: 'knowledge', id })],
+                }))
+                setLifeOsEntityId(id)
+                return id
+              }}
+              onChange={(id, patch) => {
+                lifeOs.commit(current => ({
+                  ...current,
+                  knowledge: current.knowledge.map(item => item.id === id ? { ...item, ...patch, updatedAt: nowIso() } : item),
+                }))
+              }}
+              onDelete={id => lifeOs.commit(current => ({ ...current, knowledge: current.knowledge.filter(item => item.id !== id) }))}
+              onLink={(id, target) => {
+                lifeOs.commit(current => ({
+                  ...current,
+                  relations: [...current.relations, {
+                    id: createId(),
+                    fromKind: 'knowledge',
+                    fromId: id,
+                    toKind: target.kind,
+                    toId: target.targetId,
+                    createdAt: nowIso(),
+                  }],
+                }))
+              }}
+            />
+          )}
+          {view === 'decisions' && (
+            <DecisionView
+              decisions={lifeOs.state.decisions.map(item => refreshDecisionStatus(item, today))}
+              projects={dashboardPlus.boards.map(board => ({ id: board.id, label: board.label }))}
+              goals={dashboardPlus.goals}
+              selectedId={lifeOsEntityId}
+              onSelect={id => setLifeOsEntityId(id)}
+              onCreate={() => {
+                const id = createId()
+                const now = nowIso()
+                const decision: Decision = {
+                  id,
+                  title: 'Neue Entscheidung',
+                  decision: '',
+                  context: '',
+                  reasoning: '',
+                  alternatives: '',
+                  expectedOutcome: '',
+                  decidedAt: today,
+                  status: 'active',
+                  createdAt: now,
+                  updatedAt: now,
+                }
+                lifeOs.commit(current => ({
+                  ...current,
+                  decisions: [decision, ...current.decisions],
+                  events: [...current.events, emitDomainEvent('decision.created', { title: decision.title }, { kind: 'decision', id })],
+                }))
+                setLifeOsEntityId(id)
+                return id
+              }}
+              onChange={(id, patch) => {
+                lifeOs.commit(current => ({
+                  ...current,
+                  decisions: current.decisions.map(item => item.id === id ? refreshDecisionStatus({ ...item, ...patch, updatedAt: nowIso() }, today) : item),
+                }))
+              }}
+              onDelete={id => lifeOs.commit(current => ({ ...current, decisions: current.decisions.filter(item => item.id !== id) }))}
+            />
+          )}
+          {view === 'reviews' && (
+            <ReviewView
+              reviews={[...lifeOs.state.reviews].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))}
+              draft={reviewDraft}
+              onType={type => {
+                setReviewType(type)
+                startReview(type)
+              }}
+              onStart={() => startReview(reviewType)}
+              onChange={patch => setReviewDraft(current => current ? { ...current, ...patch, updatedAt: nowIso() } : current)}
+              onComplete={() => {
+                if (!reviewDraft) return
+                const saved = completeReview(reviewDraft, reviewDraft)
+                lifeOs.saveReview(saved)
+                setReviewDraft(saved)
+                showToast('Review gespeichert')
+              }}
+              onSelect={id => {
+                const found = lifeOs.state.reviews.find(item => item.id === id) ?? null
+                setReviewDraft(found)
+                if (found) setReviewType(found.type)
+              }}
+            />
+          )}
+          {view === 'signals' && (
+            <SignalsView
+              signals={lifeOs.state.signals}
+              activities={lifeOs.state.activities}
+              onRecord={lifeOs.addSignal}
+              onActivity={lifeOs.addActivity}
+            />
+          )}
+          {view === 'insights' && (
+            <InsightsView
+              insights={lifeOs.state.insights}
+              onRefresh={() => {
+                refreshInsights()
+                showToast('Insights neu berechnet')
+              }}
+            />
+          )}
+          {view === 'integrations' && (
+            <IntegrationsView
+              instances={lifeOs.state.connectors}
+              outbound={lifeOs.state.outboundWebhooks}
+              logs={lifeOs.state.webhookLogs}
+              onConnect={async (connectorId, secret) => {
+                const configuration: Record<string, string> = {}
+                if (secret) configuration.secretHash = await hashSecret(secret)
+                const instance = createConnectorInstance(connectorId, configuration)
+                instance.status = 'connected'
+                lifeOs.commit(current => ({
+                  ...current,
+                  connectors: [
+                    ...current.connectors.filter(item => item.connectorId !== connectorId),
+                    instance,
+                  ],
+                }))
+                showToast(secret ? 'Verbunden. Secret wird nur als Hash gespeichert.' : 'Verbunden')
+              }}
+              onDisconnect={id => {
+                lifeOs.commit(current => ({
+                  ...current,
+                  connectors: current.connectors.map(item => item.id === id
+                    ? { ...item, status: 'disconnected', configuration: {}, updatedAt: nowIso() }
+                    : item),
+                }))
+              }}
+              onConfigure={(id, configuration) => {
+                lifeOs.commit(current => ({
+                  ...current,
+                  connectors: current.connectors.map(item => item.id === id
+                    ? { ...item, configuration: { ...item.configuration, ...configuration }, updatedAt: nowIso() }
+                    : item),
+                }))
+              }}
+              onAddOutbound={(url, events) => {
+                lifeOs.commit(current => ({
+                  ...current,
+                  outboundWebhooks: [...current.outboundWebhooks, {
+                    id: createId(),
+                    url,
+                    events: events as DomainEventType[],
+                    enabled: true,
+                    createdAt: nowIso(),
+                    updatedAt: nowIso(),
+                  }],
+                }))
+              }}
+              onToggleOutbound={(id, enabled) => {
+                lifeOs.commit(current => ({
+                  ...current,
+                  outboundWebhooks: current.outboundWebhooks.map(item => item.id === id ? { ...item, enabled, updatedAt: nowIso() } : item),
+                }))
+              }}
             />
           )}
         </main>
@@ -2450,6 +3043,48 @@ function App() {
         />
       )}
 
+      {paletteOpen && (
+        <CommandPalette
+          state={lifeOs.state}
+          projects={dashboardPlus.boards}
+          goals={dashboardPlus.goals}
+          tasks={[
+            ...dashboardPlus.focusTodos.map(task => ({ id: task.id, title: task.title, project: 'Fokus', lifeArea: task.lifeArea })),
+            ...dashboardPlus.boards.flatMap(board => board.tasks.map(task => ({ id: task.id, title: task.title, project: board.label, lifeArea: task.lifeArea ?? board.lifeArea }))),
+          ]}
+          onClose={() => setPaletteOpen(false)}
+          onNavigate={(next, id) => {
+            setPaletteOpen(false)
+            navigateTo(next, id)
+          }}
+          onOpenCapture={preset => {
+            setPaletteOpen(false)
+            setCapturePreset(preset ?? '')
+            setCaptureOpen(true)
+          }}
+          onOpenHit={hit => {
+            setPaletteOpen(false)
+            if (hit.kind === 'project') navigateTo('project', hit.id)
+            else if (hit.kind === 'goal') navigateTo('goal', hit.id)
+            else if (hit.kind === 'decision') navigateTo('decisions', hit.id)
+            else if (hit.kind === 'knowledge' || hit.kind === 'note') navigateTo('knowledge', hit.id)
+            else if (hit.kind === 'capture') navigateTo('inbox', hit.id)
+            else navigateTo('inbox')
+          }}
+        />
+      )}
+
+      {captureOpen && (
+        <CaptureSheet
+          initialRaw={capturePreset}
+          onClose={() => {
+            setCaptureOpen(false)
+            setCapturePreset('')
+          }}
+          onCapture={handleLifeOsCapture}
+        />
+      )}
+
       {focusSession && (
         <FocusModal
           session={focusSession}
@@ -2489,6 +3124,10 @@ function App() {
             setPreviewIndex(0)
             setGatePreview(true)
             setGateBypass(false)
+          }}
+          onOpenIntegrations={() => {
+            setSettingsOpen(false)
+            navigateTo('integrations')
           }}
         />
       )}
@@ -2909,7 +3548,7 @@ function TodayView({
   highlightQuickNote?: boolean
   onQuickNoteHighlightHandled?: () => void
   onExportToCalendar: (title: string, minutes: number) => Promise<void>
-  ritualLock?: 'energy' | 'todos' | null
+  ritualLock?: 'todos' | null
   onContinueRitualTodos?: () => void
   dailyEvents?: DailyEvent[]
   onUndoDailyEvent?: (event: EntryPatchEvent) => void
@@ -2922,6 +3561,7 @@ function TodayView({
   const [dragIdx,     setDragIdx]     = useState<number | null>(null)
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
   const [habitDetail, setHabitDetail] = useState<{ key: HabitKey; label: string } | null>(null)
+  const [editingEnergy, setEditingEnergy] = useState(false)
   const touchRef = useRef<{ sourceIdx: number } | null>(null)
   const energy = entry.energyLevel
   const dayEvents = eventsForDate(dailyEvents, date).slice(0, 12)
@@ -3196,29 +3836,6 @@ function TodayView({
         </div>
       </section>
 
-      {!energy && (
-        <section className="card energy-card">
-          <SectionTitle
-            eyebrow="Kurz einchecken"
-            title={date === today ? 'Wie ist deine Energie heute?' : `Wie war die Energie am ${formatLongDate(date)}?`}
-          />
-          <div className="energy-grid">
-            {ENERGY_OPTIONS.map(option => (
-              <button
-                type="button"
-                key={option.value}
-                className="energy-option"
-                onClick={() => onUpdate({ energyLevel: option.value })}
-              >
-                <span className={`energy-dot energy-dot--${option.value}`} />
-                <strong>{option.label}</strong>
-                <small>{option.description}</small>
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
-
       {ritualLock === 'todos' && energy && (
         <section className="card morning-todos-card">
           <SectionTitle eyebrow="Morgen-Ritual" title="Was heute zählt" />
@@ -3244,17 +3861,39 @@ function TodayView({
         </section>
       )}
 
-      {energy && ritualLock !== 'energy' && ritualLock !== 'todos' && (
+      {energy && ritualLock !== 'todos' && (
         <div className="status-block">
           <div className="status-row">
             <span className={`energy-pill energy-pill--${energy}`}>
               {energy === 'low' ? <BatteryLow size={15} /> : <Activity size={15} />}
               Energie: {ENERGY_OPTIONS.find(option => option.value === energy)?.label}
             </span>
-            <button type="button" className="text-button" onClick={() => onUpdate({ energyLevel: undefined })}>
-              Ändern
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => setEditingEnergy(current => !current)}
+            >
+              {editingEnergy ? 'Fertig' : 'Ändern'}
             </button>
           </div>
+          {editingEnergy && (
+            <div className="energy-grid energy-grid--inline">
+              {ENERGY_OPTIONS.map(option => (
+                <button
+                  type="button"
+                  key={option.value}
+                  className={`energy-option${energy === option.value ? ' is-selected' : ''}`}
+                  onClick={() => {
+                    onUpdate({ energyLevel: option.value })
+                    setEditingEnergy(false)
+                  }}
+                >
+                  <span className={`energy-dot energy-dot--${option.value}`} />
+                  <strong>{option.label}</strong>
+                </button>
+              ))}
+            </div>
+          )}
           <div className="recovery-row" role="status">
             <div>
               <span className="eyebrow">Recovery</span>
@@ -3280,7 +3919,7 @@ function TodayView({
         </div>
       )}
 
-      {ritualLock !== 'energy' && ritualLock !== 'todos' && (
+      {ritualLock !== 'todos' && (
       <div className={`dashboard-grid dashboard-grid--${dayMode}`}>
         <section className="card tasks-card">
           <SectionTitle
@@ -4663,6 +5302,8 @@ function DashboardPlusView({
   layout,
   medisRemindersEnabled,
   onOpenSettings,
+  onOpenProject,
+  onOpenGoal,
   showToast,
 }: {
   dashboard: DashboardPlusState
@@ -4675,6 +5316,8 @@ function DashboardPlusView({
   layout: DashboardPlusLayout
   medisRemindersEnabled: boolean
   onOpenSettings: () => void
+  onOpenProject?: (id: string) => void
+  onOpenGoal?: (id: string) => void
   showToast: (message: string) => void
 }) {
   const [activeSection, setActiveSection] = useState<DashboardPlusSection>('overview')
@@ -4693,6 +5336,9 @@ function DashboardPlusView({
   const [activeBoardId, setActiveBoardId] = useState(dashboard.boards[0]?.id ?? 'personal')
   const [activeListId, setActiveListId] = useState(dashboard.lists[0]?.id ?? 'pack')
   const [searchQuery, setSearchQuery] = useState('')
+  const [todoAreaFilter, setTodoAreaFilter] = useState<AreaFilter>('all')
+  const [groupTodosByArea, setGroupTodosByArea] = useState(false)
+  const [goalAreaFilter, setGoalAreaFilter] = useState<AreaFilter>('all')
   const [taskMenu, setTaskMenu] = useState<{
     x: number
     y: number
@@ -4851,6 +5497,13 @@ function DashboardPlusView({
     onChange(current => ({
       ...current,
       goals: current.goals.filter((_, itemIndex) => itemIndex !== index),
+    }))
+  }
+
+  const updateBoard = (boardId: string, patch: Partial<DashboardPlusBoard>) => {
+    onChange(current => ({
+      ...current,
+      boards: current.boards.map(board => (board.id === boardId ? { ...board, ...patch } : board)),
     }))
   }
 
@@ -5274,8 +5927,23 @@ function DashboardPlusView({
           <p className="field-hint" style={{ marginTop: -8, marginBottom: 14 }}>
             Max. 5 Tagesanker bleiben unter Heute / Plan. Rechts wischen verschiebt Fokus ↔ Board.
           </p>
+          <LifeAreaFilter value={todoAreaFilter} onChange={setTodoAreaFilter} />
+          <label className="life-area-group-toggle">
+            <input type="checkbox" checked={groupTodosByArea} onChange={event => setGroupTodosByArea(event.target.checked)} />
+            <span>Group by Life Area</span>
+          </label>
           <div className="editable-task-list">
-            {dashboard.focusTodos.map((task, index) => (
+            {(() => {
+              const rows = dashboard.focusTodos
+                .map((task, index) => ({ task, index }))
+                .filter(({ task }) => matchesAreaFilter(resolveDashboardTaskArea(task, undefined, dashboard.goals), todoAreaFilter))
+              const groups = groupTodosByArea
+                ? groupByResolvedArea(rows, row => resolveDashboardTaskArea(row.task, undefined, dashboard.goals).key)
+                : [{ key: 'all' as const, label: '', items: rows }]
+              return groups.map(group => (
+                <div key={group.key} className="life-area-group">
+                  {group.label && <span className="eyebrow">{group.label}</span>}
+                  {group.items.map(({ task, index }) => (
               <SwipeableRow
                 key={task.id}
                 leftLabel={task.done ? 'Offen' : 'Erledigt'}
@@ -5315,6 +5983,7 @@ function DashboardPlusView({
                         placeholder="Zeit"
                         aria-label="Zeit"
                       />
+                      <LifeAreaSelect compact value={task.lifeArea} onChange={lifeArea => updateFocusTask(index, { lifeArea })} />
                     </div>
                   </div>
                   <div className="editable-task__actions">
@@ -5325,12 +5994,21 @@ function DashboardPlusView({
                   </div>
                 </div>
               </SwipeableRow>
-            ))}
+                  ))}
+                </div>
+              ))
+            })()}
           </div>
         </section>
 
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
-          <SectionTitle eyebrow="Projekte" title="Boards" />
+          <SectionTitle
+            eyebrow="Projekte"
+            title="Boards"
+            action={activeBoard && onOpenProject ? (
+              <button type="button" className="small-button" onClick={() => onOpenProject(activeBoard.id)}>Öffnen</button>
+            ) : undefined}
+          />
           <div className="project-tabs dashboard-plus-tabs">
             {dashboard.boards.map(board => (
               <button
@@ -5356,11 +6034,29 @@ function DashboardPlusView({
                   {percent >= 80 && totalCount > 0 && (
                     <span className="status-chip status-chip--good"><span className="status-chip__dot" />Fast geschafft</span>
                   )}
+                  <LifeAreaMark
+                    area={resolveLifeArea({
+                      explicit: activeBoard.lifeArea,
+                      goal: dashboard.goals.find(item => item.id === activeBoard.goalId),
+                    }).key}
+                    inherited={!activeBoard.lifeArea && Boolean(dashboard.goals.find(item => item.id === activeBoard.goalId)?.lifeArea)}
+                  />
                 </div>
                 <div className="prog-num">{percent}%</div>
               </div>
+              <LifeAreaSelect
+                compact
+                value={activeBoard.lifeArea}
+                inherited={dashboard.goals.find(item => item.id === activeBoard.goalId)?.lifeArea}
+                onChange={lifeArea => updateBoard(activeBoard.id, { lifeArea })}
+              />
               <div className="editable-task-list">
-                {activeBoard.tasks.map((task, index) => (
+                {activeBoard.tasks
+                  .map((task, index) => ({ task, index }))
+                  .filter(({ task }) => matchesAreaFilter(resolveDashboardTaskArea(task, activeBoard, dashboard.goals), todoAreaFilter))
+                  .map(({ task, index }) => {
+                    const resolved = resolveDashboardTaskArea(task, activeBoard, dashboard.goals)
+                    return (
                   <SwipeableRow
                     key={task.id}
                     leftLabel={task.done ? 'Offen' : 'Erledigt'}
@@ -5378,6 +6074,12 @@ function DashboardPlusView({
                         <div className="dashboard-plus-inline-row">
                           <input className="dashboard-plus-input" value={task.tag} onChange={event => updateBoardTask(activeBoard.id, index, { tag: event.target.value })} placeholder="Tag" />
                           <input className="dashboard-plus-input" value={task.time} onChange={event => updateBoardTask(activeBoard.id, index, { time: event.target.value })} placeholder="Zeit" />
+                          <LifeAreaSelect
+                            compact
+                            value={task.lifeArea}
+                            inherited={resolved.source === 'explicit' ? undefined : resolved.key}
+                            onChange={lifeArea => updateBoardTask(activeBoard.id, index, { lifeArea })}
+                          />
                         </div>
                       </div>
                       <div className="editable-task__actions">
@@ -5388,7 +6090,8 @@ function DashboardPlusView({
                       </div>
                     </div>
                   </SwipeableRow>
-                ))}
+                    )
+                  })}
               </div>
               <button type="button" className="secondary-button secondary-button--full" onClick={() => addBoardTask(activeBoard.id)}>
                 <Plus size={15} /> Aufgabe hinzufügen
@@ -5657,8 +6360,12 @@ function DashboardPlusView({
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Planung" title="Ziele" action={<button type="button" className="small-button" onClick={addGoal}><Plus size={14} /> Ziel</button>} />
+          <LifeAreaFilter value={goalAreaFilter} onChange={setGoalAreaFilter} />
           <div className="dashboard-plus-supplements">
-            {dashboard.goals.map((goal, index) => {
+            {dashboard.goals
+              .map((goal, index) => ({ goal, index }))
+              .filter(({ goal }) => matchesAreaFilter(resolveLifeArea({ explicit: goal.lifeArea }), goalAreaFilter))
+              .map(({ goal, index }) => {
               const eta = daysUntil(goal.dueDate, today)
               const etaLabel = eta > 0
                 ? `Noch ${eta} ${plural(eta, 'Tag', 'Tage')}`
@@ -5683,11 +6390,17 @@ function DashboardPlusView({
                   <div className="dashboard-plus-inline-row">
                     <input className="dashboard-plus-input" type="number" min="0" max="100" value={goal.percent} onChange={event => updateGoal(index, { percent: clampNumber(Number(event.target.value) || 0, 0, 100) })} aria-label="Prozent" />
                     <input className="dashboard-plus-input" type="date" value={goal.dueDate} onChange={event => updateGoal(index, { dueDate: event.target.value })} aria-label="Fällig am" />
+                    <LifeAreaSelect compact value={goal.lifeArea} onChange={lifeArea => updateGoal(index, { lifeArea })} />
                   </div>
                   <div className="mini-progress" aria-hidden="true">
                     <span style={{ width: `${goal.percent}%` }} />
                   </div>
                   <div className="dashboard-plus-goal-eta">{etaLabel} · {goal.percent}%</div>
+                  {onOpenGoal && (
+                    <button type="button" className="secondary-button secondary-button--full" onClick={() => onOpenGoal(goal.id)}>
+                      Ziel öffnen
+                    </button>
+                  )}
                   <button type="button" className="secondary-button secondary-button--full" onClick={() => removeGoal(index)}>
                     <Trash2 size={15} /> Entfernen
                   </button>
@@ -6527,6 +7240,7 @@ function SettingsModal({
   showToast,
   onClose,
   onPreviewMorningGate,
+  onOpenIntegrations,
 }: {
   settings: AppSettings
   lastBackupAt: string | null
@@ -6540,6 +7254,7 @@ function SettingsModal({
   showToast: (message: string) => void
   onClose: () => void
   onPreviewMorningGate: () => void
+  onOpenIntegrations: () => void
 }) {
   useModalBehavior(onClose)
   const importInputRef = useRef<HTMLInputElement | null>(null)
@@ -6574,6 +7289,16 @@ function SettingsModal({
         <div className="modal-header">
           <div><span className="eyebrow">Life OS</span><h2 id="settings-title">Einstellungen</h2></div>
           <IconButton label="Schließen" onClick={onClose}><X size={18} /></IconButton>
+        </div>
+
+        <div className="settings-section">
+          <h3>Integrationen</h3>
+          <p style={{ margin: '-6px 0 12px', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+            Connectoren, Webhooks und Outbound-Events. Die Startseite bleibt unverändert.
+          </p>
+          <button type="button" className="secondary-button" onClick={onOpenIntegrations}>
+            Integrationen öffnen
+          </button>
         </div>
 
         <div className="settings-section">

@@ -885,6 +885,23 @@ button:disabled {
 .energy-dot--low { background: var(--lilac); }
 .energy-dot--high { background: var(--accent); }
 
+.energy-option.is-selected {
+  border-color: var(--border-strong);
+  background: var(--surface-solid);
+}
+
+.energy-grid--inline {
+  margin-top: 4px;
+}
+
+.energy-grid--inline .energy-option {
+  min-height: 0;
+  grid-template-columns: 12px 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
 @keyframes energyPillPop {
   from { opacity: 0; transform: scale(0.9); }
   to { opacity: 1; transform: scale(1); }
@@ -4786,6 +4803,22 @@ button.status-chip.status-chip--good {
   animation: splash-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+.morning-gate__card .energy-grid {
+  grid-template-columns: 1fr;
+}
+
+.morning-gate__card .energy-option {
+  min-height: 92px;
+  grid-template-columns: 16px 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 20px;
+}
+
+.morning-gate__card .energy-option small {
+  grid-column: 2;
+}
+
 .morning-gate__card form {
   display: grid;
   gap: 12px;
@@ -5619,5 +5652,268 @@ button.status-chip.status-chip--good {
   font: inherit;
   cursor: pointer;
   padding: 0;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.lifeos-page {
+  display: grid;
+  gap: 16px;
+}
+
+.lifeos-split {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(0, 1.4fr);
+  gap: 16px;
+}
+
+.lifeos-list-card,
+.lifeos-palette-list {
+  display: grid;
+  gap: 6px;
+}
+
+.lifeos-list-item,
+.lifeos-palette-item {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  background: var(--surface-soft);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lifeos-list-item strong,
+.lifeos-palette-item strong {
+  font-size: 14px;
+}
+
+.lifeos-list-item span,
+.lifeos-palette-item span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.lifeos-list-item.is-active {
+  border-color: var(--border-strong);
+  background: var(--surface-solid);
+}
+
+.lifeos-list-item.is-done strong {
+  text-decoration: line-through;
+  opacity: 0.65;
+}
+
+.lifeos-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.lifeos-inline {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.lifeos-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.lifeos-body,
+.lifeos-detail-title {
+  margin: 8px 0 14px;
+  line-height: 1.55;
+}
+
+.lifeos-plain-list {
+  margin: 0 0 14px;
+  padding-left: 18px;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.lifeos-error {
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.lifeos-file-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.lifeos-file-name,
+.lifeos-preview {
+  max-width: 100%;
+  border-radius: 12px;
+}
+
+.lifeos-search-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lifeos-search-line input {
+  flex: 1;
+}
+
+.lifeos-check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+}
+
+.lifeos-connector {
+  display: grid;
+  gap: 10px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+
+.text-field textarea,
+.lifeos-page select,
+.lifeos-page textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font: inherit;
+}
+
+@media (max-width: 860px) {
+  .lifeos-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.life-area-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+
+.life-area-chip {
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 12px;
+}
+
+.life-area-chip.is-active {
+  border-color: var(--border-strong);
+  background: var(--surface-solid);
+  color: var(--text);
+}
+
+.life-area-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.life-area-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.life-area-mark[data-area="work"] .life-area-dot,
+.life-area-chip[data-area="work"].is-active { --life-area: var(--blue); }
+.life-area-mark[data-area="health"] .life-area-dot,
+.life-area-chip[data-area="health"].is-active { --life-area: var(--sage); }
+.life-area-mark[data-area="growth"] .life-area-dot,
+.life-area-chip[data-area="growth"].is-active { --life-area: var(--lilac); }
+.life-area-mark[data-area="creativity"] .life-area-dot,
+.life-area-chip[data-area="creativity"].is-active { --life-area: var(--warning); }
+.life-area-mark[data-area="relationships"] .life-area-dot,
+.life-area-chip[data-area="relationships"].is-active { --life-area: var(--accent); }
+.life-area-mark[data-area="life"] .life-area-dot,
+.life-area-chip[data-area="life"].is-active { --life-area: var(--text-soft); }
+
+.life-area-mark[data-area]:not([data-area="unclassified"]) .life-area-dot {
+  background: var(--life-area, var(--text-muted));
+}
+
+.life-area-chip[data-area].is-active:not([data-area="all"]):not([data-area="unclassified"]) {
+  box-shadow: inset 0 0 0 1px var(--life-area, var(--border-strong));
+}
+
+.life-area-select--compact select {
+  min-height: 36px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.life-area-group {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.life-area-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.lifeos-task-toggle {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.life-area-review {
+  margin: 12px 0 16px;
 }
 

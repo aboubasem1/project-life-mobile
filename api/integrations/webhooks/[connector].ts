@@ -1,0 +1,23 @@
+import { applyInboundConnectorWebhook } from '../../../server/lifeos-webhook-core.js'
+import { readSyncJson, syncError, syncJson } from '../../../server/sync-core.js'
+
+export const config = {
+  maxDuration: 15,
+}
+
+async function handle(request: Request): Promise<Response> {
+  try {
+    if (request.method === 'OPTIONS') return syncJson({ ok: true })
+    if (request.method !== 'POST') return syncJson({ error: 'Methode nicht erlaubt.' }, 405)
+    const url = new URL(request.url)
+    const parts = url.pathname.split('/').filter(Boolean)
+    const connector = decodeURIComponent(parts[parts.length - 1] ?? '')
+    const body = await readSyncJson<unknown>(request)
+    const result = await applyInboundConnectorWebhook({ connector, request, body })
+    return syncJson(result)
+  } catch (error) {
+    return syncError(error)
+  }
+}
+
+export default { fetch: handle }

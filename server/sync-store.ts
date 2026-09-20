@@ -46,6 +46,7 @@ export type SyncSnapshot = {
   healthIngest?: unknown
   morningRitualProgress?: unknown
   dailyEvents?: unknown
+  lifeOs?: unknown
 }
 
 export type SyncRoom = {

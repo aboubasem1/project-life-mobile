@@ -194,6 +194,7 @@ export async function applyHealthIngest(request: Request, body: unknown): Promis
     healthIngest: nextIngest,
     morningRitualProgress: snapshot?.morningRitualProgress,
     dailyEvents: mergeDailyEvents(snapshot?.dailyEvents, ingestEvents),
+    lifeOs: snapshot?.lifeOs,
   }
   room.snapshot = nextSnapshot
   room.updatedAt = updatedAt

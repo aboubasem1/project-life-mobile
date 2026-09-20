@@ -15,6 +15,7 @@ import {
   saveDailyEvents,
   type DailyEvent,
 } from './dailyEvents'
+import { LIFE_OS_KEY, loadLifeOsState, mergeLifeOsState, normalizeLifeOsState, saveLifeOsState, type LifeOsState } from './lifeos'
 
 const ENTRIES_KEY = 'project-life-entries'
 const USER_ID_KEY = 'project-life-user-id'
@@ -22,7 +23,7 @@ const SETTINGS_KEY = 'life-os-v1-settings'
 const DASHBOARD_PLUS_KEY = 'life-os-v1-dashboard-plus'
 const QUICK_NOTE_KEY = 'life-os-quick-note'
 const LAST_BACKUP_KEY = 'life-os-v1-last-backup-at'
-export const BACKUP_VERSION = 4
+export const BACKUP_VERSION = 5
 
 export { ENTRIES_KEY }
 
@@ -37,6 +38,7 @@ export type LifeOsBackupBundle = {
   morningRitualProgress?: MorningRitualProgress
   quickNote?: unknown
   dailyEvents?: DailyEvent[]
+  lifeOs?: LifeOsState
 }
 
 // ─── User identity (UUID stored in localStorage) ──────────────────────────────
@@ -143,6 +145,7 @@ export function exportBackupBundle(input: {
     morningRitualProgress: loadMorningRitualProgress(todayKeyLocal()),
     quickNote: parseStoredJson(QUICK_NOTE_KEY),
     dailyEvents: loadDailyEvents(),
+    lifeOs: loadLifeOsState(),
   }
   const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
@@ -170,6 +173,7 @@ export type ImportResult = {
   morningRitualProgress?: MorningRitualProgress
   quickNote?: unknown
   dailyEvents?: DailyEvent[]
+  lifeOs?: LifeOsState
   mode: 'bundle' | 'entries'
   entryCount: number
 }
@@ -201,6 +205,7 @@ export function importBackupFile(file: File): Promise<ImportResult> {
             morningRitualProgress: normalizeMorningRitualProgress(data.morningRitualProgress) ?? undefined,
             quickNote: data.quickNote,
             dailyEvents: normalizeDailyEvents(data.dailyEvents),
+            lifeOs: data.lifeOs != null ? normalizeLifeOsState(data.lifeOs) : undefined,
             mode: 'bundle',
             entryCount: entries.length,
           })
@@ -249,10 +254,13 @@ export function applyBackupExtras(result: ImportResult): void {
   if (result.dailyEvents?.length) {
     saveDailyEvents(mergeDailyEvents(loadDailyEvents(), result.dailyEvents))
   }
+  if (result.lifeOs) {
+    saveLifeOsState(mergeLifeOsState(loadLifeOsState(), result.lifeOs))
+  }
   safeSetItem(LAST_BACKUP_KEY, new Date().toISOString())
 }
 
-export { SETTINGS_KEY, DASHBOARD_PLUS_KEY, XP_KEY }
+export { SETTINGS_KEY, DASHBOARD_PLUS_KEY, XP_KEY, LIFE_OS_KEY }
 
 function todayKeyLocal(): string {
   const date = new Date()

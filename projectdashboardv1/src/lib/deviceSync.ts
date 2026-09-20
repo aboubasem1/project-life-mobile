@@ -31,6 +31,7 @@ import {
   mergeMorningRitualProgress,
   type MorningRitualProgress,
 } from './morningGate'
+import { loadLifeOsState, mergeLifeOsState, saveLifeOsState, type LifeOsState } from './lifeos'
 
 const SYNC_CRED_KEY = 'life-os-v1-device-sync'
 const QUICK_NOTE_KEY = 'life-os-quick-note'
@@ -76,6 +77,7 @@ export type DeviceSyncSnapshot = {
   healthIngest?: unknown
   morningRitualProgress?: MorningRitualProgress
   dailyEvents?: DailyEvent[]
+  lifeOs?: LifeOsState
 }
 
 function safeGet(key: string): string | null {
@@ -271,6 +273,7 @@ export function buildLocalSnapshot(): DeviceSyncSnapshot {
     bodyMeasurements: loadBodyMeasurements(),
     morningRitualProgress,
     dailyEvents: loadDailyEvents(),
+    lifeOs: loadLifeOsState(),
   }
 }
 
@@ -316,6 +319,9 @@ function applyRemoteExtras(snapshot: DeviceSyncSnapshot): void {
   }
   if (snapshot.dailyEvents != null) {
     saveDailyEvents(mergeDailyEvents(loadDailyEvents(), snapshot.dailyEvents))
+  }
+  if (snapshot.lifeOs != null) {
+    saveLifeOsState(mergeLifeOsState(loadLifeOsState(), snapshot.lifeOs))
   }
   notifySyncExtras()
 }

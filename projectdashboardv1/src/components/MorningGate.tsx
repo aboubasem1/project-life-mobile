@@ -437,14 +437,14 @@ export function MorningGate({
         {step === 'energy' && (
           <>
             <div className="morning-gate__icon" aria-hidden="true"><Flame size={26} /></div>
-            <span className="eyebrow">{meta.hint}</span>
-            <h2 id="morning-gate-title">Energie</h2>
+            <span className="eyebrow">Kurz einchecken</span>
+            <h2 id="morning-gate-title">Wie ist deine Energie heute?</h2>
             <p>{rule}</p>
             <div className="energy-grid">
               {([
-                { value: 'low', label: 'Niedrig', description: 'Nur das Wichtigste' },
-                { value: 'okay', label: 'Okay', description: 'Machbar und ruhig' },
-                { value: 'high', label: 'Gut', description: 'Platz für Fokus' },
+                { value: 'low', label: 'Niedrig', description: 'Wir reduzieren heute aufs Wichtigste' },
+                { value: 'okay', label: 'Okay', description: 'Ein ruhiger, machbarer Tag' },
+                { value: 'high', label: 'Gut', description: 'Platz für tieferen Fokus' },
               ] as const).map(option => (
                 <button
                   type="button"
@@ -452,6 +452,7 @@ export function MorningGate({
                   className="energy-option"
                   onClick={() => onPickEnergy(option.value)}
                 >
+                  <span className={`energy-dot energy-dot--${option.value}`} />
                   <strong>{option.label}</strong>
                   <small>{option.description}</small>
                 </button>

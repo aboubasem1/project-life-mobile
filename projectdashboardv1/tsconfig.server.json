@@ -23,6 +23,15 @@
     "../api/hooks.ts",
     "../api/sync/**/*.ts",
     "../server/inbound-note.ts",
-    "src/lib/bodyMeasurement.ts"
+    "../server/lifeos-webhook-core.ts",
+    "../api/integrations/outbound.ts",
+    "../api/integrations/webhooks/[connector].ts",
+    "src/lib/bodyMeasurement.ts",
+    "src/lib/lifeos/types.ts",
+    "src/lib/lifeos/store.ts",
+    "src/lib/lifeos/domain.ts",
+    "src/lib/lifeos/connectors.ts",
+    "src/lib/lifeos/index.ts",
+    "src/lib/lifeos/dashboardBridge.ts"
   ]
 }

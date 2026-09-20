@@ -1,8 +1,22 @@
 /** Hash routing for Life OS views — no router dependency. */
 
-export type AppView = 'today' | 'plan' | 'checkin' | 'progress' | 'dashboardPlus'
+export type AppView =
+  | 'today'
+  | 'plan'
+  | 'checkin'
+  | 'progress'
+  | 'dashboardPlus'
+  | 'inbox'
+  | 'project'
+  | 'goal'
+  | 'knowledge'
+  | 'decisions'
+  | 'reviews'
+  | 'signals'
+  | 'insights'
+  | 'integrations'
 
-export type AppActionKind = 'focus' | 'checkin' | 'note' | 'plan' | 'add-task' | 'today' | 'log'
+export type AppActionKind = 'focus' | 'checkin' | 'note' | 'plan' | 'add-task' | 'today' | 'log' | 'capture'
 
 export type AppActionEnergy = 'low' | 'okay' | 'high'
 
@@ -34,6 +48,18 @@ const HASH_TO_VIEW: Record<string, AppView> = {
   '/labor': 'dashboardPlus',
   '/dashboard': 'dashboardPlus',
   '/dashboard-plus': 'dashboardPlus',
+  '/inbox': 'inbox',
+  '/project': 'project',
+  '/goal': 'goal',
+  '/knowledge': 'knowledge',
+  '/wissen': 'knowledge',
+  '/decisions': 'decisions',
+  '/entscheidungen': 'decisions',
+  '/reviews': 'reviews',
+  '/signals': 'signals',
+  '/signale': 'signals',
+  '/insights': 'insights',
+  '/integrations': 'integrations',
 }
 
 const VIEW_TO_HASH: Record<AppView, string> = {
@@ -42,6 +68,15 @@ const VIEW_TO_HASH: Record<AppView, string> = {
   checkin: '#/checkin',
   progress: '#/verlauf',
   dashboardPlus: '#/labor',
+  inbox: '#/inbox',
+  project: '#/project',
+  goal: '#/goal',
+  knowledge: '#/knowledge',
+  decisions: '#/decisions',
+  reviews: '#/reviews',
+  signals: '#/signals',
+  insights: '#/insights',
+  integrations: '#/integrations',
 }
 
 const ACTION_TO_VIEW: Record<AppActionKind, AppView> = {
@@ -52,6 +87,37 @@ const ACTION_TO_VIEW: Record<AppActionKind, AppView> = {
   'add-task': 'plan',
   today: 'today',
   log: 'today',
+  capture: 'inbox',
+}
+
+export const VIEW_LABELS: Record<AppView, string> = {
+  today: 'Heute',
+  plan: 'Plan',
+  checkin: 'Check-in',
+  progress: 'Verlauf',
+  dashboardPlus: 'Labor',
+  inbox: 'Inbox',
+  project: 'Projekt',
+  goal: 'Ziel',
+  knowledge: 'Wissen',
+  decisions: 'Entscheidungen',
+  reviews: 'Reviews',
+  signals: 'Signale',
+  insights: 'Insights',
+  integrations: 'Integrationen',
+}
+
+export function entityIdFromHash(hash = window.location.hash): string | undefined {
+  const { query } = splitHash(hash)
+  const id = new URLSearchParams(query).get('id')?.trim()
+  return id || undefined
+}
+
+export function navigateHashWithId(view: AppView, id?: string, replace = false): void {
+  const base = hashFromView(view)
+  const next = id ? `${base}?id=${encodeURIComponent(id)}` : base
+  if (replace) window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${next}`)
+  else window.location.hash = next
 }
 
 function splitHash(hash: string): { path: string; query: string } {
@@ -101,6 +167,7 @@ function parseActionParams(params: URLSearchParams): AppAction | null {
             : raw === 'add-task' || raw === 'task' || raw === 'aufgabe' ? 'add-task'
               : raw === 'today' || raw === 'heute' ? 'today'
                 : raw === 'log' || raw === 'quick' || raw === 'metric' ? 'log'
+              : raw === 'capture' || raw === 'inbox' ? 'capture'
                   : null
 
   if (!kind) return null
@@ -207,4 +274,5 @@ export const SHORTCUT_RECIPES: Array<{ label: string; kind: AppActionKind; hint:
   { label: 'Kurznotiz', kind: 'note', hint: 'Kurzbefehl / Brille: &text= durch Diktat ersetzen', text: 'DEIN TEXT' },
   { label: 'Aufgabe anlegen', kind: 'add-task', hint: '&title=Creatine holen' },
   { label: 'Protein loggen', kind: 'log', hint: 'Schreibt ins Heute-Protokoll', text: '180g protein' },
+  { label: 'Capture in Inbox', kind: 'capture', hint: 'Erst erfassen, später sortieren', text: 'DEIN TEXT' },
 ]

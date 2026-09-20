@@ -14,13 +14,13 @@ function matches(query: string, ...parts: Array<string | undefined | null>): boo
 
 export function searchLabor(input: {
   query: string
-  focusTodos: Array<{ id: string; title: string; tag?: string }>
-  boards: Array<{ id: string; label: string; tasks: Array<{ id: string; title: string; tag?: string }> }>
+  focusTodos: Array<{ id: string; title: string; tag?: string; lifeArea?: string }>
+  boards: Array<{ id: string; label: string; lifeArea?: string; tasks: Array<{ id: string; title: string; tag?: string; lifeArea?: string }> }>
   shopping: Array<{ id: string; name: string; note?: string }>
   lists: Array<{ id: string; title: string; items: Array<{ id: string; title: string; note?: string }> }>
   supplements?: Array<{ id: string; name: string; brand?: string }>
   medications?: Array<{ id: string; name: string; dosage?: string }>
-  goals?: Array<{ id: string; title: string }>
+  goals?: Array<{ id: string; title: string; lifeArea?: string }>
   bills?: Array<{ id: string; name: string; subtitle?: string }>
 }): LaborSearchHit[] {
   const query = input.query.trim().toLowerCase()
@@ -29,14 +29,14 @@ export function searchLabor(input: {
   const hits: LaborSearchHit[] = []
 
   for (const task of input.focusTodos) {
-    if (matches(query, task.title, task.tag)) {
+    if (matches(query, task.title, task.tag, task.lifeArea)) {
       hits.push({ id: task.id, title: task.title, source: 'Fokus', section: 'todos' })
     }
   }
 
   for (const board of input.boards) {
     for (const task of board.tasks) {
-      if (matches(query, task.title, task.tag, board.label)) {
+      if (matches(query, task.title, task.tag, board.label, task.lifeArea, board.lifeArea)) {
         hits.push({
           id: task.id,
           title: task.title,
@@ -81,7 +81,7 @@ export function searchLabor(input: {
   }
 
   for (const item of input.goals ?? []) {
-    if (matches(query, item.title)) {
+    if (matches(query, item.title, item.lifeArea)) {
       hits.push({ id: item.id, title: item.title, source: 'Ziele', section: 'goals' })
     }
   }

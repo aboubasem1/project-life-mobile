@@ -10,6 +10,7 @@ import {
 import { mergeBodyMeasurements, mergeHealthIngestState, normalizeBodyMeasurements } from '../projectdashboardv1/src/lib/bodyMeasurement.js'
 import { applyEventFieldsToEntry, mergeDailyEvents, projectRitualDoneFromEvents } from '../projectdashboardv1/src/lib/dailyEvents.js'
 import { mergeDayJournal, mergeQuickNoteStates, parseQuickNote } from './inbound-note.js'
+import { mergeLifeOsState } from '../projectdashboardv1/src/lib/lifeos/store.js'
 
 const PAIR_TTL_MS = 30 * 60 * 1000
 const MAX_DEVICES = 8
@@ -32,7 +33,7 @@ export function syncJson(data: unknown, status = 200): Response {
       'Cache-Control': 'no-store',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Life-Os-Room, X-Life-Os-Token',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Life-Os-Room, X-Life-Os-Token, X-Life-Os-Secret, X-Webhook-Secret, X-Idempotency-Key',
     },
   })
 }
@@ -270,6 +271,9 @@ export async function pushSyncSnapshot(input: {
       mergedEvents,
     ),
     dailyEvents: mergedEvents,
+    lifeOs: incoming.lifeOs != null || room.snapshot?.lifeOs != null
+      ? mergeLifeOsState(room.snapshot?.lifeOs, incoming.lifeOs)
+      : undefined,
   }
   room.updatedAt = updatedAt
   await saveRoom(room)

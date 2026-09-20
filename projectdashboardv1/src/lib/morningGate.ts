@@ -135,6 +135,7 @@ export const GATE_STEP_IDS: MorningRitualStepId[] = [
 
 export const FULLSCREEN_STEP_IDS: MorningRitualStepId[] = [
   ...GATE_STEP_IDS,
+  'energy',
   'workout',
   'postShower',
   'selfcare',
@@ -152,8 +153,8 @@ export function morningRitualPhase(id: MorningRitualStepId): MorningRitualPhase 
     case 'coldShower':
     case 'winnerPose':
     case 'prayer':
-      return 'gate'
     case 'energy':
+      return 'gate'
     case 'todos':
       return 'heute'
     case 'workout':

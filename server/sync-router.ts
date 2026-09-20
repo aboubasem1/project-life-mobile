@@ -12,6 +12,7 @@ import {
   syncJson,
 } from './sync-core.js'
 import { type SyncSnapshot } from './sync-store.js'
+import { applyInboundConnectorWebhook, dispatchOutboundWebhook } from './lifeos-webhook-core.js'
 
 function bearerToken(request: Request): string {
   const header = request.headers.get('authorization') ?? ''
@@ -38,6 +39,33 @@ export async function handleSyncRequest(request: Request): Promise<Response> {
         service: 'life-os',
         ...probe,
       }, probe.ok ? 200 : 503)
+    }
+
+    const webhookMatch = pathname.match(/\/api\/integrations\/webhooks\/([^/]+)$/)
+    if (webhookMatch && request.method === 'POST') {
+      const body = await readSyncJson<unknown>(request)
+      return syncJson(await applyInboundConnectorWebhook({
+        connector: decodeURIComponent(webhookMatch[1] ?? ''),
+        request,
+        body,
+      }))
+    }
+
+    if (pathname.endsWith('/api/integrations/outbound') && request.method === 'POST') {
+      const body = await readSyncJson<{
+        roomId?: unknown
+        deviceToken?: unknown
+        url?: unknown
+        event?: unknown
+        payload?: Record<string, string>
+      }>(request)
+      return syncJson(await dispatchOutboundWebhook({
+        roomId: String(body.roomId ?? request.headers.get('x-life-os-room') ?? ''),
+        deviceToken: bearerToken(request) || String(body.deviceToken ?? ''),
+        url: String(body.url ?? ''),
+        event: String(body.event ?? ''),
+        payload: body.payload ?? {},
+      }))
     }
 
     if (pathname.endsWith('/api/hooks') && request.method === 'POST') {
