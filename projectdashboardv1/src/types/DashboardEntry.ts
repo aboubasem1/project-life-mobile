@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
+import type { EveningGateState } from '../lib/eveningGate'
 import {
   Snowflake, GlassWater, Dumbbell, Activity,
   Timer, Zap, Heart, Target, Crown, BookOpen, Users,
@@ -76,6 +77,8 @@ export interface DashboardEntry {
   dayShield?: boolean
   /** ISO timestamp when the user consciously closed the day. Null clears a close. */
   dayClosedAt?: string | null
+  /** Resumable state of the guided evening routine. */
+  eveningGate?: EveningGateState
   /** Progress toward amount / timer / step habits. */
   habitLogs?: Record<string, { value?: number; elapsed?: number; checked?: string[] }>
 }

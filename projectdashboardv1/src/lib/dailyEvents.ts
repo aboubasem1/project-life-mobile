@@ -6,6 +6,7 @@ export type DailyEventSource =
   | 'ui'
   | 'quick_add'
   | 'morning_gate'
+  | 'evening_gate'
   | 'focus'
   | 'webhook'
   | 'health'
@@ -42,6 +43,7 @@ const SOURCES = new Set<DailyEventSource>([
   'ui',
   'quick_add',
   'morning_gate',
+  'evening_gate',
   'focus',
   'webhook',
   'health',
@@ -92,6 +94,7 @@ const SOURCE_LABELS: Record<DailyEventSource, string> = {
   ui: 'App',
   quick_add: 'Quick Add',
   morning_gate: 'Morgen',
+  evening_gate: 'Abend',
   focus: 'Fokus',
   webhook: 'Webhook',
   health: 'Health',

@@ -187,6 +187,8 @@ import { ReviewView } from './views/lifeos/ReviewView'
 import { SignalsView } from './views/lifeos/SignalsView'
 import { LifeAreaFilter, LifeAreaMark, LifeAreaSelect } from './views/lifeos/lifeosUi'
 import { MorningGate } from './components/MorningGate'
+import { EveningGate } from './components/EveningGate'
+import { PrivateNotesSheet } from './components/PrivateNotesSheet'
 import {
   assessDailyProgress,
   completedRitualSteps,
@@ -213,7 +215,6 @@ import { moodHabitLine } from './lib/moodHabit'
 import { appendJournal, formatNoteLine, mergeQuickNote, parseQuickNote } from './lib/inboundNote'
 import {
   assessDayCompleteness,
-  closeDayPatch,
   reopenDayPatch,
 } from './lib/dayClose'
 import {
@@ -1438,6 +1439,10 @@ function App() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [captureOpen, setCaptureOpen] = useState(false)
   const [capturePreset, setCapturePreset] = useState('')
+  const [eveningGateOpen, setEveningGateOpen] = useState(false)
+  const [privateNotesOpen, setPrivateNotesOpen] = useState(false)
+  const [privateNotePreset, setPrivateNotePreset] = useState('')
+  const privateNoteSavedRef = useRef<(() => void) | null>(null)
   const [lifeOsEntityId, setLifeOsEntityId] = useState<string | undefined>(() => entityIdFromHash())
   const [reviewType, setReviewType] = useState<ReviewType>('weekly')
   const [reviewDraft, setReviewDraft] = useState<Review | null>(null)
@@ -2175,7 +2180,7 @@ function App() {
     if (nextView === 'today' || nextView === 'dashboardPlus') setSelectedDate(today)
   }
 
-  const handleLifeOsCapture = (input: {
+  const commitLifeOsCapture = (input: {
     raw: string
     url?: string
     fileName?: string
@@ -2183,7 +2188,7 @@ function App() {
     fileDataUrl?: string
     classifyAs?: CaptureTargetType
     lifeArea?: LifeAreaKey
-  }) => {
+  }, openInbox = true) => {
     const capture = createCapture(input)
     const classified = input.classifyAs && input.classifyAs !== 'inbox'
       ? { ...capture, targetType: input.classifyAs, status: 'classified' as const }
@@ -2193,10 +2198,24 @@ function App() {
       captures: [classified, ...current.captures],
       events: [...current.events, emitDomainEvent('capture.created', { title: classified.title }, { kind: 'capture', id: classified.id })],
     }))
-    setCaptureOpen(false)
-    setCapturePreset('')
-    navigateTo('inbox', classified.id)
-    showToast('In Inbox gelegt')
+    if (openInbox) {
+      setCaptureOpen(false)
+      setCapturePreset('')
+      navigateTo('inbox', classified.id)
+      showToast('In Inbox gelegt')
+    } else {
+      showToast('Als Universal Memo gespeichert.')
+    }
+  }
+
+  const handleLifeOsCapture = (input: Parameters<typeof commitLifeOsCapture>[0]) => {
+    commitLifeOsCapture(input)
+  }
+
+  const openPrivateNotes = (text = '', onSaved?: () => void) => {
+    setPrivateNotePreset(text)
+    privateNoteSavedRef.current = onSaved ?? null
+    setPrivateNotesOpen(true)
   }
 
   const handleConvertCapture = (id: string) => {
@@ -2395,7 +2414,7 @@ function App() {
 
   return (
     <div className={view === 'today' ? 'life-app life-app--heute' : 'life-app'}>
-      <aside className="sidebar" aria-label="Hauptnavigation" inert={showMorningGate || undefined}>
+      <aside className="sidebar" aria-label="Hauptnavigation" inert={showMorningGate || eveningGateOpen || privateNotesOpen || undefined}>
         <div className="brand">
           <div className="brand__mark" aria-hidden="true">
             <span />
@@ -2462,7 +2481,7 @@ function App() {
         </div>
       </aside>
 
-      <div className="app-stage" inert={showMorningGate || undefined}>
+      <div className="app-stage" inert={showMorningGate || eveningGateOpen || privateNotesOpen || undefined}>
         <header className="mobile-header">
           <div className="brand brand--mobile">
             <div className="brand__mark" aria-hidden="true"><span /></div>
@@ -2545,6 +2564,7 @@ function App() {
                 setGatePreview(true)
                 setPreviewIndex(nextIndex >= 0 ? nextIndex : Math.max(0, ritualSteps.length - 1))
               }}
+              onOpenEveningGate={() => setEveningGateOpen(true)}
               dailyEvents={dailyEvents}
               onUndoDailyEvent={undoDailyEvent}
               onUndoRitualEvent={undoRitualEvent}
@@ -3059,11 +3079,18 @@ function App() {
       {captureOpen && (
         <CaptureSheet
           initialRaw={capturePreset}
+          inactive={privateNotesOpen}
           onClose={() => {
             setCaptureOpen(false)
             setCapturePreset('')
           }}
           onCapture={handleLifeOsCapture}
+          onOpenPrivateNotes={text => {
+            openPrivateNotes(text, () => {
+              setCaptureOpen(false)
+              setCapturePreset('')
+            })
+          }}
         />
       )}
 
@@ -3292,6 +3319,49 @@ function App() {
         />
       )}
 
+      {eveningGateOpen && (
+        <EveningGate
+          initialState={entry.eveningGate}
+          inactive={privateNotesOpen}
+          onPersist={state => updateEntry({
+            eveningGate: state,
+            ...(state.done.includes('breathing') ? { breathingDone: true } : {}),
+          }, 'evening_gate')}
+          onCaptureMemo={text => commitLifeOsCapture({ raw: text, classifyAs: 'note' }, false)}
+          onOpenPrivateNotes={openPrivateNotes}
+          onFinish={state => {
+            updateEntry({
+              eveningGate: state,
+              breathingDone: true,
+              dayClosedAt: state.completedAt ?? new Date().toISOString(),
+            }, 'evening_gate', {
+              toastMessage: 'Tag abgeschlossen · No Screen.',
+            })
+            setEveningGateOpen(false)
+          }}
+          onClose={() => setEveningGateOpen(false)}
+        />
+      )}
+
+      {privateNotesOpen && (
+        <PrivateNotesSheet
+          initialText={privateNotePreset}
+          onSaved={() => {
+            const afterSave = privateNoteSavedRef.current
+            privateNoteSavedRef.current = null
+            setPrivateNotePreset('')
+            afterSave?.()
+            void pushDeviceSync().catch(() => undefined)
+            showToast('Privater Bereich verschlüsselt aktualisiert.')
+          }}
+          onClose={() => {
+            setPrivateNotesOpen(false)
+            setPrivateNotePreset('')
+            privateNoteSavedRef.current = null
+          }}
+        />
+      )}
+
       {splashPhase !== 'done' && (
         <div
           className={splashPhase === 'leaving' ? 'splash-screen is-leaving' : 'splash-screen'}
@@ -3403,6 +3473,7 @@ function TodayView({
   ritualLock = null,
   onContinueRitualTodos,
   onReopenMorningGate,
+  onOpenEveningGate,
   dailyEvents = [],
   onUndoDailyEvent,
   onUndoRitualEvent,
@@ -3433,6 +3504,7 @@ function TodayView({
   ritualLock?: 'todos' | null
   onContinueRitualTodos?: () => void
   onReopenMorningGate?: () => void
+  onOpenEveningGate?: () => void
   dailyEvents?: DailyEvent[]
   onUndoDailyEvent?: (event: EntryPatchEvent) => void
   onUndoRitualEvent?: (event: DailyEvent) => void
@@ -3478,6 +3550,7 @@ function TodayView({
     softMinutes: energy === 'low' ? 2 : undefined,
   }
   const hour = date === today ? new Date().getHours() : 12
+  const showDailyClose = date !== today || shouldShowDailyClose(hour, completeness.closed)
   const habitsDue = filterHabitsForDate(settings.activeHabits, date, settings.habitSchedules)
 
   const allRoutineItems = habitsDue
@@ -3538,6 +3611,14 @@ function TodayView({
       done: Boolean(energy),
     })
   }
+  if (onOpenEveningGate && showDailyClose) {
+    overviewGroups[2].items.push({
+      id: 'ritual:evening-gate',
+      kind: 'habit',
+      title: 'Evening Gate',
+      done: Boolean(entry.eveningGate?.completedAt || completeness.closed),
+    })
+  }
   for (const item of overviewItems) {
     const group = overviewGroups.find(entry => entry.slot === overviewSlot(item))
     group?.items.push(item)
@@ -3547,11 +3628,13 @@ function TodayView({
     entry,
     measurements: loadBodyMeasurements(),
   })
-  const showDailyClose = date !== today || shouldShowDailyClose(hour, completeness.closed)
-
   const toggleFlowItem = (item: NowItem) => {
     if (item.id === 'ritual:morning-gate') {
       onReopenMorningGate?.()
+      return
+    }
+    if (item.id === 'ritual:evening-gate') {
+      onOpenEveningGate?.()
       return
     }
     if (item.kind === 'anchor' && item.index != null) onToggleAnchor(item.index)
@@ -3565,6 +3648,10 @@ function TodayView({
       onReopenMorningGate?.()
       return
     }
+    if (item.id === 'ritual:evening-gate') {
+      onOpenEveningGate?.()
+      return
+    }
     onOpenFocus(
       item.title,
       item.kind === 'anchor' ? item.index : undefined,
@@ -3575,22 +3662,20 @@ function TodayView({
 
   const closeOrReopenDay = () => {
     if (completeness.closed) {
-      onUpdate(reopenDayPatch())
+      onUpdate({
+        ...reopenDayPatch(),
+        eveningGate: entry.eveningGate
+          ? {
+              ...entry.eveningGate,
+              completedAt: undefined,
+              done: entry.eveningGate.done.filter(item => item !== 'noScreen'),
+            }
+          : undefined,
+      })
       showToast('Abschluss geöffnet — Korrekturen möglich.')
       return
     }
-    if (completeness.gaps.length > 0 && !completeness.readyToClose) {
-      const ok = window.confirm(
-        `Noch ${completeness.gaps.length} Punkte offen.\nTrotzdem bewusst abschließen?`,
-      )
-      if (!ok) return
-    }
-    onUpdate(closeDayPatch())
-    showToast(
-      completeness.gaps.length === 0
-        ? 'Tag abgeschlossen.'
-        : 'Tag abgeschlossen — Lücken bleiben sichtbar.',
-    )
+    onOpenEveningGate?.()
   }
 
   return (
@@ -3771,8 +3856,8 @@ function TodayView({
                         type="button"
                         className="heute-check__box"
                         onClick={() => toggleFlowItem(item)}
-                        aria-label={item.id === 'ritual:morning-gate'
-                          ? 'Morning Gate öffnen'
+                        aria-label={item.id === 'ritual:morning-gate' || item.id === 'ritual:evening-gate'
+                          ? `${item.title} öffnen`
                           : `${item.title} ${item.done ? 'als offen markieren' : 'erledigen'}`}
                         aria-pressed={item.done}
                       >
@@ -3906,7 +3991,11 @@ function TodayView({
 
           {showDailyClose && (
             <button type="button" className="heute-close" onClick={closeOrReopenDay}>
-              {completeness.closed ? 'Abschluss öffnen' : 'Tag schließen'}
+              {completeness.closed
+                ? 'Abschluss öffnen'
+                : entry.eveningGate?.startedAt
+                  ? 'Evening Gate fortsetzen'
+                  : 'Evening Gate starten'}
             </button>
           )}
         </div>

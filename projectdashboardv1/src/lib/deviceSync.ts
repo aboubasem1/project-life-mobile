@@ -32,6 +32,11 @@ import {
   type MorningRitualProgress,
 } from './morningGate'
 import { loadLifeOsState, mergeLifeOsState, saveLifeOsState, type LifeOsState } from './lifeos'
+import {
+  PRIVATE_VAULT_KEY,
+  mergePrivateVaultEnvelopes,
+  type PrivateVaultEnvelope,
+} from './privateVault'
 
 const SYNC_CRED_KEY = 'life-os-v1-device-sync'
 const QUICK_NOTE_KEY = 'life-os-quick-note'
@@ -78,6 +83,7 @@ export type DeviceSyncSnapshot = {
   morningRitualProgress?: MorningRitualProgress
   dailyEvents?: DailyEvent[]
   lifeOs?: LifeOsState
+  privateVault?: PrivateVaultEnvelope
 }
 
 function safeGet(key: string): string | null {
@@ -244,6 +250,7 @@ export function buildLocalSnapshot(): DeviceSyncSnapshot {
   let settings: unknown
   let dashboardPlus: unknown
   let quickNote: unknown
+  let privateVault: PrivateVaultEnvelope | undefined
   let morningRitualProgress: MorningRitualProgress | undefined
   try {
     settings = JSON.parse(safeGet(SETTINGS_KEY) ?? 'null')
@@ -254,6 +261,12 @@ export function buildLocalSnapshot(): DeviceSyncSnapshot {
   try {
     quickNote = JSON.parse(safeGet(QUICK_NOTE_KEY) ?? 'null')
   } catch { quickNote = undefined }
+  try {
+    privateVault = mergePrivateVaultEnvelopes(
+      undefined,
+      JSON.parse(safeGet(PRIVATE_VAULT_KEY) ?? 'null'),
+    ) ?? undefined
+  } catch { privateVault = undefined }
   try {
     morningRitualProgress = mergeMorningRitualProgress(
       undefined,
@@ -274,6 +287,7 @@ export function buildLocalSnapshot(): DeviceSyncSnapshot {
     morningRitualProgress,
     dailyEvents: loadDailyEvents(),
     lifeOs: loadLifeOsState(),
+    privateVault,
   }
 }
 
@@ -322,6 +336,16 @@ function applyRemoteExtras(snapshot: DeviceSyncSnapshot): void {
   }
   if (snapshot.lifeOs != null) {
     saveLifeOsState(mergeLifeOsState(loadLifeOsState(), snapshot.lifeOs))
+  }
+  if (snapshot.privateVault != null) {
+    let localVault: unknown = null
+    try {
+      localVault = JSON.parse(safeGet(PRIVATE_VAULT_KEY) ?? 'null')
+    } catch {
+      localVault = null
+    }
+    const merged = mergePrivateVaultEnvelopes(localVault, snapshot.privateVault)
+    if (merged) safeSet(PRIVATE_VAULT_KEY, JSON.stringify(merged))
   }
   notifySyncExtras()
 }
@@ -434,4 +458,4 @@ export async function pullDeviceSync(): Promise<{
   })
 }
 
-export { SYNC_CRED_KEY, QUICK_NOTE_KEY, ENTRIES_KEY, DAILY_EVENTS_KEY }
+export { SYNC_CRED_KEY, QUICK_NOTE_KEY, ENTRIES_KEY, DAILY_EVENTS_KEY, PRIVATE_VAULT_KEY }

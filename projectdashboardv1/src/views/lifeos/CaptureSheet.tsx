@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react'
-import { Inbox, X } from 'lucide-react'
+import { Inbox, LockKeyhole, X } from 'lucide-react'
 import { CAPTURE_TARGET_LABELS, type CaptureTargetType, type LifeAreaKey } from '../../lib/lifeos'
 import { Field, LifeAreaSelect } from './lifeosUi'
 
@@ -9,10 +9,14 @@ const MAX_FILE_CHARS = 350_000
 export function CaptureSheet({
   onClose,
   onCapture,
+  onOpenPrivateNotes,
   initialRaw = '',
+  inactive = false,
 }: {
   onClose: () => void
   initialRaw?: string
+  onOpenPrivateNotes?: (text: string) => void
+  inactive?: boolean
   onCapture: (input: {
     raw: string
     url?: string
@@ -73,7 +77,13 @@ export function CaptureSheet({
   }
 
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}>
+    <div
+      className="modal-backdrop"
+      role="presentation"
+      aria-hidden={inactive || undefined}
+      inert={inactive || undefined}
+      onMouseDown={event => event.target === event.currentTarget && onClose()}
+    >
       <form className="modal modal--small" onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="capture-title">
         <div className="modal-header">
           <div>
@@ -121,7 +131,12 @@ export function CaptureSheet({
         </div>
         <LifeAreaSelect value={lifeArea} onChange={setLifeArea} />
         {error && <p className="lifeos-error">{error}</p>}
-        <div className="modal-actions">
+        <div className="modal-actions capture-modal-actions">
+          {onOpenPrivateNotes && (
+            <button type="button" className="secondary-button" onClick={() => onOpenPrivateNotes(raw.trim())}>
+              <LockKeyhole size={16} /> Passcode-geschützt
+            </button>
+          )}
           <button type="submit" className="primary-button">
             <Inbox size={16} /> In Inbox legen
           </button>

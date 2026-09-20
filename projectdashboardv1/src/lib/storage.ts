@@ -16,6 +16,12 @@ import {
   type DailyEvent,
 } from './dailyEvents'
 import { LIFE_OS_KEY, loadLifeOsState, mergeLifeOsState, normalizeLifeOsState, saveLifeOsState, type LifeOsState } from './lifeos'
+import { normalizeEveningGateState } from './eveningGate'
+import {
+  PRIVATE_VAULT_KEY,
+  mergePrivateVaultEnvelopes,
+  type PrivateVaultEnvelope,
+} from './privateVault'
 
 const ENTRIES_KEY = 'project-life-entries'
 const USER_ID_KEY = 'project-life-user-id'
@@ -23,7 +29,7 @@ const SETTINGS_KEY = 'life-os-v1-settings'
 const DASHBOARD_PLUS_KEY = 'life-os-v1-dashboard-plus'
 const QUICK_NOTE_KEY = 'life-os-quick-note'
 const LAST_BACKUP_KEY = 'life-os-v1-last-backup-at'
-export const BACKUP_VERSION = 5
+export const BACKUP_VERSION = 6
 
 export { ENTRIES_KEY }
 
@@ -39,6 +45,7 @@ export type LifeOsBackupBundle = {
   quickNote?: unknown
   dailyEvents?: DailyEvent[]
   lifeOs?: LifeOsState
+  privateVault?: PrivateVaultEnvelope
 }
 
 // ─── User identity (UUID stored in localStorage) ──────────────────────────────
@@ -146,6 +153,7 @@ export function exportBackupBundle(input: {
     quickNote: parseStoredJson(QUICK_NOTE_KEY),
     dailyEvents: loadDailyEvents(),
     lifeOs: loadLifeOsState(),
+    privateVault: mergePrivateVaultEnvelopes(undefined, parseStoredJson(PRIVATE_VAULT_KEY)) ?? undefined,
   }
   const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
@@ -174,6 +182,7 @@ export type ImportResult = {
   quickNote?: unknown
   dailyEvents?: DailyEvent[]
   lifeOs?: LifeOsState
+  privateVault?: PrivateVaultEnvelope
   mode: 'bundle' | 'entries'
   entryCount: number
 }
@@ -206,6 +215,7 @@ export function importBackupFile(file: File): Promise<ImportResult> {
             quickNote: data.quickNote,
             dailyEvents: normalizeDailyEvents(data.dailyEvents),
             lifeOs: data.lifeOs != null ? normalizeLifeOsState(data.lifeOs) : undefined,
+            privateVault: mergePrivateVaultEnvelopes(undefined, data.privateVault) ?? undefined,
             mode: 'bundle',
             entryCount: entries.length,
           })
@@ -256,6 +266,10 @@ export function applyBackupExtras(result: ImportResult): void {
   }
   if (result.lifeOs) {
     saveLifeOsState(mergeLifeOsState(loadLifeOsState(), result.lifeOs))
+  }
+  if (result.privateVault) {
+    const merged = mergePrivateVaultEnvelopes(parseStoredJson(PRIVATE_VAULT_KEY), result.privateVault)
+    if (merged) safeSetItem(PRIVATE_VAULT_KEY, JSON.stringify(merged))
   }
   safeSetItem(LAST_BACKUP_KEY, new Date().toISOString())
 }
@@ -342,6 +356,7 @@ function migrateLegacy(raw: Record<string, unknown>): DashboardEntry {
       : raw.dayClosedAt === null
         ? null
         : undefined,
+    eveningGate: normalizeEveningGateState(raw.eveningGate),
     habitLogs: normalizeMigratedLogs(raw.habitLogs),
   }
 }

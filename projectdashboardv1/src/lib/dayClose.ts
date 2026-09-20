@@ -123,8 +123,8 @@ export function assessDayCompleteness(input: CompletenessInput): DayCompleteness
   const hasBody = entry.waterLiters > 0 || entry.proteinGrams > 0 || entry.calories > 0
   checks.push({
     id: 'evening',
-    ok: Boolean(entry.journalDone || entry.journalText?.trim()) || hasBody,
-    gap: { id: 'evening', label: 'Abendnotiz oder Körperwerte', action: 'checkin' },
+    ok: Boolean(entry.eveningGate?.completedAt || entry.journalDone || entry.journalText?.trim()) || hasBody,
+    gap: { id: 'evening', label: 'Evening Gate oder Abendnotiz', action: 'checkin' },
   })
 
   const total = checks.length
