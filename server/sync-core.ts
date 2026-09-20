@@ -10,7 +10,7 @@ import {
 import { mergeBodyMeasurements, mergeHealthIngestState, normalizeBodyMeasurements } from '../projectdashboardv1/src/lib/bodyMeasurement.js'
 import { applyEventFieldsToEntry, mergeDailyEvents, projectRitualDoneFromEvents } from '../projectdashboardv1/src/lib/dailyEvents.js'
 import { mergeDayJournal, mergeQuickNoteStates, parseQuickNote } from './inbound-note.js'
-import { mergeLifeOsState } from '../projectdashboardv1/src/lib/lifeos/store.js'
+import { mergeLifeOsSnapshots } from './lifeos-merge.js'
 
 const PAIR_TTL_MS = 30 * 60 * 1000
 const MAX_DEVICES = 8
@@ -272,7 +272,7 @@ export async function pushSyncSnapshot(input: {
     ),
     dailyEvents: mergedEvents,
     lifeOs: incoming.lifeOs != null || room.snapshot?.lifeOs != null
-      ? mergeLifeOsState(room.snapshot?.lifeOs, incoming.lifeOs)
+      ? mergeLifeOsSnapshots(room.snapshot?.lifeOs, incoming.lifeOs)
       : undefined,
   }
   room.updatedAt = updatedAt
