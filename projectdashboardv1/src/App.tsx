@@ -3524,6 +3524,7 @@ function TodayView({
     })),
   })
   const laterItem = overviewItems.find(item => !item.done && !nowItems.some(now => now.id === item.id))
+  const laterChip = laterItem ? nowChipLabel(laterItem) : undefined
   const overviewGroups: Array<{ slot: DaySlot; title: string; items: NowItem[] }> = [
     { slot: 'morning', title: 'Morgen', items: [] },
     { slot: 'day', title: 'Tag', items: [] },
@@ -3598,18 +3599,30 @@ function TodayView({
         <span className="heute-head__date">{formatLongDate(date)}</span>
         <h2>{homePane === 'overview' ? 'Dein Tag.' : 'Du bist im Tag.'}</h2>
         {homePane === 'now' && (
-          <div className="heute-head__stats">
-            <div>
-              <strong>{dailyProgress.percent}%</strong>
-              <span>Heute</span>
-            </div>
-            {todayWeight && (
+          <>
+            <div className="heute-head__stats">
               <div>
-                <strong>{todayWeight.value.toFixed(1).replace('.', ',')} kg</strong>
-                <span>Gewicht</span>
+                <strong>{dailyProgress.percent}%</strong>
+                <span>Heute</span>
               </div>
-            )}
-          </div>
+              {todayWeight && (
+                <div>
+                  <strong>{todayWeight.value.toFixed(1).replace('.', ',')} kg</strong>
+                  <span>Gewicht</span>
+                </div>
+              )}
+            </div>
+            <div
+              className="heute-head__bar"
+              role="progressbar"
+              aria-label="Tagesfortschritt"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={dailyProgress.percent}
+            >
+              <span style={{ width: `${dailyProgress.percent}%` }} />
+            </div>
+          </>
         )}
       </header>
 
@@ -3677,7 +3690,7 @@ function TodayView({
                     >
                       {chip && <em>{chip}</em>}
                       <strong>{item.title}</strong>
-                      {item.minutes ? <span>{item.minutes} Minuten</span> : null}
+                      {item.minutes ? <span>{item.minutes} minuten</span> : null}
                     </button>
                     <button
                       type="button"
@@ -3697,8 +3710,10 @@ function TodayView({
               <span className="eyebrow">Als nächstes</span>
               <button type="button" className="heute-next__row" onClick={() => openFlowItem(laterItem)}>
                 <span>
-                  <strong>{laterItem.title}</strong>
-                  {laterItem.minutes ? <small>{laterItem.minutes} Min</small> : null}
+                  {laterChip && <em>{laterChip}</em>}
+                  <strong>
+                    {laterItem.minutes ? `${laterItem.minutes} Minuten ${laterItem.title}` : laterItem.title}
+                  </strong>
                 </span>
                 <ChevronRight size={18} />
               </button>
