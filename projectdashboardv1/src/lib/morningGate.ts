@@ -5,6 +5,7 @@ export const MORNING_RITUAL_STEP_IDS = [
   'winnerPose',
   'prayer',
   'energy',
+  'headRecovery',
   'todos',
   'workout',
   'postShower',
@@ -42,6 +43,15 @@ export type MorningRitualConfig = {
   autoAdvance: boolean
   stepRules: MorningRitualStepRules
   stepMinutes: MorningRitualStepMinutes
+  shakeMeal: {
+    id: string
+    label: string
+    proteinGrams: number
+    calories: number
+    fatGrams: number
+    carbsGrams: number
+    fiberGrams: number
+  }
 }
 
 export type MorningRitualProgress = {
@@ -84,6 +94,7 @@ export const DEFAULT_MORNING_RITUAL_RULES: MorningRitualStepRules = {
   winnerPose: 'Brust offen, Blick fest.',
   prayer: 'In Ruhe bleiben. Danach öffnet sich Heute.',
   energy: 'Kurz ehrlich einchecken, dann die Todos ansehen.',
+  headRecovery: 'Wie ist der Kopf, wie war die Nacht — ohne Werte, ohne Notiz.',
   todos: 'Schau deine Anker einmal bewusst an.',
   workout: 'Jede Wiederholung bewusst zählen.',
   postShower: 'Erst heiß, anschließend kurz kalt.',
@@ -98,6 +109,7 @@ export const DEFAULT_MORNING_RITUAL_MINUTES: MorningRitualStepMinutes = {
   winnerPose: 3,
   prayer: 7,
   energy: 1,
+  headRecovery: 2,
   todos: 2,
   workout: 10,
   postShower: 4,
@@ -120,6 +132,15 @@ export const DEFAULT_MORNING_RITUAL: MorningRitualConfig = {
   autoAdvance: true,
   stepRules: { ...DEFAULT_MORNING_RITUAL_RULES },
   stepMinutes: { ...DEFAULT_MORNING_RITUAL_MINUTES },
+  shakeMeal: {
+    id: 'protein-shake',
+    label: 'Proteinshake',
+    proteinGrams: 30,
+    calories: 180,
+    fatGrams: 3,
+    carbsGrams: 8,
+    fiberGrams: 0,
+  },
 }
 
 const SKIP_KEY = 'life-os-morning-gate-skip'
@@ -136,6 +157,7 @@ export const GATE_STEP_IDS: MorningRitualStepId[] = [
 export const FULLSCREEN_STEP_IDS: MorningRitualStepId[] = [
   ...GATE_STEP_IDS,
   'energy',
+  'headRecovery',
   'workout',
   'postShower',
   'selfcare',
@@ -154,6 +176,7 @@ export function morningRitualPhase(id: MorningRitualStepId): MorningRitualPhase 
     case 'winnerPose':
     case 'prayer':
     case 'energy':
+    case 'headRecovery':
       return 'gate'
     case 'todos':
       return 'heute'
@@ -187,6 +210,8 @@ export function morningRitualMeta(
       return { label: 'Gebet', hint: minutes(config?.prayerSeconds ?? 420) }
     case 'energy':
       return { label: 'Energie', hint: 'Kurzer Check-in' }
+    case 'headRecovery':
+      return { label: 'Kopf & Erholung', hint: 'Stimmung und Schlaf' }
     case 'todos':
       return { label: 'Todos', hint: 'Was heute zählt' }
     case 'workout':
@@ -236,7 +261,14 @@ export function normalizeSelfcareItems(raw: unknown): MorningSelfcareItem[] {
 export function normalizeStepOrder(raw: unknown): MorningRitualStepId[] {
   const stored = Array.isArray(raw) ? raw.filter(isMorningRitualStepId) : []
   const unique = [...new Set(stored)]
-  return [...unique, ...MORNING_RITUAL_STEP_IDS.filter(id => !unique.includes(id))]
+  const missing = MORNING_RITUAL_STEP_IDS.filter(id => !unique.includes(id))
+  if (missing.includes('headRecovery')) {
+    const energyAt = unique.indexOf('energy')
+    if (energyAt >= 0) unique.splice(energyAt + 1, 0, 'headRecovery')
+    else unique.push('headRecovery')
+    return [...unique, ...missing.filter(id => id !== 'headRecovery')]
+  }
+  return [...unique, ...missing]
 }
 
 export function normalizeHiddenSteps(raw: unknown): MorningRitualStepId[] {
@@ -272,6 +304,7 @@ export function ritualSecondsFor(id: MorningRitualStepId, config: MorningRitualC
     case 'medsShake':
     case 'gratitude':
     case 'energy':
+    case 'headRecovery':
     case 'todos':
     case 'workout':
     case 'selfcare':
@@ -329,6 +362,26 @@ export function normalizeMorningRitualConfig(raw: Partial<MorningRitualConfig> |
     autoAdvance: stored.autoAdvance !== false,
     stepRules: normalizeStepRules(stored.stepRules),
     stepMinutes: normalizeStepMinutes(stored.stepMinutes),
+    shakeMeal: normalizeShakeMealConfig(stored.shakeMeal),
+  }
+}
+
+function normalizeShakeMealConfig(raw: unknown): MorningRitualConfig['shakeMeal'] {
+  const stored = raw && typeof raw === 'object' ? raw as Partial<MorningRitualConfig['shakeMeal']> : {}
+  const grams = (value: unknown, fallback: number, max: number) => {
+    const next = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : fallback
+    return Math.min(max, Math.max(0, next))
+  }
+  return {
+    id: 'protein-shake',
+    label: typeof stored.label === 'string' && stored.label.trim()
+      ? stored.label.trim().slice(0, 40)
+      : DEFAULT_MORNING_RITUAL.shakeMeal.label,
+    proteinGrams: grams(stored.proteinGrams, DEFAULT_MORNING_RITUAL.shakeMeal.proteinGrams, 80),
+    calories: grams(stored.calories, DEFAULT_MORNING_RITUAL.shakeMeal.calories, 800),
+    fatGrams: grams(stored.fatGrams, DEFAULT_MORNING_RITUAL.shakeMeal.fatGrams, 40),
+    carbsGrams: grams(stored.carbsGrams, DEFAULT_MORNING_RITUAL.shakeMeal.carbsGrams, 80),
+    fiberGrams: grams(stored.fiberGrams, DEFAULT_MORNING_RITUAL.shakeMeal.fiberGrams, 20),
   }
 }
 
@@ -412,6 +465,7 @@ export function nextMorningRitualStep(input: {
   proteinShake: boolean
   gratitudeDone: boolean
   energySet: boolean
+  headRecoveryDone?: boolean
   pushupsDone: boolean
   coldShowerDone?: boolean
   winnerModeDone?: boolean
@@ -454,6 +508,10 @@ export function nextMorningRitualStep(input: {
         if (input.preview) return id
         if (!input.energySet) return id
         break
+      case 'headRecovery':
+        if (input.preview) return id
+        if (input.headRecoveryDone || input.progress.done.includes(id)) break
+        return id
       case 'workout':
         if (input.preview) return id
         if (!input.pushupsDone || input.progress.ko < input.config.koTarget) return id

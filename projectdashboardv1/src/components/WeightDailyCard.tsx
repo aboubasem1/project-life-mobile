@@ -63,7 +63,7 @@ export function WeightDailyCard({
       </div>
       {stat.kg === null ? (
         <p className="field-hint">
-          Noch keine Messung. Waage über Fitdays → Apple Health, oder im Check-in eintragen.
+          Noch keine Messung. Waage über Fitdays → Apple Health, oder später unter Check-in eintragen.
         </p>
       ) : (
         <>

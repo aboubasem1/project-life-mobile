@@ -39,6 +39,8 @@ export interface DashboardEntry {
   fatGrams: number
   carbsGrams: number
   fiberGrams: number
+  /** Idempotent generated meals (e.g. morning protein shake). */
+  appliedMeals?: string[]
   tasksDone: number
   journalDone: boolean
   journalText: string

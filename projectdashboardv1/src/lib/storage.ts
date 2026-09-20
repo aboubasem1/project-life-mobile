@@ -308,6 +308,9 @@ function migrateLegacy(raw: Record<string, unknown>): DashboardEntry {
     fatGrams: Number(raw.fatGrams) || 0,
     carbsGrams: Number(raw.carbsGrams) || 0,
     fiberGrams: Number(raw.fiberGrams) || 0,
+    appliedMeals: Array.isArray(raw.appliedMeals)
+      ? [...new Set(raw.appliedMeals.map(String).filter(Boolean))]
+      : undefined,
     tasksDone: Number(raw.tasksDone) || 0,
     journalDone: Boolean(raw.journalDone),
     journalText: String(raw.journalText ?? ''),

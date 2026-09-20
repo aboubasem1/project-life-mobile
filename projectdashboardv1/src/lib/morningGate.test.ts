@@ -53,6 +53,8 @@ describe('energy ritual step', () => {
   it('belongs to the fullscreen morning gate, not the Heute view', () => {
     expect(morningRitualPhase('energy')).toBe('gate')
     expect(FULLSCREEN_STEP_IDS).toContain('energy')
+    expect(FULLSCREEN_STEP_IDS).toContain('headRecovery')
+    expect(morningRitualPhase('headRecovery')).toBe('gate')
     expect(morningRitualPhase('todos')).toBe('heute')
   })
 })

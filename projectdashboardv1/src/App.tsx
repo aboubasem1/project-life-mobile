@@ -10,12 +10,10 @@ import {
   type SetStateAction,
 } from 'react'
 import {
-  Activity,
   AlertCircle,
   ArrowDownRight,
   ArrowUpRight,
   BarChart3,
-  BatteryLow,
   Bell,
   BookOpen,
   Brain,
@@ -35,10 +33,8 @@ import {
   Fish,
   Eye,
   EyeOff,
-  Flag,
   FlaskConical,
   Focus,
-  GripVertical,
   Heart,
   Home,
   Inbox,
@@ -73,7 +69,7 @@ import { SwipeableRow } from './components/SwipeableRow'
 import { ContextMenu, type ContextMenuItem } from './components/ContextMenu'
 import type { DashboardEntry } from './types/DashboardEntry'
 import { createDefaultEntry } from './types/DashboardEntry'
-import { getDayPolicy, pickNextStep } from './lib/dayPolicy'
+import { getDayPolicy } from './lib/dayPolicy'
 import { buildWeekInsights } from './lib/insights'
 import { deriveLaborOverview, deriveLaborStats, smartLaborHints } from './lib/laborLive'
 import { searchLabor } from './lib/laborSearch'
@@ -84,7 +80,6 @@ import { copyText, shareText } from './lib/share'
 import { releaseScreenWakeLock, requestScreenWakeLock } from './lib/wakeLock'
 import { calculateScore, calculateStreakForHabit, getScoreBreakdown } from './lib/score'
 import { calculateHabitStrength, habitStrengthLabel } from './lib/habitStrength'
-import { calculateRecovery } from './lib/recovery'
 import {
   filterHabitsForDate,
   normalizeHabitSchedules,
@@ -192,18 +187,34 @@ import { ReviewView } from './views/lifeos/ReviewView'
 import { SignalsView } from './views/lifeos/SignalsView'
 import { LifeAreaFilter, LifeAreaMark, LifeAreaSelect } from './views/lifeos/lifeosUi'
 import { MorningGate } from './components/MorningGate'
+import {
+  assessDailyProgress,
+  completedRitualSteps,
+  entryHasMeal,
+  isHeadRecoveryDone,
+  nowChipLabel,
+  overviewSlot,
+  selectNowItems,
+  selectOverviewItems,
+  SHAKE_MEAL_ID,
+  shouldShowDailyClose,
+  syncProteinShakeNutrition,
+  weekDateKeys,
+  type DaySlot,
+  type NowItem,
+} from './lib/dailyFlow'
+import {
+  loadBodyMeasurements,
+  selectTodayWeight,
+} from './lib/bodyMeasurement'
 import { HabitDetailSheet } from './components/HabitDetailSheet'
-import { HabitKindControls } from './components/HabitKindRow'
-import { WeightDailyCard } from './components/WeightDailyCard'
-import { defaultHabitKind, isHabitComplete, isHabitKey, patchHabitLog } from './lib/habitKinds'
+import { defaultHabitKind, isHabitComplete, isHabitKey } from './lib/habitKinds'
 import { moodHabitLine } from './lib/moodHabit'
 import { appendJournal, formatNoteLine, mergeQuickNote, parseQuickNote } from './lib/inboundNote'
 import {
   assessDayCompleteness,
   closeDayPatch,
-  formatClosedAt,
   reopenDayPatch,
-  type DayCloseAction,
 } from './lib/dayClose'
 import {
   LIFE_OS_DAILY_EVENTS_EVENT,
@@ -228,9 +239,10 @@ import './launch.css'
 
 type View = AppView
 type ThemePreference = 'light' | 'dark' | 'system'
-type AccentPreference = 'terracotta' | 'sage' | 'ocean' | 'lilac' | 'amber'
+type AccentPreference = 'ice' | 'terracotta' | 'sage' | 'ocean' | 'lilac' | 'amber'
 
 const ACCENT_OPTIONS: Array<{ id: AccentPreference; label: string; swatch: string }> = [
+  { id: 'ice', label: 'Ice', swatch: '#CFECF3' },
   { id: 'terracotta', label: 'Terrakotta', swatch: '#c77f6b' },
   { id: 'sage', label: 'Salbei', swatch: '#6f8f7d' },
   { id: 'ocean', label: 'Ozean', swatch: '#6e8db1' },
@@ -686,17 +698,6 @@ function shouldBypassMorningGate(action: AppAction | null): boolean {
 }
 
 // ── Data from projectbaby ────────────────────────────────────────────────────
-const QUOTES = [
-  'Kleine Aktionen heute = massive Ergebnisse morgen.',
-  'Du bist der Hauptcharakter. Handle dementsprechend.',
-  'Discipline is the ultimate superpower.',
-  'Dein zukünftiges Ich dankt dir.',
-  'Momentum entsteht durch Handlung — nicht Denken.',
-  'Ein Prozent besser jeden Tag. Das ist alles.',
-  'Der beste Zeitpunkt war gestern. Jetzt ist Platz 2.',
-  'Dein Gehirn liebt Dopamin. Gib ihm Checkmarks.',
-] as const
-
 const DEF_TASKS = [
   'Morning Routine abschließen',
   'Training · 45 Min Workout',
@@ -736,11 +737,6 @@ const DAILY_HABITS: HabitDef[] = [
   { id: 'journalDone',     label: 'Journal schreiben', category: 'Mind', icon: BookOpen },
   { id: 'familyTimeDone',  label: 'Familienzeit',      category: 'Main', icon: Users    },
 ]
-
-function getDailyQuote(): string {
-  const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86_400_000)
-  return QUOTES[dayOfYear % QUOTES.length]
-}
 
 function createDashboardPlusSeed(): DashboardPlusState {
   return {
@@ -937,7 +933,7 @@ const DEFAULT_DASHBOARD_PLUS_LAYOUT: DashboardPlusLayout = {
 const DEFAULT_SETTINGS: AppSettings = {
   name: '',
   theme: 'system',
-  accent: 'terracotta',
+  accent: 'ice',
   focusMinutes: 25,
   proteinGoal: 150,
   calorieGoal: 3500,
@@ -981,16 +977,6 @@ const NAV_ITEMS: Array<{ id: View; label: string; icon: typeof Home }> = [
 const STREAK_HABIT_KEYS: HabitKey[] = [
   'coldShower', 'proteinShake', 'pushupsDone', 'squatsDone', 'wallsitDone', 'plankDone',
   'gratitudeDone', 'focusDone', 'winnerModeDone', 'journalDone', 'familyTimeDone', 'breathingDone',
-]
-
-const ENERGY_OPTIONS: Array<{
-  value: EnergyLevel
-  label: string
-  description: string
-}> = [
-  { value: 'low', label: 'Niedrig', description: 'Wir reduzieren heute aufs Wichtigste' },
-  { value: 'okay', label: 'Okay', description: 'Ein ruhiger, machbarer Tag' },
-  { value: 'high', label: 'Gut', description: 'Platz für tieferen Fokus' },
 ]
 
 function storageStatusLabel(syncStatus: string, isOnline: boolean, deviceSync = false): string {
@@ -1120,9 +1106,9 @@ function loadSettings(): AppSettings {
       ? stored.theme as ThemePreference
       : DEFAULT_SETTINGS.theme
 
-    const accent: AccentPreference = ACCENT_IDS.includes(stored.accent as AccentPreference)
-      ? stored.accent as AccentPreference
-      : DEFAULT_SETTINGS.accent
+    const accent: AccentPreference = stored.accent === 'terracotta' || !ACCENT_IDS.includes(stored.accent as AccentPreference)
+      ? 'ice'
+      : stored.accent as AccentPreference
 
     return {
       name: typeof stored.name === 'string' ? stored.name.slice(0, 40) : DEFAULT_SETTINGS.name,
@@ -1349,7 +1335,7 @@ function ProgressRing({ value, size = 72 }: { value: number; size?: number }) {
       style={{
         width: size,
         height: size,
-        background: `conic-gradient(var(--accent) ${safeValue * 3.6}deg, var(--track) 0deg)`,
+        background: `conic-gradient(var(--accent-strong) ${safeValue * 3.6}deg, var(--track) 0deg)`,
       }}
       aria-label={`${safeValue} Prozent Fortschritt`}
       role="img"
@@ -1430,7 +1416,6 @@ function App() {
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [focusSession, setFocusSession] = useState<FocusSession | null>(null)
   const [toast, setToast] = useState<ToastState>(null)
-  const [highlightQuickNote, setHighlightQuickNote] = useState(false)
   const [deviceSyncCreds, setDeviceSyncCreds] = useState<DeviceSyncCredentials | null>(() => loadSyncCredentials())
   const actionBridgeRef = useRef<{
     applyAction: (action: AppAction) => void
@@ -1512,6 +1497,7 @@ function App() {
       proteinShake: Boolean(entry.proteinShake),
       gratitudeDone: Boolean(entry.gratitudeDone),
       energySet: Boolean(entry.energyLevel),
+      headRecoveryDone: isHeadRecoveryDone(entry),
       pushupsDone: Boolean(entry.pushupsDone),
       coldShowerDone: Boolean(entry.coldShower),
       winnerModeDone: Boolean(entry.winnerModeDone),
@@ -1526,6 +1512,11 @@ function App() {
       entry.proteinShake,
       entry.gratitudeDone,
       entry.energyLevel,
+      entry.mood,
+      entry.sleepQuality,
+      entry.sleepDuration,
+      entry.bedTime,
+      entry.wakeTime,
       entry.pushupsDone,
       entry.coldShower,
       entry.winnerModeDone,
@@ -1810,19 +1801,30 @@ function App() {
     source: DailyEventSource = 'ui',
     options?: { undoOf?: string; offerUndo?: boolean; toastMessage?: string },
   ) => {
+    const nextPatch = 'proteinShake' in patch
+      ? {
+          ...patch,
+          ...syncProteinShakeNutrition(
+            entry,
+            Boolean(patch.proteinShake),
+            settings.morningRitual.shakeMeal,
+            settings.proteinGoal,
+          ),
+        }
+      : patch
     const before = loadXP()
     const previous = capturePreviousValues(
       entry as unknown as Record<string, unknown>,
-      patch as Record<string, unknown>,
+      nextPatch as Record<string, unknown>,
     )
-    void saveEntry({ ...entry, ...patch }).then(ok => {
+    void saveEntry({ ...entry, ...nextPatch }).then(ok => {
       if (!ok) {
         showToast('Speichern fehlgeschlagen — Speicher voll oder blockiert.')
         return
       }
       const event = createEntryPatchEvent({
         date: entry.date,
-        changes: patch as Record<string, unknown>,
+        changes: nextPatch as Record<string, unknown>,
         previous,
         source,
         undoOf: options?.undoOf,
@@ -1851,6 +1853,11 @@ function App() {
       if (options?.toastMessage) showToast(options.toastMessage)
     })
   }
+
+  useEffect(() => {
+    if (!entry.proteinShake || entryHasMeal(entry, SHAKE_MEAL_ID)) return
+    updateEntry({ proteinShake: true }, 'morning_gate')
+  }, [entry.date, entry.proteinShake, entry.appliedMeals])
 
   const saveEntryForDate = async (
     date: string,
@@ -2299,10 +2306,6 @@ function App() {
               }, 400)
             }
           }
-          setHighlightQuickNote(true)
-          window.setTimeout(() => {
-            document.getElementById('life-os-quick-note')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          }, 80)
           showToast(text ? 'Notiz geparkt.' : 'Kurzbefehl: Kurznotiz')
           break
         }
@@ -2391,7 +2394,7 @@ function App() {
   }
 
   return (
-    <div className="life-app">
+    <div className={view === 'today' ? 'life-app life-app--heute' : 'life-app'}>
       <aside className="sidebar" aria-label="Hauptnavigation" inert={showMorningGate || undefined}>
         <div className="brand">
           <div className="brand__mark" aria-hidden="true">
@@ -2469,12 +2472,6 @@ function App() {
             <IconButton label="Theme wechseln" onClick={quickToggleTheme}>
               {resolvedTheme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </IconButton>
-            <IconButton label="Suchen" onClick={() => setPaletteOpen(true)}>
-              <Search size={18} />
-            </IconButton>
-            <IconButton label={`Inbox${lifeOs.inboxCount > 0 ? ` (${lifeOs.inboxCount})` : ''}`} onClick={() => navigateTo('inbox')}>
-              <Inbox size={18} />
-            </IconButton>
             <IconButton label="Einstellungen öffnen" onClick={() => setSettingsOpen(true)}>
               <Settings size={18} />
             </IconButton>
@@ -2536,34 +2533,18 @@ function App() {
               onOpenCheckin={() => navigateTo('checkin')}
               syncLabel={storageStatusLabel(syncStatus, isOnline, Boolean(deviceSyncCreds))}
               syncStatus={syncStatus}
-              onPromoteThoughtToTomorrow={async text => {
-                const tomorrow = addDays(today, 1)
-                const tomorrowEntry = entries.find(item => item.date === tomorrow) ?? createDefaultEntry(tomorrow)
-                const nextAnchors = [...(tomorrowEntry.anchors ?? [])]
-                if (nextAnchors.length >= 5) {
-                  showToast('Morgen hat schon fünf Anker.')
-                  return
-                }
-                if (nextAnchors.includes(text)) {
-                  showToast('Schon als Morgen-Anker geplant.')
-                  return
-                }
-                const tomorrowMinutes = normalizeAnchorMinutes(
-                  tomorrowEntry.anchorMinutes,
-                  nextAnchors.length,
-                  settings.focusMinutes,
-                )
-                await saveEntryForDate(tomorrow, {
-                  anchors: [...nextAnchors, text],
-                  anchorsDone: [...(tomorrowEntry.anchorsDone ?? []).slice(0, nextAnchors.length), false],
-                  anchorMinutes: [...tomorrowMinutes, dayPolicy.focusMinutes],
-                })
-                showToast('Als Morgen-Anker gespeichert.')
-              }}
               showToast={showToast}
-              highlightQuickNote={highlightQuickNote}
-              onQuickNoteHighlightHandled={() => setHighlightQuickNote(false)}
               ritualLock={ritualHeuteLock === 'todos' ? 'todos' : null}
+              onReopenMorningGate={() => {
+                const done = completedRitualSteps({
+                  progress: ritualProgress,
+                  entry,
+                  config: settings.morningRitual,
+                })
+                const nextIndex = ritualSteps.findIndex(id => !done.includes(id))
+                setGatePreview(true)
+                setPreviewIndex(nextIndex >= 0 ? nextIndex : Math.max(0, ritualSteps.length - 1))
+              }}
               dailyEvents={dailyEvents}
               onUndoDailyEvent={undoDailyEvent}
               onUndoRitualEvent={undoRitualEvent}
@@ -3002,6 +2983,7 @@ function App() {
                 type="button"
                 key={item.id}
                 className={view === item.id ? 'mobile-nav__item is-active' : 'mobile-nav__item'}
+                aria-current={view === item.id ? 'page' : undefined}
                 onClick={() => navigateTo(item.id)}
               >
                 <Icon size={20} />
@@ -3011,7 +2993,7 @@ function App() {
           })}
         </nav>
 
-        {view !== 'dashboardPlus' && !showMorningGate && (
+        {view !== 'dashboardPlus' && view !== 'today' && view !== 'checkin' && !showMorningGate && (
           <button type="button" className="fab" onClick={() => setQuickAddOpen(true)} aria-label="Schnell hinzufügen">
             <Plus size={22} />
           </button>
@@ -3154,10 +3136,21 @@ function App() {
           step={ritualStep}
           stepIndex={gatePreview ? previewIndex : Math.max(0, ritualSteps.indexOf(ritualStep))}
           stepCount={Math.max(1, ritualSteps.length)}
+          steps={ritualSteps.map(id => ({ id, label: morningRitualMeta(id, settings.morningRitual).label }))}
+          doneSteps={completedRitualSteps({
+            progress: ritualProgress,
+            entry,
+            config: settings.morningRitual,
+          })}
           name={settings.name}
           medications={morningGateMeds}
           proteinShake={Boolean(entry.proteinShake)}
           gratitudeText={settings.morningRitual.gratitudeText}
+          mood={entry.mood}
+          sleepQuality={entry.sleepQuality}
+          sleepDuration={entry.sleepDuration}
+          dreamed={entry.dreamed}
+          onHeadRecovery={patch => updateEntry(patch, 'morning_gate')}
           config={settings.morningRitual}
           anchors={anchors}
           anchorsDone={anchorsDone}
@@ -3295,6 +3288,7 @@ function App() {
             showToast('Morgen-Ritual für heute übersprungen.')
           }}
           onOpenSettings={() => setSettingsOpen(true)}
+          onClosePreview={gatePreview ? () => setGatePreview(false) : undefined}
         />
       )}
 
@@ -3391,112 +3385,12 @@ function loadQuickNote(): QuickNoteState {
   }
 }
 
-/** Sticky-note style scratchpad — persists locally, independent of daily entries. */
-function QuickNoteWidget({
-  highlighted = false,
-  onHighlightHandled,
-  onToast,
-}: {
-  highlighted?: boolean
-  onHighlightHandled?: () => void
-  onToast?: (message: string) => void
-}) {
-  const [note, setNote] = useState<QuickNoteState>(loadQuickNote)
-
-  useEffect(() => {
-    const reload = () => setNote(loadQuickNote())
-    window.addEventListener(LIFE_OS_SYNC_EXTRAS_EVENT, reload)
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === QUICK_NOTE_KEY || event.key === null) reload()
-    }
-    window.addEventListener('storage', onStorage)
-    return () => {
-      window.removeEventListener(LIFE_OS_SYNC_EXTRAS_EVENT, reload)
-      window.removeEventListener('storage', onStorage)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!highlighted) return
-    const timer = window.setTimeout(() => onHighlightHandled?.(), 1800)
-    return () => window.clearTimeout(timer)
-  }, [highlighted, onHighlightHandled])
-
-  const save = (text: string) => {
-    const next: QuickNoteState = {
-      text: text.slice(0, 600),
-      updatedAt: text.trim() ? new Date().toISOString() : null,
-    }
-    setNote(next)
-    safeLocalStorageSetItem(QUICK_NOTE_KEY, JSON.stringify(next))
-    if (isDeviceSyncEnabled()) {
-      window.setTimeout(() => {
-        void pushDeviceSync().catch(() => {})
-      }, 800)
-    }
-  }
-
-  const shareNote = async () => {
-    const result = await shareText({
-      title: 'Life OS Kurznotiz',
-      text: note.text.trim(),
-    })
-    if (result === 'shared') onToast?.('Share Sheet — z. B. in Notizen sichern.')
-    else if (result === 'copied') onToast?.('Kurznotiz kopiert.')
-    else onToast?.('Teilen nicht verfügbar.')
-  }
-
-  const updatedLabel = note.updatedAt
-    ? new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' }).format(new Date(note.updatedAt))
-    : null
-
-  return (
-    <section
-      id="life-os-quick-note"
-      className={highlighted ? 'card quick-note-card is-highlighted' : 'card quick-note-card'}
-    >
-      <span className="quick-note-card__pin" aria-hidden="true" />
-      <SectionTitle
-        eyebrow="Merkzettel"
-        title="Kurznotiz"
-        action={(
-          <div className="quick-note-card__actions">
-            {note.text.trim() ? (
-              <button type="button" className="text-button" onClick={() => void shareNote()}>
-                <Share2 size={14} /> Teilen
-              </button>
-            ) : null}
-            {note.text.trim() ? (
-              <button type="button" className="text-button" onClick={() => save('')}>
-                Leeren
-              </button>
-            ) : null}
-          </div>
-        )}
-      />
-      <textarea
-        className="quick-note-card__input"
-        value={note.text}
-        onChange={event => save(event.target.value)}
-        placeholder="Was du nicht vergessen willst …"
-        rows={3}
-        maxLength={600}
-        aria-label="Kurznotiz"
-      />
-      <div className="quick-note-card__foot">
-        <span>{updatedLabel ? `Zuletzt ${updatedLabel} Uhr` : 'Bleibt hier, bis du sie leerst'}</span>
-        <span className="quick-note-card__hint">Teilen → Notizen / Kurzbefehle</span>
-      </div>
-    </section>
-  )
-}
-
 function TodayView({
   entry,
   entries,
   date,
   today,
-  score,
+  score: _score,
   settings,
   anchors,
   anchorsDone,
@@ -3504,25 +3398,14 @@ function TodayView({
   onDateChange,
   onUpdate,
   onToggleAnchor,
-  onEditTask,
-  onAddTask,
   onOpenFocus,
-  onReorderHabits,
-  onOpenPlan,
-  onOpenCheckin,
-  onPromoteThoughtToTomorrow,
-  streakByKey,
   showToast,
-  highlightQuickNote = false,
-  onQuickNoteHighlightHandled,
-  onExportToCalendar,
   ritualLock = null,
   onContinueRitualTodos,
+  onReopenMorningGate,
   dailyEvents = [],
   onUndoDailyEvent,
   onUndoRitualEvent,
-  syncLabel = 'Lokal',
-  syncStatus = 'idle',
 }: {
   entry: DashboardEntry
   entries: DashboardEntry[]
@@ -3543,27 +3426,44 @@ function TodayView({
   onReorderHabits: (ids: string[]) => void
   onOpenPlan: () => void
   onOpenCheckin: () => void
-  onPromoteThoughtToTomorrow: (text: string) => Promise<void>
   showToast: (message: string, actionLabel?: string, onAction?: () => void) => void
   highlightQuickNote?: boolean
   onQuickNoteHighlightHandled?: () => void
   onExportToCalendar: (title: string, minutes: number) => Promise<void>
   ritualLock?: 'todos' | null
   onContinueRitualTodos?: () => void
+  onReopenMorningGate?: () => void
   dailyEvents?: DailyEvent[]
   onUndoDailyEvent?: (event: EntryPatchEvent) => void
   onUndoRitualEvent?: (event: DailyEvent) => void
   syncLabel?: string
   syncStatus?: string
 }) {
-  const [capture, setCapture] = useState('')
   const [timelineOpen, setTimelineOpen] = useState(false)
-  const [dragIdx,     setDragIdx]     = useState<number | null>(null)
-  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
-  const [habitDetail, setHabitDetail] = useState<{ key: HabitKey; label: string } | null>(null)
-  const [editingEnergy, setEditingEnergy] = useState(false)
-  const touchRef = useRef<{ sourceIdx: number } | null>(null)
+  const [homePane, setHomePane] = useState<'now' | 'overview'>('now')
+  const [overviewRange, setOverviewRange] = useState<'today' | 'week' | 'month'>('today')
+  const [rangeOpen, setRangeOpen] = useState(false)
+  const [protocolOpen, setProtocolOpen] = useState(false)
+  const rangeRef = useRef<HTMLDivElement>(null)
   const energy = entry.energyLevel
+
+  useEffect(() => {
+    if (!rangeOpen) return
+    const onPointer = (event: PointerEvent) => {
+      if (rangeRef.current && !rangeRef.current.contains(event.target as Node)) {
+        setRangeOpen(false)
+      }
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setRangeOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointer)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onPointer)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [rangeOpen])
   const dayEvents = eventsForDate(dailyEvents, date).slice(0, 12)
   const completeness = assessDayCompleteness({
     entry,
@@ -3579,21 +3479,13 @@ function TodayView({
   }
   const hour = date === today ? new Date().getHours() : 12
   const habitsDue = filterHabitsForDate(settings.activeHabits, date, settings.habitSchedules)
-  const policy = getDayPolicy({
-    energy,
-    activeHabits: habitsDue,
-    baseFocusMinutes: settings.focusMinutes,
-    hour,
-  })
-  const dayMode = policy.mode
-  const recovery = calculateRecovery({ entry, energy })
 
   const allRoutineItems = habitsDue
     .map(id => DAILY_HABITS.find(h => h.id === id))
     .filter((h): h is HabitDef => h !== undefined)
     .map(h => ({
       key: h.id,
-      label: energy === 'low' ? `${h.label} · 2 Min` : h.label,
+      label: h.label.replace(/^\d+(?:[.,]\d+)?\s*(?:Min\.?|Minuten|s)\s+/i, '').trim() || h.label,
       icon: h.icon,
       minutes: energy === 'low' ? 2 : (h.minutes ?? 11),
       done: isHabitKey(h.id)
@@ -3601,124 +3493,83 @@ function TodayView({
         : Boolean(entry[h.id as keyof DashboardEntry]),
     }))
 
-  const routineItems = allRoutineItems.filter(item => policy.primaryHabitIds.includes(item.key))
-  const deferredRoutineItems = allRoutineItems.filter(item => policy.deferredHabitIds.includes(item.key))
-  const skippedToday = settings.activeHabits.filter(id => !habitsDue.includes(id)).length
-
-  const applyReorder = (fromIdx: number, toIdx: number) => {
-    if (fromIdx === toIdx) return
-    // Reorder within the full activeHabits list using primary indices mapped back
-    const primaryIds = [...policy.primaryHabitIds]
-    if (fromIdx < 0 || toIdx < 0 || fromIdx >= primaryIds.length || toIdx >= primaryIds.length) return
-    const [moved] = primaryIds.splice(fromIdx, 1)
-    primaryIds.splice(toIdx, 0, moved)
-    const deferred = settings.activeHabits.filter(id => !policy.primaryHabitIds.includes(id))
-    onReorderHabits([...primaryIds, ...deferred])
-  }
-
-  const handleDrop = (toIdx: number) => {
-    if (dragIdx !== null) applyReorder(dragIdx, toIdx)
-    setDragIdx(null)
-    setDragOverIdx(null)
-  }
-
-  const handleTouchStart = (_e: React.TouchEvent, idx: number) => {
-    touchRef.current = { sourceIdx: idx }
-    setDragIdx(idx)
-  }
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!touchRef.current) return
-    e.preventDefault()
-    const touch = e.touches[0]
-    const el = document.elementFromPoint(touch.clientX, touch.clientY)
-    const item = el?.closest('[data-rindex]')
-    if (item) {
-      const idx = parseInt(item.getAttribute('data-rindex') ?? '-1', 10)
-      if (idx >= 0) setDragOverIdx(idx)
-    }
-  }
-
-  const handleTouchEnd = () => {
-    if (touchRef.current !== null && dragOverIdx !== null) {
-      applyReorder(touchRef.current.sourceIdx, dragOverIdx)
-    }
-    touchRef.current = null
-    setDragIdx(null)
-    setDragOverIdx(null)
-  }
-
-  const routineDone = routineItems.filter(item => item.done).length
-  const nextStep = pickNextStep({
+  const dailyProgress = assessDailyProgress({
+    entry,
+    activeHabits: habitsDue,
+    habitDone: Object.fromEntries(allRoutineItems.map(item => [item.key, item.done])),
+    hour,
+  })
+  const nowItems = selectNowItems({
     anchors,
     anchorsDone,
-    habits: routineItems.map(item => ({
+    anchorMinutes,
+    habits: allRoutineItems.map(item => ({
       key: item.key,
       label: item.label,
-      minutes: item.minutes,
       done: item.done,
+      minutes: item.minutes,
     })),
     energy,
     hour,
-    streakByKey,
   })
-  const focusTitle = nextStep
-    ? nextStep.title
-    : 'Tagesabschluss'
-  const nextTaskIndex = nextStep?.kind === 'anchor' ? nextStep.index : -1
-  const focusMinutesForNext = nextStep?.kind === 'habit'
-    ? (nextStep.minutes ?? policy.focusMinutes)
-    : nextStep?.kind === 'anchor'
-      ? (anchorMinutes[nextStep.index] ?? policy.focusMinutes)
-      : policy.focusMinutes
-
-  const completeNext = () => {
-    if (nextStep?.kind === 'anchor') {
-      onToggleAnchor(nextStep.index)
-      return
-    }
-    if (nextStep?.kind === 'habit' && isHabitKey(nextStep.key)) {
-      const config = defaultHabitKind(nextStep.key, habitGoals)
-      if (config.kind === 'amount') {
-        onUpdate(patchHabitLog(entry, nextStep.key, { value: config.target }, config))
-        return
-      }
-      if (config.kind === 'timer') {
-        onUpdate(patchHabitLog(entry, nextStep.key, { elapsed: config.target }, config))
-        return
-      }
-      if (config.kind === 'steps') {
-        onUpdate(patchHabitLog(entry, nextStep.key, { checked: config.steps.map(step => step.id) }, config))
-        return
-      }
-      onUpdate({ [nextStep.key]: true } as Partial<DashboardEntry>)
-    }
-  }
-
-  const parkThought = (event: FormEvent) => {
-    event.preventDefault()
-    const clean = capture.trim()
-    if (!clean) return
-    const time = new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' }).format(new Date())
-    const nextText = entry.journalText ? `${entry.journalText}\n${time} — ${clean}` : `${time} — ${clean}`
-    onUpdate({ journalText: nextText })
-    setCapture('')
-    showToast('Gedanke geparkt.', 'Morgen-Anker?', () => {
-      void onPromoteThoughtToTomorrow(clean)
+  const overviewItems = selectOverviewItems({
+    anchors,
+    anchorsDone,
+    anchorMinutes,
+    habits: allRoutineItems.map(item => ({
+      key: item.key,
+      label: item.label,
+      done: item.done,
+      minutes: item.minutes,
+    })),
+  })
+  const laterItem = overviewItems.find(item => !item.done && !nowItems.some(now => now.id === item.id))
+  const overviewGroups: Array<{ slot: DaySlot; title: string; items: NowItem[] }> = [
+    { slot: 'morning', title: 'Morgen', items: [] },
+    { slot: 'day', title: 'Tag', items: [] },
+    { slot: 'evening', title: 'Abend', items: [] },
+  ]
+  if (onReopenMorningGate) {
+    overviewGroups[0].items.push({
+      id: 'ritual:morning-gate',
+      kind: 'habit',
+      title: 'Morning Gate',
+      done: Boolean(energy),
     })
   }
+  for (const item of overviewItems) {
+    const group = overviewGroups.find(entry => entry.slot === overviewSlot(item))
+    group?.items.push(item)
+  }
+  const todayWeight = selectTodayWeight({
+    date,
+    entry,
+    measurements: loadBodyMeasurements(),
+  })
+  const showDailyClose = date !== today || shouldShowDailyClose(hour, completeness.closed)
 
-  const promoteDeferred = (key: string) => {
-    const without = settings.activeHabits.filter(id => id !== key)
-    const insertAt = Math.min(policy.primaryHabitIds.length, without.length)
-    without.splice(insertAt, 0, key)
-    onReorderHabits(without)
-    showToast('Für heute in die Routine geholt.')
+  const toggleFlowItem = (item: NowItem) => {
+    if (item.id === 'ritual:morning-gate') {
+      onReopenMorningGate?.()
+      return
+    }
+    if (item.kind === 'anchor' && item.index != null) onToggleAnchor(item.index)
+    if (item.kind === 'habit' && item.habitKey && isHabitKey(item.habitKey)) {
+      onUpdate({ [item.habitKey]: !item.done } as Partial<DashboardEntry>)
+    }
   }
 
-  const openGap = (action: DayCloseAction) => {
-    if (action === 'checkin') onOpenCheckin()
-    else if (action === 'plan') onOpenPlan()
+  const openFlowItem = (item: NowItem) => {
+    if (item.id === 'ritual:morning-gate') {
+      onReopenMorningGate?.()
+      return
+    }
+    onOpenFocus(
+      item.title,
+      item.kind === 'anchor' ? item.index : undefined,
+      item.kind === 'habit' && item.habitKey ? item.habitKey as RoutineKey : undefined,
+      item.minutes,
+    )
   }
 
   const closeOrReopenDay = () => {
@@ -3742,99 +3593,46 @@ function TodayView({
   }
 
   return (
-    <div className="view-stack">
-      <DateStrip selected={date} today={today} onChange={onDateChange} />
-
-      {date === today && (
-        <div className={entry.dayShield ? 'day-shield is-on' : 'day-shield'}>
-          {entry.dayShield ? (
-            <p>Heute zählt nicht als Lücke. Streaks bleiben stehen.</p>
-          ) : (
-            <p>Schwerer Tag? Setze ihn bewusst aus — ohne heimliches Abhaken.</p>
-          )}
-          <button
-            type="button"
-            className={entry.dayShield ? 'choice-button is-active' : 'choice-button'}
-            aria-pressed={Boolean(entry.dayShield)}
-            onClick={() => onUpdate({ dayShield: !entry.dayShield })}
-          >
-            {entry.dayShield ? 'Aussetzen aufheben' : 'Heute aussetzen'}
-          </button>
-        </div>
-      )}
-
-      <section className="hero-card">
-        <div className="hero-card__content">
-          <div className="hero-card__meta">
-            <span>{date === today ? 'Heute' : formatLongDate(date)}</span>
-            <ProgressRing value={score} size={78} />
-          </div>
-          <div className="hero-card__copy">
-            <span className="eyebrow">Dein nächster Schritt</span>
-            <h2>{focusTitle}</h2>
-            <p>
-              {completeness.closed
-                ? `Abgeschlossen um ${formatClosedAt(completeness.closedAt ?? '')}. Korrekturen jederzeit möglich.`
-                : nextStep?.kind === 'anchor'
-                  ? 'Nur diese eine Aufgabe. Der Rest darf kurz warten.'
-                  : nextStep?.kind === 'habit'
-                    ? policy.heroHabitCopy
-                    : getDailyQuote()}
-            </p>
-            {nextStep?.streakHint && (
-              <span className="streak-hint">{nextStep.streakHint}</span>
-            )}
-            {nextStep?.stackHint && (
-              <span className="stack-hint">{nextStep.stackHint}</span>
-            )}
-            {dayMode === 'morning' && !energy && (
-              <span className="mode-hint">Morgenmodus: erst Energie, dann ein Anker.</span>
-            )}
-            {dayMode === 'evening' && (
-              <span className="mode-hint">Abendmodus: abschließen statt aufblasen.</span>
-            )}
-          </div>
-          <div className="hero-card__actions">
-            {nextStep && (
-              <button
-                type="button"
-                className="primary-button"
-                onClick={() => onOpenFocus(
-                  focusTitle,
-                  nextStep.kind === 'anchor' ? nextStep.index : undefined,
-                  nextStep.kind === 'habit' ? nextStep.key as RoutineKey : undefined,
-                  nextStep.kind === 'habit' ? nextStep.minutes : focusMinutesForNext,
-                )}
-              >
-                <Play size={17} fill="currentColor" />
-                Fokus starten
-                <span>{focusMinutesForNext} Min.</span>
-              </button>
-            )}
-            {nextStep && (
-              <button type="button" className="secondary-button" onClick={completeNext}>
-                <Check size={17} />
-                Erledigt
-              </button>
-            )}
-          </div>
-          {nextTaskIndex >= 0 && (
-            <div className="hero-card__next">
-              <span>Danach</span>
-              <strong>{anchors.find((_, index) => index > nextTaskIndex && !anchorsDone[index]) ?? 'Kurze Pause'}</strong>
+    <div className="view-stack heute-page">
+      <header className="heute-head">
+        <span className="heute-head__date">{formatLongDate(date)}</span>
+        <h2>{homePane === 'overview' ? 'Dein Tag.' : 'Du bist im Tag.'}</h2>
+        {homePane === 'now' && (
+          <div className="heute-head__stats">
+            <div>
+              <strong>{dailyProgress.percent}%</strong>
+              <span>Heute</span>
             </div>
-          )}
-        </div>
-        <div className="calm-visual" aria-hidden="true">
-          <span className="calm-visual__orb calm-visual__orb--one" />
-          <span className="calm-visual__orb calm-visual__orb--two" />
-          <span className="calm-visual__orb calm-visual__orb--three" />
-          <div className="calm-visual__glass">
-            <Leaf size={26} />
-            <span>{policy.badge}</span>
+            {todayWeight && (
+              <div>
+                <strong>{todayWeight.value.toFixed(1).replace('.', ',')} kg</strong>
+                <span>Gewicht</span>
+              </div>
+            )}
           </div>
-        </div>
-      </section>
+        )}
+      </header>
+
+      <div className="heute-tabs" role="tablist" aria-label="Home-Perspektive">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={homePane === 'now'}
+          className={homePane === 'now' ? 'is-on' : undefined}
+          onClick={() => setHomePane('now')}
+        >
+          Now
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={homePane === 'overview'}
+          className={homePane === 'overview' ? 'is-on' : undefined}
+          onClick={() => setHomePane('overview')}
+        >
+          Übersicht
+        </button>
+      </div>
 
       {ritualLock === 'todos' && energy && (
         <section className="card morning-todos-card">
@@ -3861,423 +3659,242 @@ function TodayView({
         </section>
       )}
 
-      {energy && ritualLock !== 'todos' && (
-        <div className="status-block">
-          <div className="status-row">
-            <span className={`energy-pill energy-pill--${energy}`}>
-              {energy === 'low' ? <BatteryLow size={15} /> : <Activity size={15} />}
-              Energie: {ENERGY_OPTIONS.find(option => option.value === energy)?.label}
-            </span>
+      {ritualLock !== 'todos' && homePane === 'now' && (
+        <section className="heute-now">
+          <span className="eyebrow">Jetzt</span>
+          {nowItems.length === 0 ? (
+            <p className="heute-empty">Nichts Offenes. Übersicht zeigt den Rest des Tages.</p>
+          ) : (
+            <div className="heute-now__list">
+              {nowItems.map(item => {
+                const chip = nowChipLabel(item)
+                return (
+                  <div key={item.id} className="heute-pill">
+                    <button
+                      type="button"
+                      className="heute-pill__copy"
+                      onClick={() => openFlowItem(item)}
+                    >
+                      {chip && <em>{chip}</em>}
+                      <strong>{item.title}</strong>
+                      {item.minutes ? <span>{item.minutes} Minuten</span> : null}
+                    </button>
+                    <button
+                      type="button"
+                      className="heute-pill__check"
+                      onClick={() => toggleFlowItem(item)}
+                      aria-label={`${item.title} erledigen`}
+                    >
+                      <Circle size={20} />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          {laterItem && (
+            <div className="heute-next">
+              <span className="eyebrow">Als nächstes</span>
+              <button type="button" className="heute-next__row" onClick={() => openFlowItem(laterItem)}>
+                <span>
+                  <strong>{laterItem.title}</strong>
+                  {laterItem.minutes ? <small>{laterItem.minutes} Min</small> : null}
+                </span>
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          )}
+          {onReopenMorningGate && (
+            <button type="button" className="heute-routine" onClick={onReopenMorningGate}>
+              <Plus size={16} />
+              Routine Mode
+            </button>
+          )}
+        </section>
+      )}
+
+      {ritualLock !== 'todos' && homePane === 'overview' && (
+        <div className="heute-overview">
+          <div className="heute-range" ref={rangeRef}>
             <button
               type="button"
-              className="text-button"
-              onClick={() => setEditingEnergy(current => !current)}
+              className="heute-range__btn"
+              aria-expanded={rangeOpen}
+              onClick={() => setRangeOpen(open => !open)}
             >
-              {editingEnergy ? 'Fertig' : 'Ändern'}
+              {overviewRange === 'today' ? 'Heute' : overviewRange === 'week' ? 'Woche' : 'Monat'}
+              <ChevronDown size={15} />
             </button>
-          </div>
-          {editingEnergy && (
-            <div className="energy-grid energy-grid--inline">
-              {ENERGY_OPTIONS.map(option => (
-                <button
-                  type="button"
-                  key={option.value}
-                  className={`energy-option${energy === option.value ? ' is-selected' : ''}`}
-                  onClick={() => {
-                    onUpdate({ energyLevel: option.value })
-                    setEditingEnergy(false)
-                  }}
-                >
-                  <span className={`energy-dot energy-dot--${option.value}`} />
-                  <strong>{option.label}</strong>
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="recovery-row" role="status">
-            <div>
-              <span className="eyebrow">Recovery</span>
-              <strong>{recovery.score}% · {recovery.label}</strong>
-              <p>{recovery.note}</p>
-            </div>
-            {recovery.suggestSoftMode && energy !== 'low' && (
-              <button
-                type="button"
-                className="small-button"
-                onClick={() => onUpdate({ energyLevel: 'low' })}
-              >
-                Soft-Mode
-              </button>
+            {rangeOpen && (
+              <div className="heute-range__menu" role="listbox" aria-label="Zeitraum">
+                {(['today', 'week', 'month'] as const).map(range => (
+                  <button
+                    key={range}
+                    type="button"
+                    role="option"
+                    aria-selected={overviewRange === range}
+                    onClick={() => {
+                      setOverviewRange(range)
+                      setRangeOpen(false)
+                    }}
+                  >
+                    {range === 'today' ? 'Heute' : range === 'week' ? 'Woche' : 'Monat'}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
-          {policy.policyNote && (
-            <p className="policy-note" role="status">{policy.policyNote}</p>
-          )}
-          {skippedToday > 0 && (
-            <p className="policy-note">{skippedToday} {plural(skippedToday, 'Habit', 'Habits')} heute laut Plan frei.</p>
-          )}
-        </div>
-      )}
 
-      {ritualLock !== 'todos' && (
-      <div className={`dashboard-grid dashboard-grid--${dayMode}`}>
-        <section className="card tasks-card">
-          <SectionTitle
-            eyebrow="Tagesanker"
-            title={policy.anchorTitle}
-            action={
-              <button type="button" className="small-button" onClick={onAddTask}>
-                <Plus size={15} /> Aufgabe
-              </button>
-            }
-          />
-          {anchors.length === 0 ? (
-            <EmptyState
-              title="Noch keine Aufgaben"
-              text={policy.emptyAnchorsText}
-              action={<button type="button" className="secondary-button" onClick={onAddTask}><Plus size={16} /> Erste Aufgabe</button>}
-            />
-          ) : (
-            <div className="task-list">
-              {anchors.map((task, index) => {
-                const done = Boolean(anchorsDone[index])
-                const taskMinutes = anchorMinutes[index] ?? policy.focusMinutes
-                return (
-                  <SwipeableRow
-                    key={`${task}-${index}`}
-                    leftLabel={done ? 'Offen' : 'Erledigt'}
-                    rightLabel="Plan"
-                    onSwipeLeft={() => onToggleAnchor(index)}
-                    onSwipeRight={() => onOpenPlan()}
-                    onLongPress={() => onEditTask(index, task)}
-                  >
-                    <div className={done ? 'task-row is-done' : 'task-row'}>
+          {overviewRange === 'today' && overviewGroups.map(group => (
+            group.items.length === 0 ? null : (
+              <section key={group.slot} className="heute-slot">
+                <span className="eyebrow">{group.title}</span>
+                <div className="heute-checks">
+                  {group.items.map(item => (
+                    <div key={item.id} className={item.done ? 'heute-check is-done' : 'heute-check'}>
                       <button
                         type="button"
-                        className="task-check"
-                        onClick={() => onToggleAnchor(index)}
-                        aria-label={done ? `${task} als offen markieren` : `${task} erledigen`}
-                        aria-pressed={done}
+                        className="heute-check__box"
+                        onClick={() => toggleFlowItem(item)}
+                        aria-label={item.id === 'ritual:morning-gate'
+                          ? 'Morning Gate öffnen'
+                          : `${item.title} ${item.done ? 'als offen markieren' : 'erledigen'}`}
+                        aria-pressed={item.done}
                       >
-                        {done ? <Check size={16} /> : <Circle size={16} />}
+                        {item.done ? <Check size={12} /> : <span />}
                       </button>
-                      <button type="button" className="task-title" onClick={() => onOpenFocus(task, index, undefined, taskMinutes)}>
-                        <strong>{task}</strong>
-                        <span>{done ? 'Erledigt' : `${taskMinutes} Minuten Fokus`}</span>
+                      <button type="button" className="heute-check__copy" onClick={() => openFlowItem(item)}>
+                        <strong>{item.title}</strong>
                       </button>
-                      {!done && (
-                        <IconButton
-                          label={`${task} in Kalender`}
-                          onClick={() => { void onExportToCalendar(task, taskMinutes) }}
-                        >
-                          <CalendarPlus size={15} />
-                        </IconButton>
-                      )}
-                      <IconButton label={`${task} bearbeiten`} onClick={() => onEditTask(index, task)}>
-                        <Pencil size={15} />
-                      </IconButton>
                     </div>
-                  </SwipeableRow>
-                )
-              })}
-            </div>
-          )}
-          {anchors.length > 0 && (
-            <button type="button" className="card-link" onClick={onOpenPlan}>
-              Plan bearbeiten <ChevronRight size={16} />
-            </button>
-          )}
-        </section>
-
-        <section className="card routine-card">
-          <SectionTitle
-            eyebrow="Rhythmus"
-            title={energy === 'low' ? 'Sanfte Routine' : 'Deine Routine'}
-            action={<span className="counter-pill">{routineDone}/{routineItems.length}</span>}
-          />
-          <div className="routine-list">
-            {routineItems.map((item, index) => {
-              const Icon = item.icon
-              const isDragging = dragIdx === index
-              const isOver     = dragOverIdx === index && dragIdx !== index
-              return (
-                <div
-                  key={item.key}
-                  data-rindex={String(index)}
-                  className={[
-                    'routine-item',
-                    item.done  ? 'is-done'     : '',
-                    isDragging ? 'is-dragging'  : '',
-                    isOver     ? 'is-drag-over' : '',
-                  ].filter(Boolean).join(' ')}
-                  onDragOver={e => { e.preventDefault(); setDragOverIdx(index) }}
-                  onDragLeave={() => setDragOverIdx(null)}
-                  onDrop={() => handleDrop(index)}
-                  onDragEnd={() => { setDragIdx(null); setDragOverIdx(null) }}
-                >
-                  <button
-                    type="button"
-                    className="drag-handle"
-                    draggable
-                    aria-label={`Reihenfolge von ${item.label} ändern`}
-                    aria-grabbed={dragIdx === index}
-                    onDragStart={e => { e.stopPropagation(); setDragIdx(index) }}
-                    onDragEnd={() => { setDragIdx(null); setDragOverIdx(null) }}
-                    onTouchStart={e => handleTouchStart(e, index)}
-                    onTouchMove={handleTouchMove}
-                    onTouchEnd={handleTouchEnd}
-                    onKeyDown={event => {
-                      if (event.key === 'ArrowUp') {
-                        event.preventDefault()
-                        applyReorder(index, Math.max(0, index - 1))
-                      }
-                      if (event.key === 'ArrowDown') {
-                        event.preventDefault()
-                        applyReorder(index, Math.min(routineItems.length - 1, index + 1))
-                      }
-                      if (event.key === 'Home') {
-                        event.preventDefault()
-                        applyReorder(index, 0)
-                      }
-                      if (event.key === 'End') {
-                        event.preventDefault()
-                        applyReorder(index, routineItems.length - 1)
-                      }
-                    }}
-                  >
-                    <GripVertical size={13} />
-                  </button>
-                  <span className="routine-item__icon"><Icon size={18} /></span>
-                  <button
-                    type="button"
-                    className="routine-item__main"
-                    onClick={() => {
-                      if (isHabitKey(item.key)) setHabitDetail({ key: item.key, label: item.label })
-                    }}
-                  >
-                    <span className="routine-item__copy">
-                      <span className="routine-item__title">{item.label}</span>
-                      <small>Streak {streakByKey[item.key] ?? 0}</small>
-                    </span>
-                  </button>
-                  {isHabitKey(item.key) && !entry.dayShield ? (
-                    <HabitKindControls
-                      habitKey={item.key}
-                      entry={entry}
-                      goals={habitGoals}
-                      onUpdate={onUpdate}
-                    />
-                  ) : (
-                    <span className="routine-item__state">
-                      {item.done ? <Check size={16} /> : <ChevronRight size={16} />}
-                    </span>
-                  )}
+                  ))}
                 </div>
-              )
-            })}
-          </div>
-          {deferredRoutineItems.length > 0 && (
-            <div className="deferred-routine">
-              <span className="eyebrow">Heute optional</span>
-              <div className="routine-list routine-list--deferred">
-                {deferredRoutineItems.map(item => {
-                  const Icon = item.icon
+              </section>
+            )
+          ))}
+
+          {overviewRange === 'week' && (
+            <section className="heute-slot">
+              <span className="eyebrow">Woche</span>
+              <ul className="overview-week">
+                {weekDateKeys(date).map(day => {
+                  const dayEntry = entries.find(item => item.date === day)
+                  const dayAnchors = dayEntry?.anchors ?? []
+                  const dayDone = dayEntry?.anchorsDone ?? []
                   return (
-                    <div key={item.key} className={item.done ? 'routine-item is-done is-deferred' : 'routine-item is-deferred'}>
-                      <span className="routine-item__icon"><Icon size={18} /></span>
-                      <button
-                        type="button"
-                        className="routine-item__main"
-                        onClick={() => {
-                          if (!item.done) promoteDeferred(item.key)
-                          else onUpdate({ [item.key]: false } as Partial<DashboardEntry>)
-                        }}
-                      >
-                        <span className="routine-item__copy">
-                          <span className="routine-item__title">{item.label}</span>
-                          <small>{item.done ? 'Erledigt' : 'Tippen zum Aktivieren'}</small>
+                    <li key={day}>
+                      <button type="button" className="overview-week__row" onClick={() => onDateChange(day)}>
+                        <strong>{new Intl.DateTimeFormat('de-DE', { weekday: 'short', day: 'numeric' }).format(new Date(`${day}T12:00:00`))}</strong>
+                        <span>
+                          {dayAnchors.length === 0
+                            ? 'Keine Anker'
+                            : `${dayDone.filter(Boolean).length}/${dayAnchors.length} Anker`}
                         </span>
                       </button>
-                      <span className="routine-item__state">
-                        {item.done ? <Check size={16} /> : <Plus size={16} />}
-                      </span>
-                    </div>
+                    </li>
                   )
                 })}
-              </div>
-            </div>
+              </ul>
+            </section>
           )}
-        </section>
 
-        <WeightDailyCard
-          date={date}
-          today={today}
-          entries={entries}
-          goalKg={settings.weightGoalKg}
-          startKg={settings.weightStartKg}
-        />
-
-        <section className="card checkin-summary">
-          <SectionTitle eyebrow="Körper & Kopf" title="Kurzer Check-in" />
-          <div className="metric-summary-grid">
-            <div>
-              <span>Schlaf</span>
-              <strong>{entry.sleepDuration || '—'}</strong>
-            </div>
-            <div>
-              <span>Protein</span>
-              <strong>{entry.proteinGrams ? `${entry.proteinGrams} g` : '—'}</strong>
-            </div>
-            <div>
-              <span>Wasser</span>
-              <strong>{entry.waterLiters ? `${entry.waterLiters} L` : '—'}</strong>
-            </div>
-            <div>
-              <span>Kalorien</span>
-              <strong>{entry.calories ? `${entry.calories}` : '—'}</strong>
-            </div>
-          </div>
-          <button type="button" className="secondary-button secondary-button--full" onClick={onOpenCheckin}>
-            <Heart size={16} /> Check-in öffnen
-          </button>
-        </section>
-
-        <section className={`card day-close-card${completeness.closed ? ' is-closed' : ''}`}>
-          <SectionTitle
-            eyebrow="Tagesabschluss"
-            title={completeness.closed ? 'Abgeschlossen' : 'Tag schließen'}
-            action={<span className="counter-pill">{completeness.percent}%</span>}
-          />
-          <div className="day-close-meta">
-            <span className={`sync-pill sync-pill--${syncStatus}`}>
-              <Cloud size={14} />
-              {syncLabel}
-            </span>
-            <span className="day-close-summary">{completeness.summary}</span>
-          </div>
-          {completeness.closed && completeness.closedAt && (
-            <p className="day-close-note">
-              Geschlossen um {formatClosedAt(completeness.closedAt)}. Für rückwirkende Korrekturen
-              den Abschluss wieder öffnen.
-            </p>
-          )}
-          {!completeness.closed && completeness.gaps.length > 0 && (
-            <ul className="day-close-gaps">
-              {completeness.gaps.slice(0, 4).map(gap => (
-                <li key={gap.id}>
-                  <button type="button" className="text-button" onClick={() => openGap(gap.action)}>
-                    {gap.label}
-                    <ChevronRight size={14} />
+          {overviewRange === 'month' && (
+            <section className="heute-slot">
+              <span className="eyebrow">Monat</span>
+              <div className="month-grid month-grid--compact">
+                {buildMonthGrid({
+                  year: new Date(`${date}T12:00:00`).getFullYear(),
+                  monthIndex: new Date(`${date}T12:00:00`).getMonth(),
+                  today,
+                  selected: date,
+                  entryDates: new Set(entries.map(item => item.date)),
+                  scoresByDate: Object.fromEntries(entries.map(item => [item.date, item.dailyScore])),
+                }).map(cell => (
+                  <button
+                    key={cell.date}
+                    type="button"
+                    className={[
+                      'month-cell',
+                      cell.inMonth ? '' : 'is-outside',
+                      cell.isToday ? 'is-today' : '',
+                      cell.isSelected ? 'is-selected' : '',
+                      cell.hasEntry ? 'has-entry' : '',
+                    ].filter(Boolean).join(' ')}
+                    onClick={() => onDateChange(cell.date)}
+                  >
+                    {Number(cell.date.slice(-2))}
                   </button>
-                </li>
-              ))}
-            </ul>
+                ))}
+              </div>
+            </section>
           )}
-          {!completeness.closed && completeness.gaps.length === 0 && (
-            <p className="day-close-note">Alles Wesentliche ist da — Abschluss speichert den Stand.</p>
-          )}
+
           <button
             type="button"
-            className={completeness.closed ? 'secondary-button secondary-button--full' : 'primary-button'}
-            onClick={closeOrReopenDay}
+            className={protocolOpen ? 'heute-protocol is-open' : 'heute-protocol'}
+            onClick={() => setProtocolOpen(open => !open)}
+            aria-expanded={protocolOpen}
           >
-            {completeness.closed ? (
-              <>
-                <RotateCcw size={16} /> Abschluss öffnen
-              </>
-            ) : (
-              <>
-                <Flag size={16} /> Tag abschließen
-              </>
-            )}
+            Protokoll
+            <ChevronDown size={16} />
           </button>
-        </section>
+          {protocolOpen && dayEvents.length === 0 && (
+            <p className="heute-empty">Noch keine Ereignisse für diesen Tag.</p>
+          )}
+          {protocolOpen && dayEvents.length > 0 && (
+            <>
+              <ul className="daily-timeline">
+                {(timelineOpen ? dayEvents : dayEvents.slice(0, 3)).map(event => {
+                  const undoEntry = onUndoDailyEvent != null && canUndoEntryPatch(event, dailyEvents)
+                  const undoRitual = onUndoRitualEvent != null && canUndoRitualStep(event, dailyEvents)
+                  return (
+                    <li key={event.id} className="daily-timeline__row">
+                      <div className="daily-timeline__copy">
+                        <strong>{summarizeDailyEvent(event)}</strong>
+                        <span>
+                          {formatEventTime(event.occurredAt)}
+                          {' · '}
+                          {sourceLabel(event.source)}
+                          {event.type === 'entry_patch' && event.undoOf ? ' · rückgängig' : ''}
+                          {event.type === 'ritual_step' && event.status === 'reopened' ? ' · wieder geöffnet' : ''}
+                        </span>
+                      </div>
+                      {(undoEntry || undoRitual) && (
+                        <button
+                          type="button"
+                          className="text-button"
+                          onClick={() => {
+                            if (undoEntry && canUndoEntryPatch(event, dailyEvents)) onUndoDailyEvent(event)
+                            else if (undoRitual && canUndoRitualStep(event, dailyEvents)) onUndoRitualEvent(event)
+                          }}
+                        >
+                          <RotateCcw size={14} />
+                          Undo
+                        </button>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+              {dayEvents.length > 3 && (
+                <button
+                  type="button"
+                  className="card-link"
+                  onClick={() => setTimelineOpen(open => !open)}
+                >
+                  {timelineOpen ? 'Weniger zeigen' : `Alle ${dayEvents.length} Einträge`}
+                  <ChevronRight size={16} />
+                </button>
+              )}
+            </>
+          )}
 
-        <section className="card capture-card">
-          <SectionTitle eyebrow="Kopf frei" title="Gedanke parken" />
-          <p>Schreib ihn kurz auf und geh zurück zu dem, was gerade wichtig ist.</p>
-          <form className="capture-form" onSubmit={parkThought}>
-            <input
-              value={capture}
-              onChange={event => setCapture(event.target.value)}
-              placeholder="Was darf aus dem Kopf?"
-              maxLength={240}
-              aria-label="Gedanke notieren"
-            />
-            <button type="submit" className="send-button" aria-label="Gedanke speichern" disabled={!capture.trim()}>
-              <Plus size={18} />
+          {showDailyClose && (
+            <button type="button" className="heute-close" onClick={closeOrReopenDay}>
+              {completeness.closed ? 'Abschluss öffnen' : 'Tag schließen'}
             </button>
-          </form>
-        </section>
-
-        <QuickNoteWidget
-          highlighted={highlightQuickNote}
-          onHighlightHandled={onQuickNoteHighlightHandled}
-          onToast={message => showToast(message)}
-        />
-
-        {dayEvents.length > 0 && (
-          <section className="card daily-timeline-card">
-            <SectionTitle
-              eyebrow="Protokoll"
-              title={date === today ? 'Heute gelaufen' : 'Tagesverlauf'}
-              action={<span className="counter-pill">{dayEvents.length}</span>}
-            />
-            <ul className="daily-timeline">
-              {(timelineOpen ? dayEvents : dayEvents.slice(0, 3)).map(event => {
-                const undoEntry = onUndoDailyEvent != null && canUndoEntryPatch(event, dailyEvents)
-                const undoRitual = onUndoRitualEvent != null && canUndoRitualStep(event, dailyEvents)
-                return (
-                  <li key={event.id} className="daily-timeline__row">
-                    <div className="daily-timeline__copy">
-                      <strong>{summarizeDailyEvent(event)}</strong>
-                      <span>
-                        {formatEventTime(event.occurredAt)}
-                        {' · '}
-                        {sourceLabel(event.source)}
-                        {event.type === 'entry_patch' && event.undoOf ? ' · rückgängig' : ''}
-                        {event.type === 'ritual_step' && event.status === 'reopened' ? ' · wieder geöffnet' : ''}
-                      </span>
-                    </div>
-                    {(undoEntry || undoRitual) && (
-                      <button
-                        type="button"
-                        className="text-button"
-                        onClick={() => {
-                          if (undoEntry && canUndoEntryPatch(event, dailyEvents)) onUndoDailyEvent(event)
-                          else if (undoRitual && canUndoRitualStep(event, dailyEvents)) onUndoRitualEvent(event)
-                        }}
-                      >
-                        <RotateCcw size={14} />
-                        Undo
-                      </button>
-                    )}
-                  </li>
-                )
-              })}
-            </ul>
-            {dayEvents.length > 3 && (
-              <button
-                type="button"
-                className="card-link"
-                onClick={() => setTimelineOpen(open => !open)}
-              >
-                {timelineOpen ? 'Weniger zeigen' : `Alle ${dayEvents.length} Einträge`}
-                <ChevronRight size={16} />
-              </button>
-            )}
-          </section>
-        )}
-      </div>
-      )}
-      {habitDetail && (
-        <HabitDetailSheet
-          habitKey={habitDetail.key}
-          label={habitDetail.label}
-          entries={entries}
-          today={today}
-          onClose={() => setHabitDetail(null)}
-        />
+          )}
+        </div>
       )}
     </div>
   )
@@ -4652,13 +4269,9 @@ function CheckinView({
         </section>
 
         <section className="card checkin-card checkin-card--wide">
-          {(() => {
-            const isMorning = date === today && new Date().getHours() < 12
-            return (
-              <>
                 <SectionTitle
                   eyebrow="Werte"
-                  title={isMorning ? 'Morgen-Protokoll' : 'Körper & Fokus'}
+                  title="Körper & Fokus"
                 />
                 <div className="form-grid">
                   <NumberField
@@ -4766,9 +4379,6 @@ function CheckinView({
                     )
                   })}
                 </div>
-              </>
-            )
-          })()}
         </section>
 
         <section className="card checkin-card checkin-card--wide">
@@ -7200,6 +6810,7 @@ function RitualDurationFields({
     case 'medsShake':
     case 'gratitude':
     case 'energy':
+    case 'headRecovery':
     case 'todos':
     case 'selfcare':
     case 'letsGo':
@@ -7497,6 +7108,86 @@ function SettingsModal({
               </button>
             )}
           </div>
+          {settings.morningGateEnabled && (
+            <div className="settings-grid" style={{ marginTop: 14 }}>
+              <label className="text-field">
+                <span>Shake Protein g</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={80}
+                  value={ritualConfig.shakeMeal.proteinGrams}
+                  onChange={event => onChange({
+                    ...settings,
+                    morningRitual: {
+                      ...ritualConfig,
+                      shakeMeal: {
+                        ...ritualConfig.shakeMeal,
+                        proteinGrams: clampNumber(Number(event.target.value) || 0, 0, 80),
+                      },
+                    },
+                  })}
+                />
+              </label>
+              <label className="text-field">
+                <span>Shake kcal</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={800}
+                  value={ritualConfig.shakeMeal.calories}
+                  onChange={event => onChange({
+                    ...settings,
+                    morningRitual: {
+                      ...ritualConfig,
+                      shakeMeal: {
+                        ...ritualConfig.shakeMeal,
+                        calories: clampNumber(Number(event.target.value) || 0, 0, 800),
+                      },
+                    },
+                  })}
+                />
+              </label>
+              <label className="text-field">
+                <span>Shake Fett g</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={40}
+                  value={ritualConfig.shakeMeal.fatGrams}
+                  onChange={event => onChange({
+                    ...settings,
+                    morningRitual: {
+                      ...ritualConfig,
+                      shakeMeal: {
+                        ...ritualConfig.shakeMeal,
+                        fatGrams: clampNumber(Number(event.target.value) || 0, 0, 40),
+                      },
+                    },
+                  })}
+                />
+              </label>
+              <label className="text-field">
+                <span>Shake KH g</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={80}
+                  value={ritualConfig.shakeMeal.carbsGrams}
+                  onChange={event => onChange({
+                    ...settings,
+                    morningRitual: {
+                      ...ritualConfig,
+                      shakeMeal: {
+                        ...ritualConfig.shakeMeal,
+                        carbsGrams: clampNumber(Number(event.target.value) || 0, 0, 80),
+                      },
+                    },
+                  })}
+                />
+              </label>
+            </div>
+          )}
           {settings.morningGateEnabled && (
             <div className="ritual-card-overview">
               <p className="settings-help">

@@ -4,6 +4,14 @@ export const BODY_MEASUREMENTS_KEY = 'life-os-v1-body-measurements'
 
 export type BodyMeasurementSource = 'apple_health' | 'manual' | 'hook'
 
+/** Normalized daily weight — one measurement, many views. */
+export type WeightMeasurement = {
+  value: number
+  unit: 'kg'
+  measuredAt: string
+  source: BodyMeasurementSource | 'fitdays'
+}
+
 export type BodyMeasurement = {
   id: string
   measuredAt: string
@@ -548,6 +556,42 @@ export type DailyWeightPoint = {
   measuredAt: string
   bodyFatPercent: number | null
   sourceApp: string | null
+}
+
+/**
+ * Today's valid weight only. External scale/Fit samples win over a same-day
+ * manual entry. Yesterday's value is never invented as today's measurement.
+ */
+export function selectTodayWeight(input: {
+  date: string
+  entry?: Pick<DashboardEntry, 'weightKg' | 'weightMeasuredAt'>
+  measurements?: BodyMeasurement[]
+}): WeightMeasurement | null {
+  const measurements = input.measurements ?? []
+  const todaySamples = measurements
+    .filter(item => item.weightKg && item.weightKg > 0 && berlinDateFromIso(item.measuredAt) === input.date)
+    .sort((a, b) => a.measuredAt.localeCompare(b.measuredAt))
+  const latest = todaySamples[todaySamples.length - 1]
+  if (latest?.weightKg) {
+    const app = (latest.sourceApp ?? '').toLowerCase()
+    return {
+      value: latest.weightKg,
+      unit: 'kg',
+      measuredAt: latest.measuredAt,
+      source: app.includes('fitdays') ? 'fitdays' : latest.source,
+    }
+  }
+  if (input.entry && input.entry.weightKg > 0) {
+    const measuredAt = input.entry.weightMeasuredAt || `${input.date}T12:00:00`
+    if (berlinDateFromIso(measuredAt) !== input.date) return null
+    return {
+      value: input.entry.weightKg,
+      unit: 'kg',
+      measuredAt,
+      source: 'manual',
+    }
+  }
+  return null
 }
 
 export function buildDailyWeightPoints(

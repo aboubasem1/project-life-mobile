@@ -2,18 +2,17 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Check,
   Coffee,
-  Crown,
-  Droplets,
-  Flame,
   Heart,
   Pause,
-  Pill,
   Play,
   Settings,
-  Snowflake,
-  Sparkles,
-  Sun,
+  X,
 } from 'lucide-react'
+import {
+  HEAD_MOODS,
+  HEAD_SLEEP_PRESETS,
+  HEAD_SLEEP_QUALITY,
+} from '../lib/dailyFlow'
 import {
   formatRitualClock,
   morningRitualMeta,
@@ -206,7 +205,7 @@ function CheckRow({
       aria-pressed={done}
     >
       <span className="morning-gate__check" aria-hidden="true">
-        {done ? <Check size={16} strokeWidth={2.6} /> : <span />}
+        {done ? <Check size={13} strokeWidth={2.8} /> : <span />}
       </span>
       <span>
         <strong>{label}</strong>
@@ -220,10 +219,17 @@ export function MorningGate({
   step,
   stepIndex,
   stepCount,
+  steps,
+  doneSteps,
   name,
   medications,
   proteinShake,
   gratitudeText,
+  mood,
+  sleepQuality,
+  sleepDuration,
+  dreamed,
+  onHeadRecovery,
   config,
   anchors,
   anchorsDone,
@@ -242,14 +248,27 @@ export function MorningGate({
   onCompleteStep,
   onSkipToday,
   onOpenSettings,
+  onClosePreview,
 }: {
   step: MorningRitualStepId
   stepIndex: number
   stepCount: number
+  steps: Array<{ id: MorningRitualStepId; label: string }>
+  doneSteps: MorningRitualStepId[]
   name: string
   medications: MorningGateMed[]
   proteinShake: boolean
   gratitudeText: string
+  mood: string
+  sleepQuality: string
+  sleepDuration: string
+  dreamed?: boolean
+  onHeadRecovery: (patch: {
+    mood?: string
+    sleepQuality?: string
+    sleepDuration?: string
+    dreamed?: boolean
+  }) => void
   config: MorningRitualConfig
   anchors: string[]
   anchorsDone: boolean[]
@@ -268,6 +287,7 @@ export function MorningGate({
   onCompleteStep: (step: MorningRitualStepId) => void
   onSkipToday: () => void
   onOpenSettings: () => void
+  onClosePreview?: () => void
 }) {
   const meta = morningRitualMeta(step, config)
   const rule = ritualRuleFor(step, config)
@@ -279,6 +299,9 @@ export function MorningGate({
   const selfcareItems = config.selfcareItems
   const selfcareReady = selfcareItems.length === 0
     || selfcareItems.every(item => selfcareChecked.includes(item.id))
+  const track = steps.length > 0
+    ? steps
+    : [{ id: step, label: meta.label }]
 
   useEffect(() => {
     setReadDone(false)
@@ -304,29 +327,11 @@ export function MorningGate({
     onCompleteStep('medsShake')
   }
 
-  return (
-    <div className="morning-gate" role="dialog" aria-modal="true" aria-labelledby="morning-gate-title">
-      <div className="morning-gate__orbs" aria-hidden="true">
-        <span className="morning-gate__orb morning-gate__orb--one" />
-        <span className="morning-gate__orb morning-gate__orb--two" />
-      </div>
-
-      <header className="morning-gate__top">
-        <div>
-          <span className="eyebrow">Morgen-Ritual</span>
-          <p>Schritt {stepIndex + 1} von {stepCount} · {meta.label}</p>
-        </div>
-        <button type="button" className="icon-button" onClick={onOpenSettings} aria-label="Einstellungen öffnen">
-          <Settings size={18} />
-        </button>
-      </header>
-
-      <section className="morning-gate__card" key={step}>
-        {step === 'medsShake' && (
+  const stage = (() => {
+    switch (step) {
+      case 'medsShake':
+        return (
           <>
-            <div className="morning-gate__icon" aria-hidden="true"><Pill size={26} /></div>
-            <span className="eyebrow">{meta.hint}</span>
-            <h2 id="morning-gate-title">Medikamente + Shake</h2>
             <p>
               {name.trim()
                 ? `${name.trim()}, ${rule.charAt(0).toLowerCase()}${rule.slice(1)}`
@@ -359,13 +364,10 @@ export function MorningGate({
               {medsReady ? 'Weiter' : 'Alles bestätigt · weiter'}
             </button>
           </>
-        )}
-
-        {step === 'gratitude' && (
+        )
+      case 'gratitude':
+        return (
           <>
-            <div className="morning-gate__icon" aria-hidden="true"><Sparkles size={26} /></div>
-            <span className="eyebrow">{readDone ? 'Laut gelesen' : 'Laut vorlesen'}</span>
-            <h2 id="morning-gate-title">Dankbarkeit</h2>
             <p>{rule}</p>
             <blockquote className="morning-gate__script">{gratitudeText}</blockquote>
             <button
@@ -384,13 +386,10 @@ export function MorningGate({
               {readDone ? 'Weiter' : 'Laut gelesen'}
             </button>
           </>
-        )}
-
-        {step === 'coldShower' && (
+        )
+      case 'coldShower':
+        return (
           <>
-            <div className="morning-gate__icon" aria-hidden="true"><Snowflake size={26} /></div>
-            <span className="eyebrow">{meta.hint}</span>
-            <h2 id="morning-gate-title">Cold Shower</h2>
             <p>{coldMin} {coldMin === 1 ? 'Minute' : 'Minuten'} kalt. {rule}</p>
             <RitualTimer
               seconds={config.coldSeconds}
@@ -400,13 +399,10 @@ export function MorningGate({
               }}
             />
           </>
-        )}
-
-        {step === 'winnerPose' && (
+        )
+      case 'winnerPose':
+        return (
           <>
-            <div className="morning-gate__icon" aria-hidden="true"><Crown size={26} /></div>
-            <span className="eyebrow">{meta.hint}</span>
-            <h2 id="morning-gate-title">Winner Mode</h2>
             <p>{winnerMin} {winnerMin === 1 ? 'Minute' : 'Minuten'} Pose. {rule}</p>
             <RitualTimer
               seconds={config.winnerSeconds}
@@ -416,13 +412,10 @@ export function MorningGate({
               }}
             />
           </>
-        )}
-
-        {step === 'prayer' && (
+        )
+      case 'prayer':
+        return (
           <>
-            <div className="morning-gate__icon" aria-hidden="true"><Heart size={26} /></div>
-            <span className="eyebrow">{meta.hint}</span>
-            <h2 id="morning-gate-title">Gebet</h2>
             <p>{prayerMin} {prayerMin === 1 ? 'Minute' : 'Minuten'}. {rule}</p>
             <RitualTimer
               seconds={config.prayerSeconds}
@@ -432,13 +425,87 @@ export function MorningGate({
               }}
             />
           </>
-        )}
-
-        {step === 'energy' && (
+        )
+      case 'headRecovery':
+        return (
           <>
-            <div className="morning-gate__icon" aria-hidden="true"><Flame size={26} /></div>
-            <span className="eyebrow">Kurz einchecken</span>
-            <h2 id="morning-gate-title">Wie ist deine Energie heute?</h2>
+            <p>{rule}</p>
+            <div className="morning-gate__choice">
+              <span className="morning-gate__choice-label">Kopf</span>
+              <div className="morning-gate__chips">
+                {HEAD_MOODS.map(option => (
+                  <button
+                    type="button"
+                    key={option}
+                    className={mood === option ? 'morning-gate__chip is-on' : 'morning-gate__chip'}
+                    onClick={() => onHeadRecovery({ mood: option })}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="morning-gate__choice">
+              <span className="morning-gate__choice-label">Erholung</span>
+              <div className="morning-gate__chips">
+                {HEAD_SLEEP_QUALITY.map(option => (
+                  <button
+                    type="button"
+                    key={option}
+                    className={sleepQuality === option ? 'morning-gate__chip is-on' : 'morning-gate__chip'}
+                    onClick={() => onHeadRecovery({ sleepQuality: option })}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="morning-gate__choice">
+              <span className="morning-gate__choice-label">Schlaf</span>
+              <div className="morning-gate__chips">
+                {HEAD_SLEEP_PRESETS.map(option => (
+                  <button
+                    type="button"
+                    key={option}
+                    className={sleepDuration === option ? 'morning-gate__chip is-on' : 'morning-gate__chip'}
+                    onClick={() => onHeadRecovery({ sleepDuration: option })}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="morning-gate__choice">
+              <span className="morning-gate__choice-label">Geträumt?</span>
+              <div className="morning-gate__chips">
+                <button
+                  type="button"
+                  className={dreamed === true ? 'morning-gate__chip is-on' : 'morning-gate__chip'}
+                  onClick={() => onHeadRecovery({ dreamed: true })}
+                >
+                  Ja
+                </button>
+                <button
+                  type="button"
+                  className={dreamed === false ? 'morning-gate__chip is-on' : 'morning-gate__chip'}
+                  onClick={() => onHeadRecovery({ dreamed: false })}
+                >
+                  Nein
+                </button>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="primary-button morning-gate__cta"
+              onClick={() => onCompleteStep('headRecovery')}
+            >
+              Weiter
+            </button>
+          </>
+        )
+      case 'energy':
+        return (
+          <>
             <p>{rule}</p>
             <div className="energy-grid">
               {([
@@ -459,13 +526,10 @@ export function MorningGate({
               ))}
             </div>
           </>
-        )}
-
-        {step === 'todos' && (
+        )
+      case 'todos':
+        return (
           <>
-            <div className="morning-gate__icon" aria-hidden="true"><Check size={26} /></div>
-            <span className="eyebrow">{meta.hint}</span>
-            <h2 id="morning-gate-title">Heute zählt</h2>
             <p>{rule}</p>
             {anchors.length === 0 ? (
               <p className="morning-gate__empty">Noch keine Todos — du kannst sie gleich auf Heute anlegen.</p>
@@ -474,7 +538,7 @@ export function MorningGate({
                 {anchors.map((title, index) => (
                   <li key={`${title}-${index}`}>
                     <div className={anchorsDone[index] ? 'morning-gate__med is-taken' : 'morning-gate__med'}>
-                      <span className="morning-gate__check">{anchorsDone[index] ? <Check size={16} /> : <span />}</span>
+                      <span className="morning-gate__check">{anchorsDone[index] ? <Check size={13} strokeWidth={2.8} /> : <span />}</span>
                       <span><strong>{title}</strong></span>
                     </div>
                   </li>
@@ -488,13 +552,10 @@ export function MorningGate({
               Gesehen · Workout
             </button>
           </>
-        )}
-
-        {step === 'workout' && (
+        )
+      case 'workout':
+        return (
           <>
-            <div className="morning-gate__icon" aria-hidden="true"><Flame size={26} /></div>
-            <span className="eyebrow">{workoutPhase === 'pushups' ? 'Rep-Zähler' : 'Finisher'}</span>
-            <h2 id="morning-gate-title">{workoutPhase === 'pushups' ? '50 Pushups' : 'KO'}</h2>
             <p>{rule}</p>
             <button
               type="button"
@@ -505,7 +566,7 @@ export function MorningGate({
               }}
             >
               <strong>{workoutPhase === 'pushups' ? pushups : ko}</strong>
-              <span>von {workoutPhase === 'pushups' ? config.pushupTarget : config.koTarget}</span>
+              <span>{workoutPhase === 'pushups' ? 'Pushups' : 'KO'} von {workoutPhase === 'pushups' ? config.pushupTarget : config.koTarget}</span>
             </button>
             <div className="morning-gate__row">
               <button
@@ -537,16 +598,11 @@ export function MorningGate({
               </button>
             </div>
           </>
-        )}
-
-        {step === 'postShower' && (
+        )
+      case 'postShower':
+        return (
           <>
-            <div className="morning-gate__icon" aria-hidden="true">
-              {showerPhase === 'hot' ? <Droplets size={26} /> : <Snowflake size={26} />}
-            </div>
-            <span className="eyebrow">{showerPhase === 'hot' ? 'Heiß' : 'Kurz kalt'}</span>
-            <h2 id="morning-gate-title">{showerPhase === 'hot' ? 'Heiß duschen' : 'Kurze Kälte'}</h2>
-            <p>{rule}</p>
+            <p>{showerPhase === 'hot' ? 'Heiß duschen.' : 'Kurz kalt.'} {rule}</p>
             <RitualTimer
               key={showerPhase}
               seconds={showerPhase === 'hot' ? config.hotShowerSeconds : config.coldRinseSeconds}
@@ -560,13 +616,10 @@ export function MorningGate({
               }}
             />
           </>
-        )}
-
-        {step === 'selfcare' && (
+        )
+      case 'selfcare':
+        return (
           <>
-            <div className="morning-gate__icon" aria-hidden="true"><Sun size={26} /></div>
-            <span className="eyebrow">{meta.hint}</span>
-            <h2 id="morning-gate-title">Selfcare</h2>
             <p>{rule}</p>
             <ul className="morning-gate__meds">
               {selfcareItems.map((item: MorningSelfcareItem) => (
@@ -590,13 +643,10 @@ export function MorningGate({
               {selfcareReady ? 'Weiter' : 'Alles bestätigt'}
             </button>
           </>
-        )}
-
-        {step === 'letsGo' && (
+        )
+      case 'letsGo':
+        return (
           <>
-            <div className="morning-gate__icon" aria-hidden="true"><Flame size={26} /></div>
-            <span className="eyebrow">Ready zur Arbeit</span>
-            <h2 id="morning-gate-title">LETS GO</h2>
             <p>{rule}</p>
             <button
               type="button"
@@ -606,8 +656,58 @@ export function MorningGate({
               LETS GO
             </button>
           </>
-        )}
-      </section>
+        )
+      default: {
+        const _exhaustive: never = step
+        return _exhaustive
+      }
+    }
+  })()
+
+  return (
+    <div className="morning-gate" role="dialog" aria-modal="true" aria-labelledby="morning-gate-title">
+      <header className="morning-gate__top">
+        <span className="morning-gate__kicker">Morning Gate {stepIndex + 1}/{stepCount}</span>
+        <div className="morning-gate__top-actions">
+          {onClosePreview && (
+            <button type="button" className="icon-button" onClick={onClosePreview} aria-label="Zurück zu Home">
+              <X size={18} />
+            </button>
+          )}
+          <button type="button" className="icon-button" onClick={onOpenSettings} aria-label="Einstellungen öffnen">
+            <Settings size={18} />
+          </button>
+        </div>
+      </header>
+
+      <h2 id="morning-gate-title" className="morning-gate__title">Winning Motherfucker Mode.</h2>
+
+      <ol className="morning-gate__track">
+        {track.map((item, index) => {
+          const done = doneSteps.includes(item.id) || index < stepIndex
+          const current = item.id === step
+          const pillClass = [
+            'morning-gate__pill',
+            done ? 'is-done' : '',
+            current ? 'is-current' : '',
+          ].filter(Boolean).join(' ')
+          return (
+            <li key={item.id} className={current ? 'is-current' : done ? 'is-done' : undefined}>
+              <div className={pillClass}>
+                <span className="morning-gate__check" aria-hidden="true">
+                  {done ? <Check size={13} strokeWidth={2.8} /> : <span />}
+                </span>
+                <strong>{item.label}</strong>
+              </div>
+              {current ? (
+                <section className="morning-gate__stage" key={step} aria-label={item.label}>
+                  {stage}
+                </section>
+              ) : null}
+            </li>
+          )
+        })}
+      </ol>
 
       <button type="button" className="text-button morning-gate__skip" onClick={onSkipToday}>
         Ritual heute überspringen

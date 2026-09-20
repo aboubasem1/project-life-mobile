@@ -156,8 +156,8 @@ export function patchHabitLog(
 }
 
 function linkedFields(key: HabitKey, log: HabitLog, entry: DashboardEntry): Partial<DashboardEntry> {
-  if (key === 'proteinShake' && typeof log.value === 'number') {
-    return { proteinGrams: Math.max(entry.proteinGrams, log.value) }
+  if (key === 'proteinShake') {
+    return {}
   }
   if (key === 'breathingDone' && typeof log.elapsed === 'number') {
     return { meditationMinutes: Math.max(entry.meditationMinutes, Math.round(log.elapsed / 60)) }
