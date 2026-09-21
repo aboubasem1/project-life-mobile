@@ -22,7 +22,6 @@
     "../api/health.ts",
     "../api/health/ingest.ts",
     "../api/decision.ts",
-    "../api/transcribe.ts",
     "../api/hooks.ts",
     "../server/transcription-core.ts",
     "../api/sync/**/*.ts",
