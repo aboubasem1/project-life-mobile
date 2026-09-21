@@ -458,6 +458,7 @@ button:disabled {
 .view-stack {
   display: grid;
   gap: 24px;
+  min-width: 0;
   justify-items: stretch;
 }
 
@@ -465,13 +466,18 @@ button:disabled {
    Do NOT use margin:auto / max-width shrink on these — auto margins
    disable grid stretch and collapse the item to content width
    (~300px when .energy-grid is a single column). */
+.view-stack > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .view-stack > .card,
 .view-stack > .hero-card,
 .view-stack > .dashboard-grid,
 .view-stack > .status-block,
 .view-stack > .energy-card {
   width: 100%;
-  max-width: none;
+  max-width: 100%;
   margin-inline: 0;
   justify-self: stretch;
   box-sizing: border-box;
@@ -1302,12 +1308,16 @@ button:disabled {
 
 .year-heatmap {
   display: grid;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   grid-auto-flow: column;
   grid-template-rows: repeat(7, 10px);
   grid-auto-columns: 10px;
   gap: 3px;
   overflow-x: auto;
   padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
 }
 
 .year-heatmap__cell {
@@ -2392,6 +2402,135 @@ button.status-chip.status-chip--good {
   flex-shrink: 0;
 }
 
+.labor-shell {
+  display: grid;
+  grid-template-columns: 214px minmax(0, 1fr);
+  gap: 0 22px;
+  align-items: start;
+  width: 100%;
+}
+
+.labor-nav {
+  position: sticky;
+  top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 14px 4px 0;
+  border-right: 1px solid var(--border);
+}
+
+.labor-nav-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 13px;
+  background: transparent;
+  color: var(--text-soft);
+  text-align: left;
+  cursor: pointer;
+}
+
+.labor-nav-item strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 560;
+}
+
+.labor-nav-item small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.labor-nav-item.is-active {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.labor-nav-item:hover:not(.is-active) {
+  background: color-mix(in srgb, var(--surface-soft) 72%, transparent);
+}
+
+.labor-body {
+  min-width: 0;
+  display: grid;
+  gap: 18px;
+}
+
+.labor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.labor-toolbar .labor-search {
+  flex: 1;
+  margin: 0;
+}
+
+.labor-toolbar__actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+@media (max-width: 860px) {
+  .labor-shell {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .labor-nav {
+    position: static;
+    flex-direction: row;
+    gap: 6px;
+    padding: 0 0 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .labor-nav-item {
+    flex: 0 0 auto;
+    width: auto;
+    min-height: 38px;
+    grid-template-columns: 16px auto;
+    white-space: nowrap;
+  }
+
+  .labor-nav-item small {
+    display: none;
+  }
+
+  .labor-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .labor-toolbar .labor-search {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .labor-toolbar__actions {
+    width: 100%;
+  }
+
+  .labor-toolbar__actions .secondary-button {
+    flex: 1;
+    justify-content: center;
+    min-width: 0;
+  }
+}
+
 .dashboard-plus-tabbar {
   display: grid;
   grid-template-columns: repeat(8, minmax(0, 1fr));
@@ -2570,7 +2709,7 @@ button.status-chip.status-chip--good {
 
 .dashboard-plus-inline-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -3853,12 +3992,17 @@ button.status-chip.status-chip--good {
   .brand--mobile .brand__mark { width: 32px; height: 32px; border-radius: 11px; }
   /* Clear fixed header + Dynamic Island (iPhone 17 Pro: sat≈62) so content never sits under chrome. */
   .app-main {
+    min-width: 0;
+    overflow-x: clip;
     padding:
       calc(66px + env(safe-area-inset-top, 0px) + 12px)
       16px
       calc(128px + env(safe-area-inset-bottom, 0px));
   }
-  .view-stack { gap: 16px; }
+  .view-stack { gap: 16px; min-width: 0; }
+  .page-intro h2 { font-size: clamp(26px, 8vw, 32px); }
+  .kpi-card { min-height: 108px; padding: 16px; }
+  .kpi-card strong { font-size: 28px; }
   .mobile-nav {
     position: fixed;
     inset: auto 0 0 0;
@@ -3927,15 +4071,47 @@ button.status-chip.status-chip--good {
   .capture-card,
   .checkin-card--wide { grid-column: 1; }
   .plan-layout,
-  .progress-layout { grid-template-columns: 1fr; }
+  .progress-layout { grid-template-columns: 1fr; min-width: 0; }
   .plan-side { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .page-intro { align-items: flex-start; flex-direction: column; }
-  .page-intro h2 { font-size: 37px; }
-  .kpi-card { min-height: 125px; }
-  .bar-chart { min-height: 275px; gap: 6px; }
-  .bar-column { grid-template-rows: 18px 190px 18px 14px; }
-  .editable-task { grid-template-columns: 36px minmax(0, 1fr); }
-  .editable-task__actions { grid-column: 2; justify-content: flex-end; }
+  .page-intro { align-items: flex-start; flex-direction: column; min-width: 0; }
+  .bar-chart { min-height: 240px; gap: 6px; min-width: 0; }
+  .bar-column { grid-template-rows: 18px 160px 18px 14px; min-width: 0; }
+  .month-calendar,
+  .month-calendar__weekdays {
+    width: 100%;
+    min-width: 0;
+    gap: 3px;
+  }
+  .month-calendar__cell {
+    min-width: 0;
+    border-radius: 10px;
+  }
+  .month-calendar__cell strong { font-size: 12px; }
+  .month-calendar__cell.has-entry .month-calendar__dot { bottom: 4px; }
+  .year-heatmap {
+    grid-template-rows: repeat(7, 8px);
+    grid-auto-columns: 8px;
+    gap: 2px;
+  }
+  .year-heatmap__cell {
+    width: 8px;
+    height: 8px;
+  }
+  .sleep-times {
+    grid-template-columns: 1fr;
+  }
+  .editable-task {
+    grid-template-columns: 36px minmax(0, 1fr);
+    align-items: start;
+  }
+  .editable-task__actions {
+    grid-column: 2;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+  .dashboard-plus-inline-row {
+    grid-template-columns: 1fr;
+  }
   .toast { right: 12px; bottom: calc(86px + env(safe-area-inset-bottom)); left: 12px; }
   /* Dashboard+ task rows carry a title + two inline inputs, much taller than
      a plain task label, so the app-wide 2-row stack above leaves a large
@@ -3954,7 +4130,21 @@ button.status-chip.status-chip--good {
 }
 
 @media (max-width: 560px) {
-  .app-main { padding-inline: 12px; }
+  .app-main { padding-inline: 12px; overflow-x: clip; }
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  .sleep-times input[type='time'] {
+    height: 48px;
+    padding-inline: 12px;
+  }
+  .soft-duration { gap: 8px; }
+  .soft-duration__field { min-width: 0; padding: 0 12px; }
+  .calendar-card,
+  .heatmap-card,
+  .chart-card { padding: 16px 14px; }
   .hero-card__actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .hero-card__actions .primary-button,
   .hero-card__actions .secondary-button {
@@ -4224,11 +4414,22 @@ button.status-chip.status-chip--good {
   flex-shrink: 0;
 }
 
+.calendar-card,
+.heatmap-card,
+.chart-card {
+  min-width: 0;
+}
+
 .calendar-card__head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  min-width: 0;
+}
+
+.calendar-card__head .section-title {
+  min-width: 0;
 }
 
 .calendar-card__nav {
@@ -4439,8 +4640,20 @@ button.status-chip.status-chip--good {
 
 .sleep-times {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(11.5rem, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+.sleep-times .text-field {
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.sleep-times input[type='time'] {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .sleep-week-summary {
@@ -5210,6 +5423,19 @@ button.status-chip.status-chip--good {
   gap: 8px;
 }
 
+.heute-energy {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--surface-solid);
+}
+
+.heute-energy.is-focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
 .heute-pill {
   display: grid;
   min-height: 76px;
@@ -5405,6 +5631,9 @@ button.status-chip.status-chip--good {
 .heute-checks {
   display: grid;
   gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .heute-check {
@@ -5765,6 +5994,10 @@ button.status-chip.status-chip--good {
     width: 100%;
     max-height: min(92dvh, 760px);
     padding: 18px 16px 20px;
+  }
+
+  .settings-nav-item {
+    padding: 8px 10px;
   }
 
   .settings-section .habit-settings-list {
@@ -6172,6 +6405,127 @@ button.status-chip.status-chip--good {
 
 .settings-modal {
   width: min(100%, 1040px);
+  max-height: min(90vh, 820px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.settings-shell {
+  display: grid;
+  grid-template-columns: 214px minmax(0, 1fr);
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 14px 4px 0;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.settings-nav-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 13px;
+  background: transparent;
+  color: var(--text-soft);
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-nav-item strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 560;
+}
+
+.settings-nav-item small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.settings-nav-item.is-active {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.settings-nav-item:hover:not(.is-active) {
+  background: color-mix(in srgb, var(--surface-soft) 72%, transparent);
+}
+
+.settings-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 2px 6px 22px;
+}
+
+.settings-section[hidden],
+.settings-note[hidden] {
+  display: none;
+}
+
+.settings-body > .settings-section {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.settings-body > .settings-section:not([hidden]) ~ .settings-section:not([hidden]) {
+  margin-top: 8px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-modal .modal-actions {
+  flex-shrink: 0;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 720px) {
+  .settings-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-nav {
+    flex-direction: row;
+    gap: 6px;
+    padding: 0 0 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .settings-nav-item {
+    flex: 0 0 auto;
+    width: auto;
+    min-height: 38px;
+    grid-template-columns: 16px auto;
+    white-space: nowrap;
+  }
+
+  .settings-nav-item small {
+    display: none;
+  }
+
+  .settings-body {
+    padding: 16px 0 0;
+  }
 }
 
 .ritual-card-overview {

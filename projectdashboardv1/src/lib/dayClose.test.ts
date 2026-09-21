@@ -59,4 +59,16 @@ describe('day close', () => {
     })
     expect(reopenDayPatch()).toEqual({ dayClosedAt: null })
   })
+
+  it('skips hidden evening-gate checks', () => {
+    const empty = createDefaultEntry('2026-09-20')
+    const status = assessDayCompleteness({
+      entry: empty,
+      activeHabits: ['breathingDone'],
+      hour: 20,
+      hiddenChecks: ['checkin', 'evening'],
+    })
+    expect(status.gaps.map(gap => gap.id)).not.toContain('checkin')
+    expect(status.gaps.map(gap => gap.id)).not.toContain('evening')
+  })
 })

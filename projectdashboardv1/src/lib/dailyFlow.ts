@@ -213,8 +213,15 @@ export function isEveningHour(hour = new Date().getHours()): boolean {
   return getDayMode(hour) === 'evening'
 }
 
-export function shouldShowDailyClose(hour = new Date().getHours(), closed = false): boolean {
-  return closed || isEveningHour(hour)
+export function shouldShowDailyClose(
+  hour = new Date().getHours(),
+  closed = false,
+  options?: { enabled?: boolean; fromHour?: number },
+): boolean {
+  if (closed) return true
+  if (options?.enabled === false) return false
+  const fromHour = options?.fromHour ?? 17
+  return hour >= fromHour || hour < 5
 }
 
 function habitRelevantNow(key: string, mode: DayMode): boolean {

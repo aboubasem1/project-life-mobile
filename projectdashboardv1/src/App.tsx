@@ -28,6 +28,7 @@ import {
   Coffee,
   CreditCard,
   Crown,
+  Database,
   Droplet,
   Dumbbell,
   Fish,
@@ -55,14 +56,18 @@ import {
   Share2,
   ShoppingBag,
   ShoppingCart,
+  Smartphone,
   Snowflake,
   Sparkles,
   Sun,
   Target,
   Timer,
   Trash2,
+  User,
   Users,
+  Utensils,
   X,
+  type LucideIcon,
 } from 'lucide-react'
 import { useEntries } from './hooks/useEntries'
 import { SwipeableRow } from './components/SwipeableRow'
@@ -215,7 +220,14 @@ import { moodHabitLine } from './lib/moodHabit'
 import { appendJournal, formatNoteLine, mergeQuickNote, parseQuickNote } from './lib/inboundNote'
 import {
   assessDayCompleteness,
+  EVENING_CLOSE_CHECK_IDS,
+  EVENING_CLOSE_CHECK_META,
+  normalizeEveningGateConfig,
   reopenDayPatch,
+  type DayCloseAction,
+  type DayGap,
+  type EveningCloseCheckId,
+  type EveningGateConfig,
 } from './lib/dayClose'
 import {
   LIFE_OS_DAILY_EVENTS_EVENT,
@@ -253,6 +265,12 @@ const ACCENT_OPTIONS: Array<{ id: AccentPreference; label: string; swatch: strin
 
 const ACCENT_IDS = ACCENT_OPTIONS.map(option => option.id)
 type EnergyLevel = NonNullable<DashboardEntry['energyLevel']>
+
+const ENERGY_CHOICES: { value: EnergyLevel; label: string }[] = [
+  { value: 'low', label: 'Niedrig' },
+  { value: 'okay', label: 'Okay' },
+  { value: 'high', label: 'Gut' },
+]
 type RoutineKey =
   | 'breathingDone' | 'coldShower' | 'proteinShake'
   | 'pushupsDone' | 'squatsDone' | 'wallsitDone' | 'plankDone'
@@ -284,6 +302,7 @@ type AppSettings = {
   /** First open of the day: complete these widgets before Heute. */
   morningGateEnabled: boolean
   morningRitual: MorningRitualConfig
+  eveningGate: EveningGateConfig
 }
 
 type DashboardPlusLayout = {
@@ -572,13 +591,6 @@ function deriveFinanceSummary(finances: DashboardPlusState['finances']): Finance
   if (monthlyFixed > 0 && openSum + overdueSum > monthlyFixed * 0.45) {
     hints.push('Offene Beträge sind relativ hoch zum Monatsfix — kurz priorisieren.')
   }
-  if (hints.length === 0) {
-    hints.push(
-      nextDue
-        ? `Nächster Posten: ${nextDue.name} am ${nextDue.due}.`
-        : 'Fixkosten und offene Posten im Blick — ohne den Tagesfokus zu stören.',
-    )
-  }
 
   return {
     monthlyFixed,
@@ -671,15 +683,15 @@ type DashboardPlusState = {
 }
 
 const DASHBOARD_PLUS_TABS = [
-  { id: 'overview', label: 'Übersicht', icon: LayoutGrid },
-  { id: 'todos', label: 'Todos', icon: ListTodo },
-  { id: 'lists', label: 'Listen', icon: BookOpen },
-  { id: 'stock', label: 'Bestände', icon: Package },
-  { id: 'medications', label: 'Medis', icon: Pill },
-  { id: 'goals', label: 'Ziele', icon: Target },
-  { id: 'shopping', label: 'Kaufliste', icon: ShoppingCart },
-  { id: 'stats', label: 'Stats', icon: BarChart3 },
-  { id: 'finance', label: 'Finanzen', icon: CreditCard },
+  { id: 'overview', label: 'Übersicht', hint: 'Heute im Kern', icon: LayoutGrid },
+  { id: 'todos', label: 'Todos', hint: 'Fokus und Boards', icon: ListTodo },
+  { id: 'lists', label: 'Listen', hint: 'Packen und Merken', icon: BookOpen },
+  { id: 'stock', label: 'Bestände', hint: 'Supplements', icon: Package },
+  { id: 'medications', label: 'Medis', hint: 'Einnahme', icon: Pill },
+  { id: 'goals', label: 'Ziele', hint: 'Fortschritt', icon: Target },
+  { id: 'shopping', label: 'Kaufliste', hint: 'Offene Artikel', icon: ShoppingCart },
+  { id: 'stats', label: 'Stats', hint: 'Woche', icon: BarChart3 },
+  { id: 'finance', label: 'Finanzen', hint: 'Fixkosten', icon: CreditCard },
 ] as const
 
 type DashboardPlusSection = (typeof DASHBOARD_PLUS_TABS)[number]['id']
@@ -744,7 +756,7 @@ function createDashboardPlusSeed(): DashboardPlusState {
     overview: {
       dateLabel: new Intl.DateTimeFormat('de-DE', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' }).format(new Date()),
       syncStatus: 'Lokal',
-      syncTime: 'nur dieses Gerät',
+      syncTime: '',
       score: 0,
       habits: 0,
       todos: 0,
@@ -950,6 +962,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   medisRemindersEnabled: false,
   morningGateEnabled: true,
   morningRitual: normalizeMorningRitualConfig(undefined),
+  eveningGate: normalizeEveningGateConfig(undefined),
 }
 
 function normalizeDashboardPlusLayout(raw: unknown): DashboardPlusLayout {
@@ -985,7 +998,7 @@ function storageStatusLabel(syncStatus: string, isOnline: boolean, deviceSync = 
   if (!isOnline || syncStatus === 'offline') return 'Offline · lokal'
   if (syncStatus === 'syncing') return deviceSync ? 'Synchronisiert …' : 'Speichert lokal …'
   if (syncStatus === 'synced') return deviceSync ? 'Geräte synchron' : 'Lokal gespeichert'
-  return deviceSync ? 'Geräte-Sync an' : 'Nur dieses Gerät'
+  return deviceSync ? 'Geräte-Sync an' : 'Lokal gespeichert'
 }
 
 const MOODS = ['Sehr schlecht', 'Schlecht', 'Okay', 'Gut', 'Sehr gut']
@@ -1107,9 +1120,9 @@ function loadSettings(): AppSettings {
       ? stored.theme as ThemePreference
       : DEFAULT_SETTINGS.theme
 
-    const accent: AccentPreference = stored.accent === 'terracotta' || !ACCENT_IDS.includes(stored.accent as AccentPreference)
-      ? 'ice'
-      : stored.accent as AccentPreference
+    const accent: AccentPreference = ACCENT_IDS.includes(stored.accent as AccentPreference)
+      ? stored.accent as AccentPreference
+      : DEFAULT_SETTINGS.accent
 
     return {
       name: typeof stored.name === 'string' ? stored.name.slice(0, 40) : DEFAULT_SETTINGS.name,
@@ -1131,6 +1144,9 @@ function loadSettings(): AppSettings {
       morningGateEnabled: stored.morningGateEnabled !== false,
       morningRitual: normalizeMorningRitualConfig(
         (stored as Partial<AppSettings> & { morningRitual?: Partial<MorningRitualConfig> }).morningRitual,
+      ),
+      eveningGate: normalizeEveningGateConfig(
+        (stored as Partial<AppSettings> & { eveningGate?: Partial<EveningGateConfig> }).eveningGate,
       ),
     }
   } catch {
@@ -1561,7 +1577,7 @@ function App() {
       openBoardCount: laborOpenBoards,
       goals: scoreGoals,
       syncLabel: storageStatusLabel(syncStatus, isOnline, Boolean(deviceSyncCreds)),
-      syncTime: deviceSyncCreds ? 'gekoppelte Geräte' : 'nur dieses Gerät',
+      syncTime: '',
     }),
     [entries, today, settings.activeHabits, settings.habitSchedules, laborOpenBoards, scoreGoals, syncStatus, isOnline, deviceSyncCreds],
   )
@@ -2178,6 +2194,7 @@ function App() {
     if (entityId) navigateHashWithId(nextView, entityId)
     else navigateHash(nextView)
     if (nextView === 'today' || nextView === 'dashboardPlus') setSelectedDate(today)
+    if (nextView === 'checkin' && selectedDate > today) setSelectedDate(today)
   }
 
   const commitLifeOsCapture = (input: {
@@ -2639,7 +2656,6 @@ function App() {
               today={today}
               liveOverview={laborLive}
               liveStats={laborStats}
-              energy={entry.energyLevel}
               layout={settings.dashboardPlusLayout}
               medisRemindersEnabled={settings.medisRemindersEnabled}
               onOpenSettings={() => setSettingsOpen(true)}
@@ -3013,7 +3029,7 @@ function App() {
           })}
         </nav>
 
-        {view !== 'dashboardPlus' && view !== 'today' && view !== 'checkin' && !showMorningGate && (
+        {view !== 'dashboardPlus' && view !== 'today' && view !== 'checkin' && view !== 'plan' && view !== 'progress' && !showMorningGate && (
           <button type="button" className="fab" onClick={() => setQuickAddOpen(true)} aria-label="Schnell hinzufügen">
             <Plus size={22} />
           </button>
@@ -3469,6 +3485,8 @@ function TodayView({
   onUpdate,
   onToggleAnchor,
   onOpenFocus,
+  onOpenPlan,
+  onOpenCheckin,
   showToast,
   ritualLock = null,
   onContinueRitualTodos,
@@ -3516,6 +3534,7 @@ function TodayView({
   const [overviewRange, setOverviewRange] = useState<'today' | 'week' | 'month'>('today')
   const [rangeOpen, setRangeOpen] = useState(false)
   const [protocolOpen, setProtocolOpen] = useState(false)
+  const [energyFocus, setEnergyFocus] = useState(false)
   const rangeRef = useRef<HTMLDivElement>(null)
   const energy = entry.energyLevel
 
@@ -3543,6 +3562,7 @@ function TodayView({
     habitSchedules: settings.habitSchedules,
     focusMinutes: settings.focusMinutes,
     hour: date === today ? new Date().getHours() : 20,
+    hiddenChecks: settings.eveningGate.hiddenChecks,
   })
   const habitGoals = {
     proteinGoal: settings.proteinGoal,
@@ -3550,7 +3570,11 @@ function TodayView({
     softMinutes: energy === 'low' ? 2 : undefined,
   }
   const hour = date === today ? new Date().getHours() : 12
-  const showDailyClose = date !== today || shouldShowDailyClose(hour, completeness.closed)
+  const showDailyClose = shouldShowDailyClose(
+    date === today ? hour : Math.max(hour, settings.eveningGate.fromHour),
+    completeness.closed,
+    settings.eveningGate,
+  )
   const habitsDue = filterHabitsForDate(settings.activeHabits, date, settings.habitSchedules)
 
   const allRoutineItems = habitsDue
@@ -3678,6 +3702,84 @@ function TodayView({
     onOpenEveningGate?.()
   }
 
+  const openEveningGap = (gap: DayGap) => {
+    const action: DayCloseAction = gap.action
+    switch (action) {
+      case 'checkin':
+        onOpenCheckin()
+        return
+      case 'plan':
+        onOpenPlan()
+        return
+      case 'today':
+        setHomePane('now')
+        if (gap.id === 'energy') setEnergyFocus(true)
+        return
+      default: {
+        const _exhaustive: never = action
+        return _exhaustive
+      }
+    }
+  }
+
+  const eveningGateSection = showDailyClose ? (
+    <section className="heute-slot">
+      <span className="eyebrow">Abend-Gate</span>
+      {completeness.gaps.length > 0 && (
+        <ul className="heute-checks">
+          {completeness.gaps.map(gap => (
+            <li key={gap.id} className="heute-check">
+              <button
+                type="button"
+                className="heute-check__box"
+                onClick={() => openEveningGap(gap)}
+                aria-label={gap.label}
+              >
+                <span />
+              </button>
+              <button
+                type="button"
+                className="heute-check__copy"
+                onClick={() => openEveningGap(gap)}
+              >
+                <strong>{gap.label}</strong>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <button type="button" className="heute-close" onClick={closeOrReopenDay}>
+        {completeness.closed
+          ? 'Abschluss öffnen'
+          : entry.eveningGate?.startedAt
+            ? 'Evening Gate fortsetzen'
+            : 'Evening Gate starten'}
+      </button>
+    </section>
+  ) : null
+
+  const energyPicker = (
+    <div className={energyFocus ? 'heute-energy is-focus' : 'heute-energy'} role="group" aria-label="Energie">
+      <span className="eyebrow">Energie</span>
+      <div className="choice-grid">
+        {ENERGY_CHOICES.map(option => (
+          <button
+            type="button"
+            key={option.value}
+            className={energy === option.value ? 'choice-button is-active' : 'choice-button'}
+            aria-pressed={energy === option.value}
+            onClick={() => {
+              onUpdate({ energyLevel: option.value })
+              setEnergyFocus(false)
+            }}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+
   return (
     <div className="view-stack heute-page">
       <header className="heute-head">
@@ -3759,6 +3861,7 @@ function TodayView({
 
       {ritualLock !== 'todos' && homePane === 'now' && (
         <section className="heute-now">
+          {energyPicker}
           <span className="eyebrow">Jetzt</span>
           {nowItems.length === 0 ? (
             <p className="heute-empty">Nichts Offenes. Übersicht zeigt den Rest des Tages.</p>
@@ -3810,6 +3913,7 @@ function TodayView({
               Routine Mode
             </button>
           )}
+          {eveningGateSection}
         </section>
       )}
 
@@ -3989,15 +4093,7 @@ function TodayView({
             </>
           )}
 
-          {showDailyClose && (
-            <button type="button" className="heute-close" onClick={closeOrReopenDay}>
-              {completeness.closed
-                ? 'Abschluss öffnen'
-                : entry.eveningGate?.startedAt
-                  ? 'Evening Gate fortsetzen'
-                  : 'Evening Gate starten'}
-            </button>
-          )}
+          {eveningGateSection}
         </div>
       )}
     </div>
@@ -4221,6 +4317,10 @@ function CheckinView({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setJournal(entry.journalText ?? '')
   }, [entry.date, entry.journalText])
+
+  useEffect(() => {
+    if (date > today) onDateChange(today)
+  }, [date, today, onDateChange])
 
   const saveJournal = () => {
     onUpdate({ journalText: journal, journalDone: Boolean(journal.trim()) })
@@ -5012,7 +5112,6 @@ function DashboardPlusView({
   today,
   liveOverview,
   liveStats,
-  energy,
   layout,
   medisRemindersEnabled,
   onOpenSettings,
@@ -5026,7 +5125,6 @@ function DashboardPlusView({
   today: string
   liveOverview: ReturnType<typeof deriveLaborOverview>
   liveStats: ReturnType<typeof deriveLaborStats>
-  energy?: DashboardEntry['energyLevel']
   layout: DashboardPlusLayout
   medisRemindersEnabled: boolean
   onOpenSettings: () => void
@@ -5063,8 +5161,6 @@ function DashboardPlusView({
   const openFocusTodos = dashboard.focusTodos.filter(task => !task.done).length
   const lowStockCount = dashboard.supplements.filter(item => item.dailyUse > 0 && item.stock <= item.dailyUse * 7).length
   const hints = smartLaborHints({
-    energy,
-    score: liveOverview.score,
     openTodos: openFocusTodos,
     lowStockCount,
   })
@@ -5079,6 +5175,7 @@ function DashboardPlusView({
     goals: dashboard.goals,
     bills: [...dashboard.finances.recurring, ...dashboard.finances.openBills],
   }), [searchQuery, dashboard])
+  const laborSearching = searchQuery.trim().length > 0
 
   useEffect(() => {
     if (!dashboard.boards.some(board => board.id === activeBoardId)) {
@@ -5520,88 +5617,87 @@ function DashboardPlusView({
 
   return (
     <div className="view-stack dashboard-plus-view">
-      <section className="page-intro dashboard-plus-intro">
-        <div className="dashboard-plus-intro__copy">
-          <div className="dashboard-plus-intro__eyebrow">
-            <span className="eyebrow">Labor</span>
-            <span className="sync-pill sync-pill--synced" title={liveOverview.syncTime}>
-              <Cloud size={14} /> {liveOverview.syncStatus}
-            </span>
-          </div>
-          <h2>Verwaltung ohne Fokus-Diebstahl.</h2>
-          <p>Bestände, Boards und Listen — angebunden an deinen Tageskern.</p>
-        </div>
-        <div className="dashboard-plus-intro__actions">
-          <button type="button" className="secondary-button" onClick={onBackToToday}>
-            <ChevronLeft size={16} /> Tageskern
-          </button>
-          <button type="button" className="secondary-button" onClick={onOpenSettings}>
-            <LayoutGrid size={16} /> Reiter
-          </button>
-        </div>
-      </section>
+      <div className="labor-shell">
+        <nav className="labor-nav" role="tablist" aria-label="Labor">
+          {tabsToRender.map(tab => {
+            const Icon = tab.icon
+            const active = currentSection === tab.id
+            return (
+              <button
+                type="button"
+                key={tab.id}
+                id={`labor-cat-${tab.id}`}
+                role="tab"
+                aria-selected={active}
+                className={active ? 'labor-nav-item is-active' : 'labor-nav-item'}
+                onClick={() => setActiveSection(tab.id)}
+              >
+                <Icon size={16} aria-hidden="true" />
+                <span>
+                  <strong>{tab.label}</strong>
+                  <small>{tab.hint}</small>
+                </span>
+              </button>
+            )
+          })}
+        </nav>
 
-      <label className="labor-search">
-        <Search size={16} aria-hidden="true" />
-        <input
-          type="search"
-          value={searchQuery}
-          onChange={event => setSearchQuery(event.target.value)}
-          placeholder="Suche in Todos, Listen, Medis…"
-          aria-label="Labor durchsuchen"
-        />
-      </label>
-
-      {searchQuery.trim() && (
-        <section className="card labor-search-results">
-          <SectionTitle eyebrow="Suche" title={`${searchHits.length} Treffer`} />
-          {searchHits.length === 0 ? (
-            <p className="field-hint">Nichts gefunden.</p>
-          ) : (
-            <div className="labor-search-list">
-              {searchHits.map(hit => (
-                <button
-                  type="button"
-                  key={`${hit.section}-${hit.id}`}
-                  className="labor-search-hit"
-                  onClick={() => {
-                    setActiveSection(hit.section)
-                    if (hit.boardId) setActiveBoardId(hit.boardId)
-                    if (hit.listId) setActiveListId(hit.listId)
-                    setSearchQuery('')
-                  }}
-                >
-                  <strong>{hit.title}</strong>
-                  <span>{hit.source}</span>
-                </button>
-              ))}
+        <div className="labor-body" role="tabpanel" aria-labelledby={`labor-cat-${currentSection}`}>
+          <div className="labor-toolbar">
+            <label className="labor-search">
+              <Search size={16} aria-hidden="true" />
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={event => setSearchQuery(event.target.value)}
+                placeholder="Suche in Todos, Listen, Medis…"
+                aria-label="Labor durchsuchen"
+              />
+            </label>
+            <div className="labor-toolbar__actions">
+              <button type="button" className="secondary-button" onClick={onBackToToday}>
+                <ChevronLeft size={16} /> Tageskern
+              </button>
+              <button type="button" className="secondary-button" onClick={onOpenSettings}>
+                <LayoutGrid size={16} /> Reiter
+              </button>
             </div>
+          </div>
+
+          {searchQuery.trim() && (
+            <section className="card labor-search-results">
+              <SectionTitle eyebrow="Suche" title={`${searchHits.length} Treffer`} />
+              {searchHits.length === 0 ? (
+                <p className="field-hint">Nichts gefunden.</p>
+              ) : (
+                <div className="labor-search-list">
+                  {searchHits.map(hit => (
+                    <button
+                      type="button"
+                      key={`${hit.section}-${hit.id}`}
+                      className="labor-search-hit"
+                      onClick={() => {
+                        setActiveSection(hit.section)
+                        if (hit.boardId) setActiveBoardId(hit.boardId)
+                        if (hit.listId) setActiveListId(hit.listId)
+                        setSearchQuery('')
+                      }}
+                    >
+                      <strong>{hit.title}</strong>
+                      <span>{hit.source}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
           )}
-        </section>
-      )}
 
-      <nav className="dashboard-plus-tabbar" role="tablist" aria-label="Dashboard+ Bereiche">
-        {tabsToRender.map(tab => (
-          <button
-            type="button"
-            key={tab.id}
-            role="tab"
-            aria-selected={currentSection === tab.id}
-            className={currentSection === tab.id ? 'dashboard-plus-tab active' : 'dashboard-plus-tab'}
-            onClick={() => setActiveSection(tab.id)}
-          >
-            <tab.icon size={18} />
-            <span>{tab.label}</span>
-          </button>
-        ))}
-      </nav>
-
-      {currentSection === 'overview' && (
+      {!laborSearching && currentSection === 'overview' && (
         <section className="card dashboard-plus-hero">
           <div className="dashboard-plus-hero__meta">
             <div>
-              <span className="eyebrow">{liveOverview.dateLabel}</span>
-              <h2>Live aus dem Tageskern</h2>
+              <span className="eyebrow">Heute</span>
+              <h2>{liveOverview.dateLabel}</h2>
             </div>
             <ProgressRing value={liveOverview.score} size={86} />
           </div>
@@ -5609,42 +5705,38 @@ function DashboardPlusView({
             <div className="kpi-card dashboard-plus-metric">
               <span>Habits</span>
               <strong>{liveOverview.habits}/{liveOverview.habitsTotal || 0}</strong>
-              <small>heute erledigt</small>
             </div>
             <div className="kpi-card dashboard-plus-metric">
               <span>Anker</span>
               <strong>{liveOverview.todos}/{liveOverview.todosTotal || 0}</strong>
-              <small>heute</small>
             </div>
             <div className="kpi-card dashboard-plus-metric">
               <span>Boards</span>
               <strong>{liveOverview.projects}</strong>
-              <small>mit offenen Tasks</small>
             </div>
           </div>
-          <div className="labor-hints">
-            {hints.map(hint => (
-              <p key={hint}>{hint}</p>
-            ))}
-          </div>
+          {hints.length > 0 && (
+            <div className="labor-hints">
+              {hints.map(hint => (
+                <p key={hint}>{hint}</p>
+              ))}
+            </div>
+          )}
         </section>
       )}
 
-      {currentSection === 'todos' && (
+      {!laborSearching && currentSection === 'todos' && (
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle
-            eyebrow="Labor · nicht Tageskern"
-            title="Fokus-Todos"
+            eyebrow="Todos"
+            title="Fokus"
             action={<button type="button" className="small-button" onClick={addFocusTask}><Plus size={14} /> Aufgabe</button>}
           />
-          <p className="field-hint" style={{ marginTop: -8, marginBottom: 14 }}>
-            Max. 5 Tagesanker bleiben unter Heute / Plan. Rechts wischen verschiebt Fokus ↔ Board.
-          </p>
           <LifeAreaFilter value={todoAreaFilter} onChange={setTodoAreaFilter} />
           <label className="life-area-group-toggle">
             <input type="checkbox" checked={groupTodosByArea} onChange={event => setGroupTodosByArea(event.target.checked)} />
-            <span>Group by Life Area</span>
+            <span>Nach Bereich gruppieren</span>
           </label>
           <div className="editable-task-list">
             {(() => {
@@ -5817,12 +5909,12 @@ function DashboardPlusView({
       </div>
       )}
 
-      {currentSection === 'lists' && (
+      {!laborSearching && currentSection === 'lists' && (
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle
             eyebrow="Listen"
-            title="Packen, Wünschen, Merken"
+            title={activeList?.title || 'Listen'}
             action={(
               <button type="button" className="small-button" onClick={() => addList('custom')}>
                 <Plus size={14} /> Liste
@@ -5919,7 +6011,7 @@ function DashboardPlusView({
       </div>
       )}
 
-      {currentSection === 'stock' && (
+      {!laborSearching && currentSection === 'stock' && (
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Supplements" title="Bestände" action={<button type="button" className="small-button" onClick={addSupplement}><Plus size={14} /> Produkt</button>} />
@@ -6016,7 +6108,7 @@ function DashboardPlusView({
       </div>
       )}
 
-      {currentSection === 'medications' && (
+      {!laborSearching && currentSection === 'medications' && (
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Gesundheit" title="Medikamente" action={<button type="button" className="small-button" onClick={addMedication}><Plus size={14} /> Medikament</button>} />
@@ -6070,7 +6162,7 @@ function DashboardPlusView({
       </div>
       )}
 
-      {currentSection === 'goals' && (
+      {!laborSearching && currentSection === 'goals' && (
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Planung" title="Ziele" action={<button type="button" className="small-button" onClick={addGoal}><Plus size={14} /> Ziel</button>} />
@@ -6126,7 +6218,7 @@ function DashboardPlusView({
       </div>
       )}
 
-      {currentSection === 'shopping' && (
+      {!laborSearching && currentSection === 'shopping' && (
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle
@@ -6169,10 +6261,10 @@ function DashboardPlusView({
       </div>
       )}
 
-      {currentSection === 'stats' && (
+      {!laborSearching && currentSection === 'stats' && (
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card">
-          <SectionTitle eyebrow="Stats" title="Woche aus dem Kern" />
+          <SectionTitle eyebrow="Stats" title="Diese Woche" />
           <div className="labor-live-stats">
             <div className="kpi-card"><span>Schnitt</span><strong>{liveStats.average}%</strong></div>
             <div className="kpi-card"><span>Best</span><strong>{liveStats.best}%</strong></div>
@@ -6200,8 +6292,6 @@ function DashboardPlusView({
               </div>
             ))}
           </div>
-          <p className="labor-stats-note">Projektfortschritt unten ist Labor-Notiz — der echte Wochenverlauf bleibt unter „Verlauf“.</p>
-
           <div className="todo-card dashboard-plus-projects">
             {dashboard.stats.projects.map((project, index) => (
               <div className="todo-item dashboard-plus-project-row" key={project.id}>
@@ -6229,13 +6319,10 @@ function DashboardPlusView({
       </div>
       )}
 
-      {currentSection === 'finance' && (
+      {!laborSearching && currentSection === 'finance' && (
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
           <SectionTitle eyebrow="Finanzen" title="Verpflichtungen" />
-          <p className="field-hint" style={{ marginTop: -8, marginBottom: 14 }}>
-            Cockpit wie PocketGuard: Fixkosten und offene Posten — lokal, ohne Bank-Sync.
-          </p>
 
           <div className="finance-kpi-row">
             <div className="finance-kpi">
@@ -6332,9 +6419,10 @@ function DashboardPlusView({
       </div>
       )}
 
-      <div className="dashboard-plus-footer">
-        <span>Snapshot: {today}</span>
-        <span>Wischen: links erledigen, rechts verschieben · lange drücken: Menü</span>
+          {!laborSearching && (currentSection === 'todos' || currentSection === 'lists') && (
+            <p className="dashboard-plus-footer">Wischen: links erledigen, rechts verschieben · lange drücken: Menü</p>
+          )}
+        </div>
       </div>
 
       {taskMenu && (() => {
@@ -6942,6 +7030,23 @@ function ritualPhaseLabel(id: MorningRitualStepId): string {
   }
 }
 
+type SettingsCategory = 'general' | 'nutrition' | 'routine' | 'rituals' | 'dashboard' | 'devices' | 'data'
+
+const SETTINGS_CATEGORIES: {
+  id: SettingsCategory
+  label: string
+  hint: string
+  icon: LucideIcon
+}[] = [
+  { id: 'general', label: 'Allgemein', hint: 'Name und Darstellung', icon: User },
+  { id: 'nutrition', label: 'Ernährung', hint: 'Makros und Gewicht', icon: Utensils },
+  { id: 'routine', label: 'Routine', hint: 'Habits und Fokus', icon: Sun },
+  { id: 'rituals', label: 'Rituale', hint: 'Morgen- und Abend-Gate', icon: Moon },
+  { id: 'dashboard', label: 'Dashboard', hint: 'Reiter und Layout', icon: LayoutGrid },
+  { id: 'devices', label: 'Geräte', hint: 'Sync und Shortcuts', icon: Smartphone },
+  { id: 'data', label: 'Daten', hint: 'Backup und Labor', icon: Database },
+]
+
 function SettingsModal({
   settings,
   lastBackupAt,
@@ -6973,7 +7078,9 @@ function SettingsModal({
 }) {
   useModalBehavior(onClose)
   const importInputRef = useRef<HTMLInputElement | null>(null)
+  const settingsBodyRef = useRef<HTMLDivElement | null>(null)
   const layout = settings.dashboardPlusLayout
+  const [category, setCategory] = useState<SettingsCategory>('general')
   const [copiedShortcut, setCopiedShortcut] = useState<string | null>(null)
   const [pairCode, setPairCode] = useState<string | null>(null)
   const [pairExpiresAt, setPairExpiresAt] = useState<string | null>(null)
@@ -6981,6 +7088,10 @@ function SettingsModal({
   const [syncBusy, setSyncBusy] = useState(false)
   const [selfcareDraft, setSelfcareDraft] = useState('')
   const ritualConfig = normalizeMorningRitualConfig(settings.morningRitual)
+
+  useEffect(() => {
+    settingsBodyRef.current?.scrollTo({ top: 0 })
+  }, [category])
 
   const moveDashboardTab = (index: number, direction: -1 | 1) => {
     const target = index + direction
@@ -7006,7 +7117,39 @@ function SettingsModal({
           <IconButton label="Schließen" onClick={onClose}><X size={18} /></IconButton>
         </div>
 
-        <div className="settings-section">
+        <div className="settings-shell">
+          <nav className="settings-nav" role="tablist" aria-label="Einstellungskategorien">
+            {SETTINGS_CATEGORIES.map(item => {
+              const Icon = item.icon
+              const active = category === item.id
+              return (
+                <button
+                  type="button"
+                  key={item.id}
+                  id={`settings-cat-${item.id}`}
+                  role="tab"
+                  className={active ? 'settings-nav-item is-active' : 'settings-nav-item'}
+                  aria-selected={active}
+                  title={item.hint}
+                  onClick={() => setCategory(item.id)}
+                >
+                  <Icon size={16} aria-hidden="true" />
+                  <span>
+                    <strong>{item.label}</strong>
+                    <small>{item.hint}</small>
+                  </span>
+                </button>
+              )
+            })}
+          </nav>
+
+          <div
+            className="settings-body"
+            ref={settingsBodyRef}
+            role="tabpanel"
+            aria-labelledby={`settings-cat-${category}`}
+          >
+        <div className="settings-section" hidden={category !== 'devices'}>
           <h3>Integrationen</h3>
           <p style={{ margin: '-6px 0 12px', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
             Connectoren, Webhooks und Outbound-Events. Die Startseite bleibt unverändert.
@@ -7016,7 +7159,7 @@ function SettingsModal({
           </button>
         </div>
 
-        <div className="settings-section">
+        <div className="settings-section" hidden={category !== 'routine'}>
           <h3>Tägliche Gewohnheiten</h3>
           <p style={{ margin: '-6px 0 12px', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
             Aktive Habits erscheinen in der Routine. Wochentage steuern, an welchen Tagen sie fällig sind (leer = jeden Tag).
@@ -7067,7 +7210,7 @@ function SettingsModal({
           </div>
         </div>
 
-        <div className="settings-section">
+        <div className="settings-section" hidden={category !== 'dashboard'}>
           <h3>Dashboard+ Reiter</h3>
           <p style={{ margin: '-6px 0 12px', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
             Reihenfolge und Sichtbarkeit der Dashboard+ Bereiche anpassen. Mindestens ein Reiter bleibt sichtbar.
@@ -7110,7 +7253,16 @@ function SettingsModal({
           </ul>
         </div>
 
-        <div className="settings-section">
+        <div className="settings-section" hidden={category !== 'general'}>
+          <h3>Profil</h3>
+          <p className="settings-help">Name erscheint in der Begrüßung und im Tagesablauf.</p>
+          <label className="text-field">
+            <span>Name</span>
+            <input value={settings.name} placeholder="Dein Name" onChange={event => onChange({ ...settings, name: event.target.value })} />
+          </label>
+        </div>
+
+        <div className="settings-section" hidden={category !== 'general'}>
           <h3>Darstellung</h3>
           <div className="theme-segment" role="group" aria-label="Farbschema">
             {(['light', 'dark', 'system'] as ThemePreference[]).map(theme => (
@@ -7145,7 +7297,7 @@ function SettingsModal({
           </div>
         </div>
 
-        <div className="settings-section">
+        <div className="settings-section" hidden={category !== 'routine'}>
           <h3>Standard-Fokus</h3>
           <p className="settings-help">
             Fallback für neue Anker und wenn keine eigene Dauer gesetzt ist. Pro Aufgabe kannst du die Dauer beim Bearbeiten überschreiben.
@@ -7180,19 +7332,101 @@ function SettingsModal({
           </label>
         </div>
 
-        <div className="settings-section settings-grid">
-          <label className="text-field"><span>Name</span><input value={settings.name} placeholder="Dein Name" onChange={event => onChange({ ...settings, name: event.target.value })} /></label>
-          <label className="text-field"><span>Proteinziel in g</span><input type="number" min="50" max="400" step="5" value={settings.proteinGoal} onChange={event => onChange({ ...settings, proteinGoal: clampNumber(Number(event.target.value) || 150, 50, 400) })} /></label>
-          <label className="text-field"><span>Kalorienziel</span><input type="number" min="1000" max="8000" step="50" value={settings.calorieGoal} onChange={event => onChange({ ...settings, calorieGoal: clampNumber(Number(event.target.value) || 3500, 1000, 8000) })} /></label>
-          <label className="text-field"><span>Fettziel in g</span><input type="number" min="20" max="200" step="5" value={settings.fatGoal} onChange={event => onChange({ ...settings, fatGoal: clampNumber(Number(event.target.value) || 70, 20, 200) })} /></label>
-          <label className="text-field"><span>KH-Ziel in g</span><input type="number" min="50" max="500" step="5" value={settings.carbsGoal} onChange={event => onChange({ ...settings, carbsGoal: clampNumber(Number(event.target.value) || 250, 50, 500) })} /></label>
-          <label className="text-field"><span>Ballaststoffe in g</span><input type="number" min="10" max="80" step="1" value={settings.fiberGoal} onChange={event => onChange({ ...settings, fiberGoal: clampNumber(Number(event.target.value) || 30, 10, 80) })} /></label>
-          <label className="text-field"><span>Körpergröße in cm</span><input type="number" min="0" max="250" step="1" value={settings.heightCm || ''} placeholder="für BMI" onChange={event => onChange({ ...settings, heightCm: clampNumber(Number(event.target.value) || 0, 0, 250) })} /></label>
-          <label className="text-field"><span>Gewichtsziel in kg</span><input type="number" min="0" max="300" step="0.1" value={settings.weightGoalKg || ''} placeholder="z. B. 70" onChange={event => onChange({ ...settings, weightGoalKg: clampNumber(Number(event.target.value) || 0, 0, 300) })} /></label>
-          <label className="text-field"><span>Startgewicht in kg</span><input type="number" min="0" max="300" step="0.1" value={settings.weightStartKg || ''} placeholder="leer = erster Wert" onChange={event => onChange({ ...settings, weightStartKg: clampNumber(Number(event.target.value) || 0, 0, 300) })} /></label>
+        <div className="settings-section" hidden={category !== 'nutrition'}>
+          <h3>Makros</h3>
+          <p className="settings-help">Tagesziele für Protein, Kalorien und Kohlenhydrate.</p>
+          <div className="settings-grid">
+            <label className="text-field"><span>Proteinziel in g</span><input type="number" min="50" max="400" step="5" value={settings.proteinGoal} onChange={event => onChange({ ...settings, proteinGoal: clampNumber(Number(event.target.value) || 150, 50, 400) })} /></label>
+            <label className="text-field"><span>Kalorienziel</span><input type="number" min="1000" max="8000" step="50" value={settings.calorieGoal} onChange={event => onChange({ ...settings, calorieGoal: clampNumber(Number(event.target.value) || 3500, 1000, 8000) })} /></label>
+            <label className="text-field"><span>Fettziel in g</span><input type="number" min="20" max="200" step="5" value={settings.fatGoal} onChange={event => onChange({ ...settings, fatGoal: clampNumber(Number(event.target.value) || 70, 20, 200) })} /></label>
+            <label className="text-field"><span>KH-Ziel in g</span><input type="number" min="50" max="500" step="5" value={settings.carbsGoal} onChange={event => onChange({ ...settings, carbsGoal: clampNumber(Number(event.target.value) || 250, 50, 500) })} /></label>
+            <label className="text-field"><span>Ballaststoffe in g</span><input type="number" min="10" max="80" step="1" value={settings.fiberGoal} onChange={event => onChange({ ...settings, fiberGoal: clampNumber(Number(event.target.value) || 30, 10, 80) })} /></label>
+          </div>
         </div>
 
-        <div className="settings-section">
+        <div className="settings-section" hidden={category !== 'nutrition'}>
+          <h3>Körper</h3>
+          <p className="settings-help">Größe für den BMI, Start- und Zielgewicht für den Verlauf.</p>
+          <div className="settings-grid">
+            <label className="text-field"><span>Körpergröße in cm</span><input type="number" min="0" max="250" step="1" value={settings.heightCm || ''} placeholder="für BMI" onChange={event => onChange({ ...settings, heightCm: clampNumber(Number(event.target.value) || 0, 0, 250) })} /></label>
+            <label className="text-field"><span>Gewichtsziel in kg</span><input type="number" min="0" max="300" step="0.1" value={settings.weightGoalKg || ''} placeholder="z. B. 70" onChange={event => onChange({ ...settings, weightGoalKg: clampNumber(Number(event.target.value) || 0, 0, 300) })} /></label>
+            <label className="text-field"><span>Startgewicht in kg</span><input type="number" min="0" max="300" step="0.1" value={settings.weightStartKg || ''} placeholder="leer = erster Wert" onChange={event => onChange({ ...settings, weightStartKg: clampNumber(Number(event.target.value) || 0, 0, 300) })} /></label>
+          </div>
+        </div>
+
+        <div className="settings-section" hidden={category !== 'rituals'}>
+          <h3>Abend-Gate</h3>
+          <p className="settings-help">
+            Ab dieser Uhrzeit erscheint der Tagesabschluss. Punkte steuern, was noch zählt.
+          </p>
+          <div className="settings-actions">
+            <button
+              type="button"
+              className={settings.eveningGate.enabled ? 'choice-button is-active' : 'choice-button'}
+              aria-pressed={settings.eveningGate.enabled}
+              onClick={() => onChange({
+                ...settings,
+                eveningGate: { ...settings.eveningGate, enabled: !settings.eveningGate.enabled },
+              })}
+            >
+              {settings.eveningGate.enabled ? 'Gate an' : 'Gate aus'}
+            </button>
+          </div>
+          {settings.eveningGate.enabled && (
+            <>
+              <label className="select-field" style={{ marginTop: 14 }}>
+                <span>Ab Uhrzeit</span>
+                <select
+                  value={settings.eveningGate.fromHour}
+                  onChange={event => onChange({
+                    ...settings,
+                    eveningGate: {
+                      ...settings.eveningGate,
+                      fromHour: clampNumber(Number(event.target.value) || 17, 15, 22),
+                    },
+                  })}
+                >
+                  {[15, 16, 17, 18, 19, 20, 21, 22].map(hour => (
+                    <option key={hour} value={hour}>
+                      {`${String(hour).padStart(2, '0')}:00`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="settings-help" style={{ marginTop: 14 }}>Abschluss-Punkte</p>
+              <div className="choice-grid">
+                {EVENING_CLOSE_CHECK_IDS.map(id => {
+                  const meta = EVENING_CLOSE_CHECK_META[id]
+                  const active = !settings.eveningGate.hiddenChecks.includes(id)
+                  return (
+                    <button
+                      type="button"
+                      key={id}
+                      className={active ? 'choice-button is-active' : 'choice-button'}
+                      aria-pressed={active}
+                      onClick={() => {
+                        const hiddenChecks = active
+                          ? [...settings.eveningGate.hiddenChecks, id]
+                          : settings.eveningGate.hiddenChecks.filter(check => check !== id)
+                        const nextHidden = hiddenChecks.length >= EVENING_CLOSE_CHECK_IDS.length
+                          ? settings.eveningGate.hiddenChecks.filter(check => check !== id)
+                          : hiddenChecks
+                        onChange({
+                          ...settings,
+                          eveningGate: { ...settings.eveningGate, hiddenChecks: nextHidden as EveningCloseCheckId[] },
+                        })
+                      }}
+                    >
+                      {meta.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="settings-section" hidden={category !== 'rituals'}>
           <h3>Morgen-Ritual</h3>
           <p className="settings-help">
             Reihenfolge, Regeln und Zeiten steuerst du unten. Jeder Timer wird weiterhin manuell gestartet.
@@ -7461,19 +7695,7 @@ function SettingsModal({
           )}
         </div>
 
-        <div className="settings-section">
-          <h3>Labor</h3>
-          <p className="settings-help">
-            Alte Demo-Daten (Medis, Boards, Finanzen) entfernen und mit leerem Labor neu starten. Tages-Einträge bleiben.
-          </p>
-          <div className="settings-actions">
-            <button type="button" className="secondary-button" onClick={onResetLabor}>
-              <RotateCcw size={16} /> Labor zurücksetzen
-            </button>
-          </div>
-        </div>
-
-        <div className="settings-section">
+        <div className="settings-section" hidden={category !== 'devices'}>
           <h3>iPhone · Kurzbefehle</h3>
           <p className="settings-help">
             In Kurzbefehle → „URL öffnen“. Life OS als PWA auf dem Home Screen speichern (Teilen → Zum Home-Bildschirm), dann bleiben Daten stabiler.
@@ -7514,7 +7736,7 @@ function SettingsModal({
           </p>
         </div>
 
-        <div className="settings-section">
+        <div className="settings-section" hidden={category !== 'devices'}>
           <h3>Geräte-Sync</h3>
           <p className="settings-help">
             Einmal koppeln, danach automatisch: Speichern lädt hoch, Öffnen/alle 60s holt Updates.
@@ -7652,7 +7874,7 @@ function SettingsModal({
           )}
         </div>
 
-        <div className="settings-section">
+        <div className="settings-section" hidden={category !== 'devices'}>
           <h3>Webhook</h3>
           {deviceSync ? (
             <>
@@ -7796,7 +8018,7 @@ function SettingsModal({
           )}
         </div>
 
-        <div className="settings-section">
+        <div className="settings-section" hidden={category !== 'data'}>
           <h3>Medis-Erinnerungen</h3>
           <p className="settings-help">
             Nur mit Opt-in. Pro Medikament „Erinnern“ setzen und Uhrzeit eintragen. System-Benachrichtigungen nur, wenn du sie hier erlaubst.
@@ -7824,7 +8046,7 @@ function SettingsModal({
           </div>
         </div>
 
-        <div className="settings-section">
+        <div className="settings-section" hidden={category !== 'data'}>
           <h3>Backup</h3>
           <p className="settings-help">
             Vollbackup enthält Tage, Settings, Labor und XP. Zusätzlich kannst du Geräte-Sync nutzen.
@@ -7855,9 +8077,23 @@ function SettingsModal({
           </div>
         </div>
 
-        <div className="settings-note">
+        <div className="settings-section" hidden={category !== 'data'}>
+          <h3>Labor</h3>
+          <p className="settings-help">
+            Alte Demo-Daten (Medis, Boards, Finanzen) entfernen und mit leerem Labor neu starten. Tages-Einträge bleiben.
+          </p>
+          <div className="settings-actions">
+            <button type="button" className="secondary-button" onClick={onResetLabor}>
+              <RotateCcw size={16} /> Labor zurücksetzen
+            </button>
+          </div>
+        </div>
+
+        <div className="settings-note" hidden={category !== 'data'}>
           <Bell size={18} />
           <p>Benachrichtigungen werden nie ungefragt angefordert. Timer-Hinweise nur mit bestehender Berechtigung. Mit Geräte-Sync laufen Daten nach dem Koppeln automatisch mit.</p>
+        </div>
+          </div>
         </div>
         <div className="modal-actions"><button type="button" className="primary-button" onClick={onClose}><Check size={17} /> Fertig</button></div>
       </div>

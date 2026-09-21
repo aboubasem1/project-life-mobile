@@ -67,7 +67,7 @@ export function deriveLaborOverview(input: {
       month: 'long',
     }).format(new Date(`${input.today}T12:00:00`)),
     syncStatus: input.syncLabel ?? 'Lokal',
-    syncTime: input.syncTime ?? 'nur dieses Gerät',
+    syncTime: input.syncTime ?? '',
     score: Math.min(100, Math.max(0, Math.round(score))),
     habits,
     habitsTotal,
@@ -114,26 +114,15 @@ export function deriveLaborStats(input: {
 }
 
 export function smartLaborHints(input: {
-  energy?: 'low' | 'okay' | 'high'
-  score: number
   openTodos: number
   lowStockCount: number
 }): string[] {
   const hints: string[] = []
-  if (input.energy === 'low') {
-    hints.push('Low-Energy-Tag: im Labor nur das Nötigste anfassen.')
-  }
-  if (input.openTodos > 0) {
-    hints.push(`${input.openTodos} offene Fokus-Todos — eines reicht oft.`)
-  }
   if (input.lowStockCount > 0) {
     hints.push(`${input.lowStockCount} Bestände werden knapp.`)
   }
-  if (input.score >= 75) {
-    hints.push('Starker Tageskern — Labor eher für Verwaltung, nicht für mehr Druck.')
+  if (input.openTodos > 0) {
+    hints.push(`${input.openTodos} offene Fokus-Todos`)
   }
-  if (hints.length === 0) {
-    hints.push('Labor ergänzt den Tageskern: Bestände, Boards, Liste — ohne den Fokus zu ersetzen.')
-  }
-  return hints.slice(0, 3)
+  return hints.slice(0, 2)
 }

@@ -5,6 +5,37 @@ import { getDayPolicy } from './dayPolicy'
 
 export type DayCloseAction = 'checkin' | 'plan' | 'today'
 
+export const EVENING_CLOSE_CHECK_IDS = ['energy', 'anchors', 'habits', 'checkin', 'evening'] as const
+export type EveningCloseCheckId = (typeof EVENING_CLOSE_CHECK_IDS)[number]
+
+export type EveningGateConfig = {
+  enabled: boolean
+  fromHour: number
+  hiddenChecks: EveningCloseCheckId[]
+}
+
+export const EVENING_CLOSE_CHECK_META: Record<EveningCloseCheckId, { label: string; hint: string }> = {
+  energy: { label: 'Energie', hint: 'Energie für den Tag gesetzt' },
+  anchors: { label: 'Anker', hint: 'Offene Tagesanker' },
+  habits: { label: 'Habits', hint: 'Fällige Hauptgewohnheiten' },
+  checkin: { label: 'Check-in', hint: 'Stimmung oder Schlaf' },
+  evening: { label: 'Abendnotiz', hint: 'Journal oder Körperwerte' },
+}
+
+export function normalizeEveningGateConfig(raw: unknown): EveningGateConfig {
+  const value = (raw ?? {}) as Partial<EveningGateConfig>
+  const hidden = Array.isArray(value.hiddenChecks)
+    ? value.hiddenChecks.filter((id): id is EveningCloseCheckId =>
+      EVENING_CLOSE_CHECK_IDS.includes(id as EveningCloseCheckId))
+    : []
+  const fromHour = Number(value.fromHour)
+  return {
+    enabled: value.enabled !== false,
+    fromHour: Number.isFinite(fromHour) ? Math.min(22, Math.max(15, Math.round(fromHour))) : 17,
+    hiddenChecks: hidden.length >= EVENING_CLOSE_CHECK_IDS.length ? [] : hidden,
+  }
+}
+
 export type DayGap = {
   id: string
   label: string
@@ -29,6 +60,7 @@ type CompletenessInput = {
   habitSchedules?: HabitScheduleMap
   focusMinutes?: number
   hour?: number
+  hiddenChecks?: EveningCloseCheckId[]
 }
 
 function habitLabel(key: string): string {
@@ -78,9 +110,10 @@ export function assessDayCompleteness(input: CompletenessInput): DayCompleteness
     hour: input.hour ?? 18,
   })
 
-  const checks: Array<{ id: string; ok: boolean; gap?: DayGap }> = []
+  const hidden = new Set(input.hiddenChecks ?? [])
+  const checks: Array<{ id: EveningCloseCheckId; ok: boolean; gap?: DayGap }> = []
 
-  checks.push({
+  if (!hidden.has('energy')) checks.push({
     id: 'energy',
     ok: Boolean(entry.energyLevel),
     gap: { id: 'energy', label: 'Energie setzen', action: 'today' },
@@ -88,7 +121,7 @@ export function assessDayCompleteness(input: CompletenessInput): DayCompleteness
 
   const anchors = entry.anchors ?? []
   const anchorsDone = entry.anchorsDone ?? []
-  if (anchors.length > 0) {
+  if (!hidden.has('anchors') && anchors.length > 0) {
     const open = anchors.filter((_, index) => !anchorsDone[index]).length
     checks.push({
       id: 'anchors',
@@ -98,7 +131,7 @@ export function assessDayCompleteness(input: CompletenessInput): DayCompleteness
   }
 
   const primary = policy.primaryHabitIds.filter(isKnownHabit)
-  if (primary.length > 0) {
+  if (!hidden.has('habits') && primary.length > 0) {
     const missing = primary.filter(key => !isHabitDone(entry, key))
     checks.push({
       id: 'habits',
@@ -114,18 +147,22 @@ export function assessDayCompleteness(input: CompletenessInput): DayCompleteness
   }
 
   const hasSleep = Boolean(entry.sleepDuration || entry.bedTime || entry.wakeTime || entry.sleepQuality)
-  checks.push({
-    id: 'checkin',
-    ok: Boolean(entry.mood) || hasSleep,
-    gap: { id: 'checkin', label: 'Check-in (Stimmung/Schlaf)', action: 'checkin' },
-  })
+  if (!hidden.has('checkin')) {
+    checks.push({
+      id: 'checkin',
+      ok: Boolean(entry.mood) || hasSleep,
+      gap: { id: 'checkin', label: 'Check-in (Stimmung/Schlaf)', action: 'checkin' },
+    })
+  }
 
   const hasBody = entry.waterLiters > 0 || entry.proteinGrams > 0 || entry.calories > 0
-  checks.push({
-    id: 'evening',
-    ok: Boolean(entry.eveningGate?.completedAt || entry.journalDone || entry.journalText?.trim()) || hasBody,
-    gap: { id: 'evening', label: 'Evening Gate oder Abendnotiz', action: 'checkin' },
-  })
+  if (!hidden.has('evening')) {
+    checks.push({
+      id: 'evening',
+      ok: Boolean(entry.eveningGate?.completedAt || entry.journalDone || entry.journalText?.trim()) || hasBody,
+      gap: { id: 'evening', label: 'Evening Gate oder Abendnotiz', action: 'checkin' },
+    })
+  }
 
   const total = checks.length
   const done = checks.filter(item => item.ok).length

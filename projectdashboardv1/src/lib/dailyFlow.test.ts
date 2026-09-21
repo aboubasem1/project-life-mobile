@@ -149,6 +149,11 @@ describe('evening close visibility', () => {
     expect(shouldShowDailyClose(11, false)).toBe(false)
     expect(shouldShowDailyClose(20, false)).toBe(true)
     expect(shouldShowDailyClose(11, true)).toBe(true)
+    expect(shouldShowDailyClose(20, false, { enabled: false })).toBe(false)
+    expect(shouldShowDailyClose(18, false, { fromHour: 20 })).toBe(false)
+    expect(shouldShowDailyClose(21, false, { fromHour: 20 })).toBe(true)
+    expect(shouldShowDailyClose(20, false, { enabled: false })).toBe(false)
+    expect(shouldShowDailyClose(20, true, { enabled: false })).toBe(true)
   })
 })
 
