@@ -222,7 +222,7 @@ export function shouldShowDailyClose(
   if (closed) return true
   if (options?.enabled === false) return false
   const fromHour = options?.fromHour ?? 17
-  return hour >= fromHour || hour < 5
+  return hour >= fromHour
 }
 
 function habitRelevantNow(key: string, mode: DayMode): boolean {

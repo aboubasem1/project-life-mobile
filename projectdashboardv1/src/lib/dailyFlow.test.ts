@@ -245,7 +245,7 @@ describe('stimmung und erholung', () => {
 
 describe('day-boundary modes', () => {
   it('classifies local hour bands without inventing timezone data', () => {
-    expect(getDayMode(4)).toBe('evening')
+    expect(getDayMode(4)).toBe('morning')
     expect(getDayMode(5)).toBe('morning')
     expect(getDayMode(10)).toBe('morning')
     expect(getDayMode(11)).toBe('day')
@@ -258,6 +258,7 @@ describe('day-boundary modes', () => {
 describe('evening close visibility', () => {
   it('hides daily close during the day unless already closed', () => {
     expect(shouldShowDailyClose(11, false)).toBe(false)
+    expect(shouldShowDailyClose(4, false)).toBe(false)
     expect(shouldShowDailyClose(20, false)).toBe(true)
     expect(shouldShowDailyClose(11, true)).toBe(true)
     expect(shouldShowDailyClose(20, false, { enabled: false })).toBe(false)

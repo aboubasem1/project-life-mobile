@@ -61,8 +61,8 @@ function intensityOf(habitId: string): HabitIntensity {
 function timeBand(hour: number): 'morning' | 'day' | 'evening' | 'night' {
   if (hour >= 5 && hour < 11) return 'morning'
   if (hour >= 11 && hour < 17) return 'day'
-  if (hour >= 17 && hour < 23) return 'evening'
-  return 'night'
+  if (hour >= 17) return 'evening'
+  return 'morning'
 }
 
 export function getDayMode(hour = new Date().getHours()): DayMode {
