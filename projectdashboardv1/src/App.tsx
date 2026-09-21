@@ -213,6 +213,7 @@ import {
   entryHasMeal,
   isHabitRelevantNow,
   isHeadRecoveryDone,
+  MORNING_HABITS,
   nowChipLabel,
   overviewSlot,
   ritualOwnedHabitKeys,
@@ -3799,7 +3800,9 @@ function TodayView({
     })),
     energy,
     hour,
-    excludeHabitKeys: ownedHabitKeys,
+    excludeHabitKeys: ritualEnabled && !ritualSkipped && ritualCount.remaining > 0
+      ? [...ownedHabitKeys, ...MORNING_HABITS]
+      : ownedHabitKeys,
   })
   const overviewItems = selectOverviewItems({
     anchors,
@@ -3817,6 +3820,7 @@ function TodayView({
     if (item.done || nowItems.some(now => now.id === item.id)) return false
     if (ownedHabitKeys.includes(item.habitKey ?? '')) return false
     if (item.kind === 'habit' && item.habitKey && !isHabitRelevantNow(item.habitKey, hour)) return false
+    if (item.kind === 'habit' && item.habitKey && ritualEnabled && !ritualSkipped && ritualCount.remaining > 0 && MORNING_HABITS.has(item.habitKey)) return false
     return true
   })
   const laterChip = laterItem ? nowChipLabel(laterItem) : undefined

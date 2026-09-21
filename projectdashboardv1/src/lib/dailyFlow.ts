@@ -458,12 +458,13 @@ export function selectOverviewItems(input: {
 
 export type DaySlot = 'morning' | 'day' | 'evening'
 
-const MORNING_HABITS = new Set([
+export const MORNING_HABITS = new Set([
   'breathingDone',
   'coldShower',
   'proteinShake',
   'gratitudeDone',
   'winnerModeDone',
+  'pushupsDone',
 ])
 
 export function overviewSlot(item: Pick<NowItem, 'kind' | 'habitKey'>): DaySlot {
