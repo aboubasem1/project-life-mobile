@@ -13,6 +13,7 @@ import {
 } from './sync-core.js'
 import { type SyncSnapshot } from './sync-store.js'
 import { applyInboundConnectorWebhook, dispatchOutboundWebhook } from './lifeos-webhook-core.js'
+import { runDecisionRequest } from './decision-core.js'
 
 function bearerToken(request: Request): string {
   const header = request.headers.get('authorization') ?? ''
@@ -66,6 +67,24 @@ export async function handleSyncRequest(request: Request): Promise<Response> {
         event: String(body.event ?? ''),
         payload: body.payload ?? {},
       }))
+    }
+
+    if (pathname.endsWith('/api/decision') && request.method === 'POST') {
+      const body = await readSyncJson<{
+        input?: unknown
+        content?: unknown
+        source?: unknown
+        context?: Record<string, unknown>
+        flags?: Record<string, unknown>
+      }>(request)
+      const batch = await runDecisionRequest({
+        input: body.input,
+        content: body.content,
+        source: body.source,
+        context: body.context,
+        flags: body.flags,
+      })
+      return syncJson({ ok: true, batch })
     }
 
     if (pathname.endsWith('/api/hooks') && request.method === 'POST') {

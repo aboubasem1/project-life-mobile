@@ -17,6 +17,28 @@ export type CaptureTargetType =
 
 export type CaptureStatus = 'inbox' | 'classified' | 'converted' | 'archived'
 
+export type CaptureDecisionPreviewItem = {
+  actionId: string
+  content: string
+  domain: string
+  intent: string
+  confidence: number
+  actionLevel: string
+  policyResult: string
+  suggestedAction: string
+  requiresConfirmation: boolean
+  due?: string
+  mealLabel?: string
+  projectLabel?: string
+}
+
+export type CaptureDecisionPreview = {
+  batchId: string
+  provider: string
+  items: CaptureDecisionPreviewItem[]
+  processedAt: string
+}
+
 export type Capture = {
   id: string
   raw: string
@@ -33,6 +55,10 @@ export type Capture = {
   lifeArea?: LifeAreaKey
   needKeys?: string[]
   converted?: { kind: EntityKind; id: string }
+  source?: string
+  audioRef?: string
+  transcriptId?: string
+  decisionPreview?: CaptureDecisionPreview
   createdAt: string
   updatedAt: string
 }

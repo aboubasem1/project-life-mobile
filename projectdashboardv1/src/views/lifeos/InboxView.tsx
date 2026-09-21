@@ -73,6 +73,21 @@ export function InboxView({
               <span className="eyebrow">Capture</span>
               <h3 className="lifeos-detail-title">{selected.title}</h3>
               {selected.body && <p className="lifeos-body">{selected.body}</p>}
+              {selected.decisionPreview && selected.decisionPreview.items.length > 0 && (
+                <div className="lifeos-decision-preview">
+                  <span className="field-hint">Vorschläge · {selected.decisionPreview.provider}</span>
+                  <ul>
+                    {selected.decisionPreview.items.map(item => (
+                      <li key={item.actionId}>
+                        {item.intent} · {item.domain}
+                        {item.mealLabel ? ` · ${item.mealLabel}` : ''}
+                        {item.due ? ` · ${item.due}` : ''}
+                        {item.requiresConfirmation ? ' · Review' : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {selected.url && <p><a href={selected.url} target="_blank" rel="noreferrer">{selected.url}</a></p>}
               {selected.fileName && <p className="field-hint">{selected.fileName}</p>}
               {selected.fileDataUrl?.startsWith('data:image/') && (

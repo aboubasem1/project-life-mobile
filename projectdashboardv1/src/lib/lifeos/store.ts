@@ -157,8 +157,44 @@ export function normalizeCapture(raw: unknown): Capture | null {
     converted: item.converted && typeof item.converted === 'object' && item.converted.id
       ? { kind: item.converted.kind, id: String(item.converted.id) }
       : undefined,
+    source: asOptionalString(item.source),
+    audioRef: asOptionalString(item.audioRef),
+    transcriptId: asOptionalString(item.transcriptId),
+    decisionPreview: normalizeDecisionPreview(item.decisionPreview),
     createdAt: isoOrNow(item.createdAt),
     updatedAt: isoOrNow(item.updatedAt),
+  }
+}
+
+function normalizeDecisionPreview(raw: unknown): Capture['decisionPreview'] {
+  if (!raw || typeof raw !== 'object') return undefined
+  const item = raw as Partial<NonNullable<Capture['decisionPreview']>>
+  const batchId = asString(item.batchId)
+  const provider = asString(item.provider)
+  if (!batchId || !provider || !Array.isArray(item.items)) return undefined
+  const items = item.items
+    .filter(row => row && typeof row === 'object')
+    .map(row => ({
+      actionId: asString(row.actionId),
+      content: asString(row.content),
+      domain: asString(row.domain),
+      intent: asString(row.intent),
+      confidence: Math.max(0, Math.min(1, asNumber(row.confidence) ?? 0)),
+      actionLevel: asString(row.actionLevel),
+      policyResult: asString(row.policyResult),
+      suggestedAction: asString(row.suggestedAction),
+      requiresConfirmation: row.requiresConfirmation === true,
+      due: asOptionalString(row.due),
+      mealLabel: asOptionalString(row.mealLabel),
+      projectLabel: asOptionalString(row.projectLabel),
+    }))
+    .filter(row => row.actionId && row.content)
+  if (items.length === 0) return undefined
+  return {
+    batchId,
+    provider,
+    items,
+    processedAt: isoOrNow(item.processedAt),
   }
 }
 

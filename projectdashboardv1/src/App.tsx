@@ -179,6 +179,15 @@ import {
   type ReviewType,
 } from './lib/lifeos'
 import { applyConvertToDashboard } from './lib/lifeos/dashboardBridge'
+import {
+  applyDecisionBatch,
+  defaultRoutineMeals,
+  previewFromBatch,
+  recordDecisionAudits,
+  rememberExecutedKeys,
+  resolveDecisionFlags,
+  runLocalCaptureDecision,
+} from './lib/decision-engine'
 import { CaptureSheet } from './views/lifeos/CaptureSheet'
 import { CommandPalette } from './views/lifeos/CommandPalette'
 import { DecisionView } from './views/lifeos/DecisionView'
@@ -2210,10 +2219,74 @@ function App() {
     const classified = input.classifyAs && input.classifyAs !== 'inbox'
       ? { ...capture, targetType: input.classifyAs, status: 'classified' as const }
       : capture
+    let nextCapture = classified
+    try {
+      const flags = resolveDecisionFlags()
+      const batch = runLocalCaptureDecision({
+        id: classified.id,
+        source: 'quick_add',
+        content: classified.raw,
+        timestamp: classified.createdAt,
+        context: { currentModule: 'capture' },
+      }, {
+        flags,
+        context: {
+          routineMeals: [{
+            ...settings.morningRitual.shakeMeal,
+            id: settings.morningRitual.shakeMeal.id || SHAKE_MEAL_ID,
+            aliases: defaultRoutineMeals()[0]?.aliases,
+          }],
+          projects: dashboardPlus.boards.map(board => ({ id: board.id, label: board.label })),
+        },
+      })
+      nextCapture = { ...classified, source: 'quick_add', decisionPreview: previewFromBatch(batch) }
+      recordDecisionAudits(batch.audits)
+      if (flags.autoActionsEnabled) {
+        const applied = applyDecisionBatch({
+          batch,
+          lifeOs: lifeOs.state,
+          dashboard: {
+            focusTodos: dashboardPlus.focusTodos,
+            boards: dashboardPlus.boards,
+            goals: dashboardPlus.goals,
+          },
+          entry,
+          routineMeals: [{
+            ...settings.morningRitual.shakeMeal,
+            id: settings.morningRitual.shakeMeal.id || SHAKE_MEAL_ID,
+            aliases: defaultRoutineMeals()[0]?.aliases,
+          }],
+          autoActionsEnabled: true,
+          today,
+        })
+        if (applied.applied.length > 0) {
+          lifeOs.commit(() => applied.lifeOs)
+          setDashboardPlus(current => ({
+            ...current,
+            focusTodos: applied.dashboard.focusTodos,
+            boards: applied.dashboard.boards,
+            goals: applied.dashboard.goals,
+            shopping: applied.shoppingAdds.length > 0
+              ? {
+                ...current.shopping,
+                items: [
+                  ...current.shopping.items,
+                  ...applied.shoppingAdds,
+                ],
+              }
+              : current.shopping,
+          }))
+          if (applied.entry) updateEntry(applied.entry, 'quick_add')
+          rememberExecutedKeys(applied.executedKeys)
+        }
+      }
+    } catch {
+      nextCapture = classified
+    }
     lifeOs.commit(current => ({
       ...current,
-      captures: [classified, ...current.captures],
-      events: [...current.events, emitDomainEvent('capture.created', { title: classified.title }, { kind: 'capture', id: classified.id })],
+      captures: [nextCapture, ...current.captures],
+      events: [...current.events, emitDomainEvent('capture.created', { title: nextCapture.title }, { kind: 'capture', id: nextCapture.id })],
     }))
     if (openInbox) {
       setCaptureOpen(false)

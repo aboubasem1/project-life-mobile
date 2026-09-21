@@ -12,6 +12,7 @@
     "types": ["node"]
   },
   "include": [
+    "../server/decision-core.ts",
     "../server/hook-core.ts",
     "../server/health-ingest-core.ts",
     "../server/entry-score.ts",
@@ -20,6 +21,7 @@
     "../server/sync-router.ts",
     "../api/health.ts",
     "../api/health/ingest.ts",
+    "../api/decision.ts",
     "../api/hooks.ts",
     "../api/sync/**/*.ts",
     "../server/inbound-note.ts",
@@ -32,6 +34,29 @@
     "src/lib/lifeos/domain.ts",
     "src/lib/lifeos/connectors.ts",
     "src/lib/lifeos/index.ts",
-    "src/lib/lifeos/dashboardBridge.ts"
+    "src/lib/lifeos/dashboardBridge.ts",
+    "src/lib/decision-engine/types.ts",
+    "src/lib/decision-engine/flags.ts",
+    "src/lib/decision-engine/schemas.ts",
+    "src/lib/decision-engine/normalize.ts",
+    "src/lib/decision-engine/split.ts",
+    "src/lib/decision-engine/confidence.ts",
+    "src/lib/decision-engine/policies.ts",
+    "src/lib/decision-engine/audit.ts",
+    "src/lib/decision-engine/idempotency.ts",
+    "src/lib/decision-engine/logging.ts",
+    "src/lib/decision-engine/engine.ts",
+    "src/lib/decision-engine/voice.ts",
+    "src/lib/decision-engine/providers/rules.ts",
+    "src/lib/decision-engine/providers/jev.ts",
+    "src/lib/decision-engine/providers/llm.ts",
+    "src/lib/decision-engine/decisions/nutrition.ts",
+    "src/lib/decision-engine/decisions/task.ts",
+    "src/lib/decision-engine/decisions/note.ts",
+    "src/lib/decision-engine/decisions/shopping.ts",
+    "src/lib/decision-engine/decisions/capture.ts",
+    "src/lib/decision-engine/decisions/project.ts",
+    "src/lib/decision-engine/decisions/radar.ts",
+    "src/lib/decision-engine/decisions/notification.ts"
   ]
 }
