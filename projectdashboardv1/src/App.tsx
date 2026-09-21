@@ -36,10 +36,10 @@ import {
   EyeOff,
   FlaskConical,
   Focus,
-  Heart,
   Home,
   Inbox,
   LayoutGrid,
+  Mic,
   Leaf,
   ListTodo,
   Moon,
@@ -79,7 +79,7 @@ import { buildWeekInsights } from './lib/insights'
 import { deriveLaborOverview, deriveLaborStats, smartLaborHints } from './lib/laborLive'
 import { searchLabor } from './lib/laborSearch'
 import { buildMonthGrid, monthLabel } from './lib/calendarGrid'
-import { hashFromView, hashPathOnly, navigateHash, navigateHashWithId, peekAppAction, takeAppActionFromLocation, viewFromHash, entityIdFromHash, buildActionUrl, SHORTCUT_RECIPES, VIEW_LABELS, type AppAction, type AppView } from './lib/routing'
+import { hashFromView, hashPathOnly, isProgressHubView, navigateHash, navigateHashWithId, peekAppAction, takeAppActionFromLocation, viewFromHash, entityIdFromHash, buildActionUrl, SHORTCUT_RECIPES, VIEW_LABELS, type AppAction, type AppView } from './lib/routing'
 import { shareOrDownloadIcs } from './lib/ics'
 import { copyText, shareText } from './lib/share'
 import { releaseScreenWakeLock, requestScreenWakeLock } from './lib/wakeLock'
@@ -181,12 +181,12 @@ import {
 import { applyConvertToDashboard } from './lib/lifeos/dashboardBridge'
 import {
   applyDecisionBatch,
+  decideCaptureInput,
   defaultRoutineMeals,
   previewFromBatch,
   recordDecisionAudits,
   rememberExecutedKeys,
   resolveDecisionFlags,
-  runLocalCaptureDecision,
 } from './lib/decision-engine'
 import { CaptureSheet } from './views/lifeos/CaptureSheet'
 import { CommandPalette } from './views/lifeos/CommandPalette'
@@ -202,14 +202,23 @@ import { SignalsView } from './views/lifeos/SignalsView'
 import { LifeAreaFilter, LifeAreaMark, LifeAreaSelect } from './views/lifeos/lifeosUi'
 import { MorningGate } from './components/MorningGate'
 import { EveningGate } from './components/EveningGate'
+import { ProgressHubNav } from './components/ProgressHubNav'
+import { RoutineModeSelector } from './components/RoutineModeSelector'
 import { PrivateNotesSheet } from './components/PrivateNotesSheet'
 import {
   assessDailyProgress,
   completedRitualSteps,
+  eveningOwnedHabitKeys,
+  eveningRemaining,
   entryHasMeal,
+  isHabitRelevantNow,
   isHeadRecoveryDone,
   nowChipLabel,
   overviewSlot,
+  ritualOwnedHabitKeys,
+  ritualOwnsEnergy,
+  ritualOwnsHeadRecovery,
+  ritualRemaining,
   selectNowItems,
   selectOverviewItems,
   SHAKE_MEAL_ID,
@@ -233,6 +242,7 @@ import {
   EVENING_CLOSE_CHECK_META,
   normalizeEveningGateConfig,
   reopenDayPatch,
+  visibleEveningGaps,
   type DayCloseAction,
   type DayGap,
   type EveningCloseCheckId,
@@ -991,10 +1001,7 @@ function normalizeDashboardPlusLayout(raw: unknown): DashboardPlusLayout {
 
 const NAV_ITEMS: Array<{ id: View; label: string; icon: typeof Home }> = [
   { id: 'today', label: 'Heute', icon: Home },
-  { id: 'plan', label: 'Plan', icon: ListTodo },
-  { id: 'checkin', label: 'Check-in', icon: Heart },
   { id: 'progress', label: 'Verlauf', icon: BarChart3 },
-  { id: 'dashboardPlus', label: 'Labor', icon: Crown },
 ]
 
 const STREAK_HABIT_KEYS: HabitKey[] = [
@@ -1464,6 +1471,7 @@ function App() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [captureOpen, setCaptureOpen] = useState(false)
   const [capturePreset, setCapturePreset] = useState('')
+  const [routineSelectorOpen, setRoutineSelectorOpen] = useState(false)
   const [eveningGateOpen, setEveningGateOpen] = useState(false)
   const [privateNotesOpen, setPrivateNotesOpen] = useState(false)
   const [privateNotePreset, setPrivateNotePreset] = useState('')
@@ -2206,7 +2214,16 @@ function App() {
     if (nextView === 'checkin' && selectedDate > today) setSelectedDate(today)
   }
 
-  const commitLifeOsCapture = (input: {
+  const captureDecisionContext = () => ({
+    routineMeals: [{
+      ...settings.morningRitual.shakeMeal,
+      id: settings.morningRitual.shakeMeal.id || SHAKE_MEAL_ID,
+      aliases: defaultRoutineMeals()[0]?.aliases,
+    }],
+    projects: dashboardPlus.boards.map(board => ({ id: board.id, label: board.label })),
+  })
+
+  const commitLifeOsCapture = async (input: {
     raw: string
     url?: string
     fileName?: string
@@ -2214,6 +2231,10 @@ function App() {
     fileDataUrl?: string
     classifyAs?: CaptureTargetType
     lifeArea?: LifeAreaKey
+    source?: string
+    audioRef?: string
+    transcriptId?: string
+    decisionPreview?: ReturnType<typeof previewFromBatch>
   }, openInbox = true) => {
     const capture = createCapture(input)
     const classified = input.classifyAs && input.classifyAs !== 'inbox'
@@ -2222,26 +2243,27 @@ function App() {
     let nextCapture = classified
     try {
       const flags = resolveDecisionFlags()
-      const batch = runLocalCaptureDecision({
-        id: classified.id,
-        source: 'quick_add',
-        content: classified.raw,
-        timestamp: classified.createdAt,
-        context: { currentModule: 'capture' },
-      }, {
-        flags,
-        context: {
-          routineMeals: [{
-            ...settings.morningRitual.shakeMeal,
-            id: settings.morningRitual.shakeMeal.id || SHAKE_MEAL_ID,
-            aliases: defaultRoutineMeals()[0]?.aliases,
-          }],
-          projects: dashboardPlus.boards.map(board => ({ id: board.id, label: board.label })),
-        },
-      })
-      nextCapture = { ...classified, source: 'quick_add', decisionPreview: previewFromBatch(batch) }
-      recordDecisionAudits(batch.audits)
-      if (flags.autoActionsEnabled) {
+      const batch = input.decisionPreview
+        ? null
+        : await decideCaptureInput({
+          id: classified.id,
+          source: input.source === 'voice' ? 'voice' : 'quick_add',
+          content: classified.raw,
+          timestamp: classified.createdAt,
+          context: { currentModule: 'capture' },
+        }, {
+          flags,
+          context: captureDecisionContext(),
+        })
+      nextCapture = {
+        ...classified,
+        source: input.source ?? 'quick_add',
+        audioRef: input.audioRef,
+        transcriptId: input.transcriptId,
+        decisionPreview: input.decisionPreview ?? (batch ? previewFromBatch(batch) : undefined),
+      }
+      if (batch) recordDecisionAudits(batch.audits)
+      if (batch && flags.autoActionsEnabled) {
         const applied = applyDecisionBatch({
           batch,
           lifeOs: lifeOs.state,
@@ -2251,11 +2273,7 @@ function App() {
             goals: dashboardPlus.goals,
           },
           entry,
-          routineMeals: [{
-            ...settings.morningRitual.shakeMeal,
-            id: settings.morningRitual.shakeMeal.id || SHAKE_MEAL_ID,
-            aliases: defaultRoutineMeals()[0]?.aliases,
-          }],
+          routineMeals: captureDecisionContext().routineMeals,
           autoActionsEnabled: true,
           today,
         })
@@ -2523,7 +2541,7 @@ function App() {
               <button
                 type="button"
                 key={item.id}
-                className={view === item.id ? 'nav-item is-active' : 'nav-item'}
+                className={(item.id === 'today' ? view === 'today' : isProgressHubView(view)) ? 'nav-item is-active' : 'nav-item'}
                 onClick={() => navigateTo(item.id)}
               >
                 <Icon size={18} />
@@ -2610,6 +2628,10 @@ function App() {
             </div>
           </div>
 
+          {isProgressHubView(view) && (
+            <ProgressHubNav view={view} onNavigate={navigateTo} />
+          )}
+
           {view === 'today' && (
             <TodayView
               entry={entry}
@@ -2640,6 +2662,16 @@ function App() {
               onReorderHabits={ids => setSettings(current => ({ ...current, activeHabits: ids }))}
               onOpenPlan={() => navigateTo('plan')}
               onOpenCheckin={() => navigateTo('checkin')}
+              onOpenCapture={() => setCaptureOpen(true)}
+              ritualEnabled={settings.morningGateEnabled}
+              ritualSkipped={gateSkipped}
+              ritualSteps={ritualSteps}
+              ritualDoneSteps={completedRitualSteps({
+                progress: ritualProgress,
+                entry,
+                config: settings.morningRitual,
+              })}
+              onOpenRoutineMode={() => setRoutineSelectorOpen(true)}
               syncLabel={storageStatusLabel(syncStatus, isOnline, Boolean(deviceSyncCreds))}
               syncStatus={syncStatus}
               showToast={showToast}
@@ -3085,21 +3117,33 @@ function App() {
         </main>
 
         <nav className="mobile-nav" aria-label="Mobile Navigation">
-          {NAV_ITEMS.map(item => {
-            const Icon = item.icon
-            return (
-              <button
-                type="button"
-                key={item.id}
-                className={view === item.id ? 'mobile-nav__item is-active' : 'mobile-nav__item'}
-                aria-current={view === item.id ? 'page' : undefined}
-                onClick={() => navigateTo(item.id)}
-              >
-                <Icon size={20} />
-                <span>{item.label}</span>
-              </button>
-            )
-          })}
+          <button
+            type="button"
+            className={view === 'today' ? 'mobile-nav__item is-active' : 'mobile-nav__item'}
+            aria-current={view === 'today' ? 'page' : undefined}
+            onClick={() => navigateTo('today')}
+          >
+            <Home size={20} />
+            <span>Heute</span>
+          </button>
+          <button
+            type="button"
+            className="mobile-nav__item mobile-nav__capture"
+            aria-label="Erfassen"
+            onClick={() => setCaptureOpen(true)}
+          >
+            <Mic size={20} />
+            <span>Erfassen</span>
+          </button>
+          <button
+            type="button"
+            className={isProgressHubView(view) ? 'mobile-nav__item is-active' : 'mobile-nav__item'}
+            aria-current={isProgressHubView(view) ? 'page' : undefined}
+            onClick={() => navigateTo('progress')}
+          >
+            <BarChart3 size={20} />
+            <span>Verlauf</span>
+          </button>
         </nav>
 
         {view !== 'dashboardPlus' && view !== 'today' && view !== 'checkin' && view !== 'plan' && view !== 'progress' && !showMorningGate && (
@@ -3165,6 +3209,27 @@ function App() {
         />
       )}
 
+      {routineSelectorOpen && (
+        <RoutineModeSelector
+          onClose={() => setRoutineSelectorOpen(false)}
+          onSelectMorning={() => {
+            setRoutineSelectorOpen(false)
+            const done = completedRitualSteps({
+              progress: ritualProgress,
+              entry,
+              config: settings.morningRitual,
+            })
+            const nextIndex = ritualSteps.findIndex(id => !done.includes(id))
+            setGatePreview(true)
+            setPreviewIndex(nextIndex >= 0 ? nextIndex : Math.max(0, ritualSteps.length - 1))
+          }}
+          onSelectEvening={() => {
+            setRoutineSelectorOpen(false)
+            setEveningGateOpen(true)
+          }}
+        />
+      )}
+
       {captureOpen && (
         <CaptureSheet
           initialRaw={capturePreset}
@@ -3172,6 +3237,19 @@ function App() {
           onClose={() => {
             setCaptureOpen(false)
             setCapturePreset('')
+          }}
+          onDecide={async input => {
+            const batch = await decideCaptureInput({
+              source: input.source,
+              content: input.content,
+              timestamp: new Date().toISOString(),
+              context: { currentModule: 'capture' },
+            }, {
+              flags: resolveDecisionFlags(),
+              context: captureDecisionContext(),
+            })
+            recordDecisionAudits(batch.audits)
+            return previewFromBatch(batch)
           }}
           onCapture={handleLifeOsCapture}
           onOpenPrivateNotes={text => {
@@ -3564,6 +3642,12 @@ function TodayView({
   ritualLock = null,
   onContinueRitualTodos,
   onReopenMorningGate,
+  onOpenRoutineMode,
+  onOpenCapture,
+  ritualEnabled = false,
+  ritualSkipped = false,
+  ritualSteps = [],
+  ritualDoneSteps = [],
   onOpenEveningGate,
   dailyEvents = [],
   onUndoDailyEvent,
@@ -3595,6 +3679,12 @@ function TodayView({
   ritualLock?: 'todos' | null
   onContinueRitualTodos?: () => void
   onReopenMorningGate?: () => void
+  onOpenRoutineMode?: () => void
+  onOpenCapture?: () => void
+  ritualEnabled?: boolean
+  ritualSkipped?: boolean
+  ritualSteps?: MorningRitualStepId[]
+  ritualDoneSteps?: MorningRitualStepId[]
   onOpenEveningGate?: () => void
   dailyEvents?: DailyEvent[]
   onUndoDailyEvent?: (event: EntryPatchEvent) => void
@@ -3669,6 +3759,34 @@ function TodayView({
     habitDone: Object.fromEntries(allRoutineItems.map(item => [item.key, item.done])),
     hour,
   })
+  const eveningCount = eveningRemaining(entry.eveningGate?.done)
+  const eveningComplete = Boolean(entry.eveningGate?.completedAt || completeness.closed)
+  const ownedHabitKeys = [
+    ...ritualOwnedHabitKeys({
+      enabled: ritualEnabled,
+      skipped: ritualSkipped,
+      steps: ritualSteps,
+      doneSteps: ritualDoneSteps,
+    }),
+    ...eveningOwnedHabitKeys({
+      enabled: Boolean(settings.eveningGate.enabled && showDailyClose),
+      completed: eveningComplete,
+      doneSteps: entry.eveningGate?.done,
+    }),
+  ]
+  const hideEnergy = ritualOwnsEnergy({
+    enabled: ritualEnabled,
+    skipped: ritualSkipped,
+    steps: ritualSteps,
+    doneSteps: ritualDoneSteps,
+  })
+  const hideHead = ritualOwnsHeadRecovery({
+    enabled: ritualEnabled,
+    skipped: ritualSkipped,
+    steps: ritualSteps,
+    doneSteps: ritualDoneSteps,
+  })
+  const ritualCount = ritualRemaining({ steps: ritualSteps, doneSteps: ritualDoneSteps })
   const nowItems = selectNowItems({
     anchors,
     anchorsDone,
@@ -3681,6 +3799,7 @@ function TodayView({
     })),
     energy,
     hour,
+    excludeHabitKeys: ownedHabitKeys,
   })
   const overviewItems = selectOverviewItems({
     anchors,
@@ -3692,8 +3811,14 @@ function TodayView({
       done: item.done,
       minutes: item.minutes,
     })),
+    excludeHabitKeys: ownedHabitKeys,
   })
-  const laterItem = overviewItems.find(item => !item.done && !nowItems.some(now => now.id === item.id))
+  const laterItem = overviewItems.find(item => {
+    if (item.done || nowItems.some(now => now.id === item.id)) return false
+    if (ownedHabitKeys.includes(item.habitKey ?? '')) return false
+    if (item.kind === 'habit' && item.habitKey && !isHabitRelevantNow(item.habitKey, hour)) return false
+    return true
+  })
   const laterChip = laterItem ? nowChipLabel(laterItem) : undefined
   const overviewGroups: Array<{ slot: DaySlot; title: string; items: NowItem[] }> = [
     { slot: 'morning', title: 'Morgen', items: [] },
@@ -3795,12 +3920,17 @@ function TodayView({
     }
   }
 
+  const nowShowsCheckin = !hideHead && !isHeadRecoveryDone(entry) && date === today
+  const eveningGaps = visibleEveningGaps(completeness.gaps, {
+    nowShowsCheckin,
+    hideEveningSummary: Boolean(onOpenEveningGate && showDailyClose),
+  })
   const eveningGateSection = showDailyClose ? (
     <section className="heute-slot">
       <span className="eyebrow">Abend-Gate</span>
-      {completeness.gaps.length > 0 && (
+      {eveningGaps.length > 0 && (
         <ul className="heute-checks">
-          {completeness.gaps.map(gap => (
+          {eveningGaps.map(gap => (
             <li key={gap.id} className="heute-check">
               <button
                 type="button"
@@ -3857,7 +3987,18 @@ function TodayView({
     <div className="view-stack heute-page">
       <header className="heute-head">
         <span className="heute-head__date">{formatLongDate(date)}</span>
-        <h2>{homePane === 'overview' ? 'Dein Tag.' : 'Du bist im Tag.'}</h2>
+        <h2>{homePane === 'overview' ? 'Dein Tag.' : 'Now.'}</h2>
+        {homePane === 'now' && (
+          <p className="heute-head__context">
+            {ritualEnabled && !ritualSkipped && ritualCount.remaining > 0
+              ? `Morning · ${ritualCount.remaining} offen`
+              : showDailyClose && !eveningComplete && eveningCount.remaining > 0
+                ? `Evening · ${eveningCount.remaining} offen`
+                : showDailyClose
+                  ? 'Abend · was noch zählt'
+                  : dailyProgress.meaning}
+          </p>
+        )}
         {homePane === 'now' && (
           <>
             <div className="heute-head__stats">
@@ -3934,13 +4075,34 @@ function TodayView({
 
       {ritualLock !== 'todos' && homePane === 'now' && (
         <section className="heute-now">
-          {energyPicker}
+          {!hideEnergy && energyPicker}
+          {ritualEnabled && !ritualSkipped && ritualCount.remaining > 0 && (
+            <button type="button" className="heute-routine-card" onClick={onReopenMorningGate}>
+              <span className="eyebrow">Morning</span>
+              <strong>{ritualCount.done} von {ritualCount.total} erledigt</strong>
+              <span>Continue</span>
+            </button>
+          )}
+          {showDailyClose && !eveningComplete && eveningCount.remaining > 0 && onOpenEveningGate && (
+            <button type="button" className="heute-routine-card is-night" onClick={onOpenEveningGate}>
+              <span className="eyebrow">Evening</span>
+              <strong>{eveningCount.done} von {eveningCount.total} erledigt</strong>
+              <span>{entry.eveningGate?.startedAt ? 'Continue' : 'Start'}</span>
+            </button>
+          )}
+          {!hideHead && !isHeadRecoveryDone(entry) && date === today && (
+            <button type="button" className="heute-checkin-card" onClick={onOpenCheckin}>
+              <span className="eyebrow">Check-in</span>
+              <strong>Stimmung & Erholung</strong>
+              <span>2 min</span>
+            </button>
+          )}
           <span className="eyebrow">Jetzt</span>
-          {nowItems.length === 0 ? (
-            <p className="heute-empty">Nichts Offenes. Übersicht zeigt den Rest des Tages.</p>
-          ) : (
+          {nowItems.length === 0 && !(ritualEnabled && !ritualSkipped && ritualCount.remaining > 0) && !(showDailyClose && !eveningComplete && eveningCount.remaining > 0) ? (
+            <p className="heute-empty">Luft. Capture bleibt hier.</p>
+          ) : nowItems.length > 0 ? (
             <div className="heute-now__list">
-              {nowItems.map(item => {
+              {nowItems.slice(0, 3).map(item => {
                 const chip = nowChipLabel(item)
                 return (
                   <div key={item.id} className="heute-pill">
@@ -3965,8 +4127,8 @@ function TodayView({
                 )
               })}
             </div>
-          )}
-          {laterItem && (
+          ) : null}
+          {laterItem && !ownedHabitKeys.includes(laterItem.habitKey ?? '') && (
             <div className="heute-next">
               <span className="eyebrow">Als nächstes</span>
               <button type="button" className="heute-next__row" onClick={() => openFlowItem(laterItem)}>
@@ -3980,13 +4142,18 @@ function TodayView({
               </button>
             </div>
           )}
-          {onReopenMorningGate && (
-            <button type="button" className="heute-routine" onClick={onReopenMorningGate}>
-              <Plus size={16} />
+          {onOpenCapture && (
+            <button type="button" className="heute-capture" onClick={onOpenCapture}>
+              <Mic size={16} />
+              Erfassen
+            </button>
+          )}
+          {onOpenRoutineMode && (
+            <button type="button" className="heute-routine" onClick={onOpenRoutineMode}>
+              <Sun size={16} />
               Routine Mode
             </button>
           )}
-          {eveningGateSection}
         </section>
       )}
 

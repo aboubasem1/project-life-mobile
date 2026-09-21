@@ -7,6 +7,10 @@
     "api/**/*.ts": {
       "maxDuration": 15,
       "memory": 1024
+    },
+    "api/transcribe.ts": {
+      "maxDuration": 30,
+      "memory": 1024
     }
   }
 }

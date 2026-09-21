@@ -4,6 +4,7 @@ import {
   assessDayCompleteness,
   closeDayPatch,
   reopenDayPatch,
+  visibleEveningGaps,
 } from './dayClose'
 
 describe('day close', () => {
@@ -70,5 +71,16 @@ describe('day close', () => {
     })
     expect(status.gaps.map(gap => gap.id)).not.toContain('checkin')
     expect(status.gaps.map(gap => gap.id)).not.toContain('evening')
+  })
+
+  it('hides the check-in gap when NOW already shows the check-in card', () => {
+    const gaps = [
+      { id: 'habits', label: '5 Habits offen', action: 'today' as const },
+      { id: 'checkin', label: 'Check-in (Stimmung/Schlaf)', action: 'checkin' as const },
+      { id: 'evening', label: 'Evening Gate oder Abendnotiz', action: 'checkin' as const },
+    ]
+    expect(visibleEveningGaps(gaps, { nowShowsCheckin: true }).map(gap => gap.id)).toEqual(['habits', 'evening'])
+    expect(visibleEveningGaps(gaps, { nowShowsCheckin: false }).map(gap => gap.id)).toEqual(['habits', 'checkin', 'evening'])
+    expect(visibleEveningGaps(gaps, { nowShowsCheckin: true, hideEveningSummary: true }).map(gap => gap.id)).toEqual(['habits'])
   })
 })

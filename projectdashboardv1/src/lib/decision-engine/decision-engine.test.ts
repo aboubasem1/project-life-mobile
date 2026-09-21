@@ -11,7 +11,9 @@ import { classifyWithRules } from './providers/rules.js'
 import { buildSystemOneRequest, mapSystemOneAnswers } from './providers/jev.js'
 import { parseProviderDecision } from './schemas.js'
 import { splitIntents } from './split.js'
-import type { DecisionProviderAdapter, ProviderDecision } from './types.js'
+import { DECISION_DOMAINS, type DecisionProviderAdapter, type ProviderDecision } from './types.js'
+import { parseRemoteTranscript, transcribeCaptureAudio } from './transcription.js'
+import { createVoiceMemo, transcribeVoiceMemo, unsupportedTranscriptionProvider } from './voice.js'
 
 const NOW = new Date('2026-09-21T08:00:00.000Z')
 const PROJECTS = [
@@ -183,10 +185,18 @@ describe('required capture inputs', () => {
   })
 
   it('captures a note from merken prefix', async () => {
-    const batch = await decideText('Merken: LifeOS braucht eine bessere Voice Oberfläche')
+    const batch = await decideText('Merken: LifeOS Dashboard weiter vereinfachen')
     expect(batch.decisions[0]?.domain).toBe('NOTE')
     expect(batch.decisions[0]?.intent).toBe('CREATE_NOTE')
     expect(batch.decisions[0]?.entities.title).toContain('LifeOS')
+  })
+
+  it('routes a phone call as a task due tomorrow', async () => {
+    const batch = await decideText('Ich muss morgen Tom anrufen')
+    expect(batch.decisions[0]?.domain).toBe('TASK')
+    expect(batch.decisions[0]?.intent).toBe('CREATE_TASK')
+    expect(batch.decisions[0]?.entities.due).toBe('2026-09-22')
+    expect(batch.decisions[0]?.content).toMatch(/Tom/i)
   })
 
   it('keeps hedged shopping ideas at low confidence for review', async () => {
@@ -240,6 +250,24 @@ describe('JEV disabled and failure', () => {
     expect(called).toBe(0)
     expect(batch.provider).toBe('rules')
     expect(batch.decisions[0]?.intent).toBe('CREATE_TASK')
+  })
+
+  it('falls back to rules when JEV times out', async () => {
+    const jev: DecisionProviderAdapter = {
+      id: 'jev',
+      async decide() {
+        const error = new Error('timeout')
+        error.name = 'AbortError'
+        throw error
+      },
+    }
+    const batch = await decideText('irgendwas komisches notieren vielleicht', {
+      flags: { jevEnabled: true, autoActionsEnabled: false, llmFallbackEnabled: false },
+      providers: { jev },
+    })
+    expect(batch.decisions[0]?.provider).toBe('rules')
+    expect(batch.decisions[0]?.policyResult).toBe('REVIEW')
+    expect(batch.audits[0]?.error).toMatch(/timeout|AbortError/i)
   })
 
   it('falls back to rules when JEV fails', async () => {
@@ -443,5 +471,79 @@ describe('idempotency and task/meal apply', () => {
     })
     expect(result.applied).toHaveLength(0)
     expect(result.dashboard.focusTodos).toHaveLength(0)
+  })
+})
+
+describe('voice memo pipeline', () => {
+  it('prefers a live transcript over a remote call', async () => {
+    let called = 0
+    const result = await transcribeCaptureAudio({
+      liveTranscript: '  Mass Gainer getrunken  ',
+      audioRef: 'blob:1',
+      remote: {
+        id: 'remote-whisper',
+        async transcribe() {
+          called += 1
+          return { transcript: 'ignored' }
+        },
+      },
+    })
+    expect(result).toEqual({ transcript: 'Mass Gainer getrunken', provider: 'webkit-speech' })
+    expect(called).toBe(0)
+    expect(parseRemoteTranscript({ transcript: '  Weider bestellen  ' })).toBe('Weider bestellen')
+    expect(parseRemoteTranscript({ ok: true })).toBeNull()
+  })
+
+  it('uses the remote provider when live speech is empty', async () => {
+    const result = await transcribeCaptureAudio({
+      liveTranscript: '   ',
+      audioRef: 'blob:1',
+      remote: {
+        id: 'remote-whisper',
+        async transcribe() {
+          return { transcript: 'Morgen Tom anrufen' }
+        },
+      },
+    })
+    expect(result).toEqual({ transcript: 'Morgen Tom anrufen', provider: 'remote-whisper' })
+  })
+
+  it('returns null when remote transcription fails', async () => {
+    const result = await transcribeCaptureAudio({
+      audioRef: 'blob:1',
+      remote: unsupportedTranscriptionProvider(),
+    })
+    expect(result).toBeNull()
+  })
+
+  it('keeps an aborted memo pending without derived items', () => {
+    const memo = createVoiceMemo({
+      id: 'vm-cancel',
+      audioRef: 'blob:abort',
+      createdAt: NOW.toISOString(),
+      durationSec: 3,
+    })
+    expect(memo.transcriptionStatus).toBe('pending')
+    expect(memo.processingStatus).toBe('idle')
+    expect(memo.derivedItems).toEqual([])
+  })
+
+  it('marks transcription failure without crashing the capture path', async () => {
+    const memo = createVoiceMemo({
+      id: 'vm-fail',
+      audioRef: 'blob:fail',
+      createdAt: NOW.toISOString(),
+    })
+    const failed = await transcribeVoiceMemo(memo, unsupportedTranscriptionProvider())
+    expect(failed.transcriptionStatus).toBe('failed')
+    expect(failed.processingStatus).toBe('failed')
+    expect(failed.derivedItems).toEqual([])
+  })
+})
+
+describe('prepared domains', () => {
+  it('keeps HEALTH as a first-class domain without inventing values', () => {
+    expect(DECISION_DOMAINS).toContain('HEALTH')
+    expect(DECISION_DOMAINS).toContain('ROUTINE')
   })
 })

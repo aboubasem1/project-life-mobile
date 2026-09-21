@@ -44,6 +44,7 @@ export const DECISION_DOMAINS = [
   'WORK',
   'PERSONAL',
   'RADAR',
+  'HEALTH',
   'SYSTEM',
   'UNKNOWN',
 ] as const

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createDefaultEntry } from '../types/DashboardEntry'
 import { selectTodayWeight } from './bodyMeasurement'
+import { getDayMode } from './dayPolicy'
 import {
   applyMealToEntry,
   assessDailyProgress,
@@ -9,6 +10,10 @@ import {
   isHeadRecoveryDone,
   revertMealFromEntry,
   overviewSlot,
+  eveningOwnedHabitKeys,
+  eveningRemaining,
+  ritualOwnedHabitKeys,
+  ritualRemaining,
   selectNowItems,
   selectOverviewItems,
   shouldShowDailyClose,
@@ -69,6 +74,100 @@ describe('now selection', () => {
       hour: 8,
     })
     expect(items.map(item => item.title)).toEqual(['Task A'])
+  })
+
+  it('keeps ritual-owned habits out of NOW and overview', () => {
+    const owned = ritualOwnedHabitKeys({
+      enabled: true,
+      steps: ['medsShake', 'coldShower', 'todos'],
+      doneSteps: [],
+    })
+    const habits = [
+      { key: 'proteinShake', label: 'Proteinshake', done: false },
+      { key: 'coldShower', label: 'Cold Shower', done: false },
+      { key: 'focusDone', label: 'Fokus', done: false },
+    ]
+    const now = selectNowItems({
+      anchors: ['Task A'],
+      anchorsDone: [false],
+      anchorMinutes: [25],
+      habits,
+      hour: 8,
+      excludeHabitKeys: owned,
+    })
+    const overview = selectOverviewItems({
+      anchors: ['Task A'],
+      anchorsDone: [false],
+      anchorMinutes: [25],
+      habits,
+      excludeHabitKeys: owned,
+    })
+    expect(now.map(item => item.title)).toEqual(['Task A'])
+    expect(overview.map(item => item.habitKey).filter(Boolean)).toEqual(['focusDone'])
+    expect(ritualRemaining({ steps: ['medsShake', 'coldShower', 'todos'], doneSteps: ['medsShake'] }).remaining).toBe(2)
+  })
+
+  it('releases ritual habits once the morning gate is skipped', () => {
+    expect(ritualOwnedHabitKeys({
+      enabled: true,
+      skipped: true,
+      steps: ['medsShake', 'coldShower'],
+      doneSteps: [],
+    })).toEqual([])
+  })
+
+  it('keeps morning leftovers out of evening NOW', () => {
+    const now = selectNowItems({
+      anchors: ['Deep Work'],
+      anchorsDone: [false],
+      anchorMinutes: [45],
+      habits: [
+        { key: 'proteinShake', label: 'Proteinshake', done: false },
+        { key: 'coldShower', label: 'Cold Shower', done: false },
+        { key: 'journalDone', label: 'Journal', done: false },
+        { key: 'breathingDone', label: 'Atmung', done: false },
+      ],
+      hour: 20,
+    })
+    expect(now.map(item => item.habitKey ?? item.title)).toEqual(['journalDone', 'breathingDone', 'Deep Work'])
+  })
+
+  it('lets the evening gate own breathing and journal', () => {
+    const owned = eveningOwnedHabitKeys({
+      enabled: true,
+      completed: false,
+      doneSteps: [],
+    })
+    const now = selectNowItems({
+      anchors: [],
+      anchorsDone: [],
+      anchorMinutes: [],
+      habits: [
+        { key: 'journalDone', label: 'Journal', done: false },
+        { key: 'breathingDone', label: 'Atmung', done: false },
+        { key: 'coldShower', label: 'Cold Shower', done: false },
+      ],
+      hour: 20,
+      excludeHabitKeys: owned,
+    })
+    expect(now).toEqual([])
+    expect(owned.sort()).toEqual(['breathingDone', 'journalDone'])
+    expect(eveningRemaining(['windDown', 'shower']).remaining).toBe(5)
+    expect(eveningOwnedHabitKeys({ enabled: true, completed: true, doneSteps: [] })).toEqual([])
+  })
+
+  it('keeps an evening habit out of morning NOW', () => {
+    const now = selectNowItems({
+      anchors: [],
+      anchorsDone: [],
+      anchorMinutes: [],
+      habits: [
+        { key: 'journalDone', label: 'Journal', done: false },
+        { key: 'proteinShake', label: 'Proteinshake', done: false },
+      ],
+      hour: 8,
+    })
+    expect(now.map(item => item.habitKey)).toEqual(['proteinShake'])
   })
 
   it('adds life area and urgency without inventing data', () => {
@@ -141,6 +240,18 @@ describe('stimmung und erholung', () => {
       sleepDuration: '7h',
       dreamed: false,
     })).toBe(true)
+  })
+})
+
+describe('day-boundary modes', () => {
+  it('classifies local hour bands without inventing timezone data', () => {
+    expect(getDayMode(4)).toBe('evening')
+    expect(getDayMode(5)).toBe('morning')
+    expect(getDayMode(10)).toBe('morning')
+    expect(getDayMode(11)).toBe('day')
+    expect(getDayMode(16)).toBe('day')
+    expect(getDayMode(17)).toBe('evening')
+    expect(getDayMode(23)).toBe('evening')
   })
 })
 

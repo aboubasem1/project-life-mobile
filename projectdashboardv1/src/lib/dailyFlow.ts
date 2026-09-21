@@ -14,6 +14,7 @@ import {
   type MorningRitualProgress,
   type MorningRitualStepId,
 } from './morningGate.js'
+import { EVENING_GATE_STEP_IDS, type EveningGateStepId } from './eveningGate.js'
 
 export const SHAKE_MEAL_ID = 'protein-shake'
 
@@ -230,7 +231,13 @@ function habitRelevantNow(key: string, mode: DayMode): boolean {
     const intensity = HABIT_INTENSITY[key] ?? 'steady'
     return intensity === 'recovery' || intensity === 'steady' || key === 'coldShower' || key === 'pushupsDone' || key === 'winnerModeDone'
   }
-  return true
+  if (mode === 'evening') return key === 'breathingDone'
+  const intensity = HABIT_INTENSITY[key] ?? 'steady'
+  return intensity !== 'demand'
+}
+
+export function isHabitRelevantNow(key: string, hour = new Date().getHours()): boolean {
+  return habitRelevantNow(key, getDayMode(hour))
 }
 
 export function assessDailyProgress(input: {
@@ -271,6 +278,103 @@ export function assessDailyProgress(input: {
   return { percent, done, total, meaning }
 }
 
+/** Habit keys still owned by an incomplete morning-ritual step. */
+export const RITUAL_STEP_HABIT: Partial<Record<MorningRitualStepId, string>> = {
+  medsShake: 'proteinShake',
+  gratitude: 'gratitudeDone',
+  coldShower: 'coldShower',
+  winnerPose: 'winnerModeDone',
+  workout: 'pushupsDone',
+}
+
+export function ritualOwnedHabitKeys(input: {
+  enabled: boolean
+  skipped?: boolean
+  steps: MorningRitualStepId[]
+  doneSteps: Iterable<MorningRitualStepId>
+}): string[] {
+  if (!input.enabled || input.skipped) return []
+  const done = new Set(input.doneSteps)
+  const owned = new Set<string>()
+  for (const step of input.steps) {
+    if (done.has(step)) continue
+    const habit = RITUAL_STEP_HABIT[step]
+    if (habit) owned.add(habit)
+  }
+  return [...owned]
+}
+
+export function ritualOwnsEnergy(input: {
+  enabled: boolean
+  skipped?: boolean
+  steps: MorningRitualStepId[]
+  doneSteps: Iterable<MorningRitualStepId>
+}): boolean {
+  if (!input.enabled || input.skipped) return false
+  const done = new Set(input.doneSteps)
+  return input.steps.includes('energy') && !done.has('energy')
+}
+
+export function ritualOwnsHeadRecovery(input: {
+  enabled: boolean
+  skipped?: boolean
+  steps: MorningRitualStepId[]
+  doneSteps: Iterable<MorningRitualStepId>
+}): boolean {
+  if (!input.enabled || input.skipped) return false
+  const done = new Set(input.doneSteps)
+  return input.steps.includes('headRecovery') && !done.has('headRecovery')
+}
+
+export function ritualRemaining(input: {
+  steps: MorningRitualStepId[]
+  doneSteps: Iterable<MorningRitualStepId>
+}): { done: number; total: number; remaining: number } {
+  const done = new Set(input.doneSteps)
+  const completed = input.steps.filter(step => done.has(step)).length
+  return {
+    done: completed,
+    total: input.steps.length,
+    remaining: Math.max(0, input.steps.length - completed),
+  }
+}
+
+/** Habits still owned by an incomplete evening-gate step. */
+export const EVENING_STEP_HABIT: Partial<Record<EveningGateStepId, string>> = {
+  breathing: 'breathingDone',
+  memo: 'journalDone',
+}
+
+export function eveningOwnedHabitKeys(input: {
+  enabled: boolean
+  completed?: boolean
+  doneSteps?: Iterable<EveningGateStepId>
+}): string[] {
+  if (!input.enabled || input.completed) return []
+  const done = new Set(input.doneSteps ?? [])
+  const owned = new Set<string>()
+  for (const step of EVENING_GATE_STEP_IDS) {
+    if (done.has(step)) continue
+    const habit = EVENING_STEP_HABIT[step]
+    if (habit) owned.add(habit)
+  }
+  return [...owned]
+}
+
+export function eveningRemaining(doneSteps: Iterable<EveningGateStepId> = []): {
+  done: number
+  total: number
+  remaining: number
+} {
+  const done = new Set(doneSteps)
+  const completed = EVENING_GATE_STEP_IDS.filter(step => done.has(step)).length
+  return {
+    done: completed,
+    total: EVENING_GATE_STEP_IDS.length,
+    remaining: Math.max(0, EVENING_GATE_STEP_IDS.length - completed),
+  }
+}
+
 export function selectNowItems(input: {
   anchors: string[]
   anchorsDone: boolean[]
@@ -278,13 +382,16 @@ export function selectNowItems(input: {
   habits: Array<{ key: string; label: string; done: boolean; minutes?: number }>
   energy?: EnergyLevel
   hour?: number
+  excludeHabitKeys?: Iterable<string>
 }): NowItem[] {
   const hour = input.hour ?? new Date().getHours()
   const mode = getDayMode(hour)
+  const excluded = new Set(input.excludeHabitKeys ?? [])
   const items: NowItem[] = []
 
   input.habits.forEach(habit => {
     if (habit.done) return
+    if (excluded.has(habit.key)) return
     if (!habitRelevantNow(habit.key, mode)) return
     const intensity = HABIT_INTENSITY[habit.key] ?? 'steady'
     const urgency: NowUrgency | undefined = intensity === 'demand' && mode === 'morning'
@@ -326,8 +433,10 @@ export function selectOverviewItems(input: {
   anchorsDone: boolean[]
   anchorMinutes: number[]
   habits: Array<{ key: string; label: string; done: boolean; minutes?: number }>
+  excludeHabitKeys?: Iterable<string>
 }): NowItem[] {
-  const habits = input.habits.map(habit => ({
+  const excluded = new Set(input.excludeHabitKeys ?? [])
+  const habits = input.habits.filter(habit => !excluded.has(habit.key)).map(habit => ({
     id: `habit:${habit.key}`,
     kind: 'habit' as const,
     title: habit.label,

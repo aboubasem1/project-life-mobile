@@ -1,4 +1,5 @@
-import { defineConfig, loadEnv, type Plugin, type ViteDevServer } from 'vite'
+import { loadEnv, type Plugin, type ViteDevServer } from 'vite'
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'node:path'
@@ -14,11 +15,17 @@ function lifeOsSyncDevPlugin(): Plugin {
       const env = loadEnv(server.config.mode, server.config.envDir, '')
       if (env.UPSTASH_REDIS_REST_URL) process.env.UPSTASH_REDIS_REST_URL = env.UPSTASH_REDIS_REST_URL
       if (env.UPSTASH_REDIS_REST_TOKEN) process.env.UPSTASH_REDIS_REST_TOKEN = env.UPSTASH_REDIS_REST_TOKEN
+      if (env.OPENAI_API_KEY) process.env.OPENAI_API_KEY = env.OPENAI_API_KEY
+      if (env.LLM_API_KEY) process.env.LLM_API_KEY = env.LLM_API_KEY
+      if (env.TRANSCRIPTION_API_KEY) process.env.TRANSCRIPTION_API_KEY = env.TRANSCRIPTION_API_KEY
+      if (env.TRANSCRIPTION_ENABLED) process.env.TRANSCRIPTION_ENABLED = env.TRANSCRIPTION_ENABLED
+      if (env.TRANSCRIPTION_TIMEOUT_MS) process.env.TRANSCRIPTION_TIMEOUT_MS = env.TRANSCRIPTION_TIMEOUT_MS
+      if (env.TRANSCRIPTION_MODEL) process.env.TRANSCRIPTION_MODEL = env.TRANSCRIPTION_MODEL
 
       server.middlewares.use((req, res, next) => {
         void (async () => {
           const url = req.url ?? ''
-          if (!url.startsWith('/api/sync') && !url.startsWith('/api/hooks') && !url.startsWith('/api/health') && !url.startsWith('/api/integrations') && !url.startsWith('/api/decision')) {
+          if (!url.startsWith('/api/sync') && !url.startsWith('/api/hooks') && !url.startsWith('/api/health') && !url.startsWith('/api/integrations') && !url.startsWith('/api/decision') && !url.startsWith('/api/transcribe')) {
             next()
             return
           }
@@ -109,5 +116,8 @@ export default defineConfig({
     fs: {
       allow: [path.resolve(rootDir, '..')],
     },
+  },
+  test: {
+    include: ['src/**/*.test.ts', '../server/**/*.test.ts'],
   },
 })

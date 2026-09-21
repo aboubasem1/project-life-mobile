@@ -188,6 +188,18 @@ export function assessDayCompleteness(input: CompletenessInput): DayCompleteness
   }
 }
 
+/** Hide gaps that already have a primary surface (NOW card or gate row). */
+export function visibleEveningGaps(
+  gaps: DayGap[],
+  input: { nowShowsCheckin?: boolean; hideEveningSummary?: boolean },
+): DayGap[] {
+  return gaps.filter(gap => {
+    if (input.nowShowsCheckin && gap.id === 'checkin') return false
+    if (input.hideEveningSummary && gap.id === 'evening') return false
+    return true
+  })
+}
+
 export function formatClosedAt(iso: string): string {
   const date = new Date(iso)
   if (!Number.isFinite(date.getTime())) return '—'

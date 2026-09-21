@@ -148,6 +148,12 @@ export function hashFromView(view: AppView): string {
   return VIEW_TO_HASH[view]
 }
 
+export const PROGRESS_HUB_VIEWS: AppView[] = ['progress', 'dashboardPlus', 'plan', 'checkin']
+
+export function isProgressHubView(view: AppView): boolean {
+  return view === 'progress' || view === 'dashboardPlus' || view === 'plan' || view === 'checkin'
+}
+
 export function navigateHash(view: AppView, replace = false): void {
   const next = hashFromView(view)
   if (hashPathOnly(window.location.hash) === next && !window.location.hash.includes('?')) return

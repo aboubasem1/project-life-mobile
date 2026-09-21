@@ -58,6 +58,7 @@ const DOMAIN_CRITERIA: Record<DecisionDomain, string> = {
   WORK: 'Job, claims, customers, or admin work',
   PERSONAL: 'Private or family life',
   RADAR: 'A watchlist, price, or match signal',
+  HEALTH: 'Body, labs, sleep, mood, or recovery',
   SYSTEM: 'App or system maintenance',
   UNKNOWN: 'None of the other domains fit',
 }

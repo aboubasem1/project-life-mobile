@@ -56,6 +56,9 @@ export function createCapture(input: {
   projectId?: string
   goalId?: string
   lifeArea?: LifeAreaKey
+  source?: string
+  audioRef?: string
+  transcriptId?: string
 }): Capture {
   const parsed = parseCaptureInput(input.raw)
   const now = nowIso()
@@ -73,6 +76,9 @@ export function createCapture(input: {
     projectId: input.projectId,
     goalId: input.goalId,
     lifeArea: parseLifeArea(input.lifeArea),
+    source: input.source,
+    audioRef: input.audioRef,
+    transcriptId: input.transcriptId,
     createdAt: now,
     updatedAt: now,
   }

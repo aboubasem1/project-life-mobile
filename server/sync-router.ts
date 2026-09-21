@@ -14,6 +14,7 @@ import {
 import { type SyncSnapshot } from './sync-store.js'
 import { applyInboundConnectorWebhook, dispatchOutboundWebhook } from './lifeos-webhook-core.js'
 import { runDecisionRequest } from './decision-core.js'
+import { runTranscriptionRequest } from './transcription-core.js'
 
 function bearerToken(request: Request): string {
   const header = request.headers.get('authorization') ?? ''
@@ -67,6 +68,10 @@ export async function handleSyncRequest(request: Request): Promise<Response> {
         event: String(body.event ?? ''),
         payload: body.payload ?? {},
       }))
+    }
+
+    if (pathname.endsWith('/api/transcribe') && (request.method === 'POST' || request.method === 'OPTIONS')) {
+      return runTranscriptionRequest(request)
     }
 
     if (pathname.endsWith('/api/decision') && request.method === 'POST') {

@@ -1,14 +1,19 @@
-import { useRef, useState, type FormEvent } from 'react'
-import { Inbox, LockKeyhole, X } from 'lucide-react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { Check, Inbox, LockKeyhole, Mic, Square, X } from 'lucide-react'
+import { transcribeCaptureAudio, webSpeechTranscriptionProvider } from '../../lib/decision-engine/transcription'
 import { CAPTURE_TARGET_LABELS, type CaptureTargetType, type LifeAreaKey } from '../../lib/lifeos'
+import type { CaptureDecisionPreview, CaptureDecisionPreviewItem } from '../../lib/lifeos/types'
 import { Field, LifeAreaSelect } from './lifeosUi'
 
 const TARGETS: CaptureTargetType[] = ['inbox', 'task', 'note', 'knowledge', 'goal', 'event', 'decision', 'reference']
 const MAX_FILE_CHARS = 350_000
 
+type CapturePhase = 'idle' | 'recording' | 'processing' | 'preview'
+
 export function CaptureSheet({
   onClose,
   onCapture,
+  onDecide,
   onOpenPrivateNotes,
   initialRaw = '',
   inactive = false,
@@ -17,6 +22,7 @@ export function CaptureSheet({
   initialRaw?: string
   onOpenPrivateNotes?: (text: string) => void
   inactive?: boolean
+  onDecide?: (input: { content: string; source: 'quick_add' | 'voice' }) => Promise<CaptureDecisionPreview | undefined>
   onCapture: (input: {
     raw: string
     url?: string
@@ -25,6 +31,10 @@ export function CaptureSheet({
     fileDataUrl?: string
     classifyAs?: CaptureTargetType
     lifeArea?: LifeAreaKey
+    source?: string
+    audioRef?: string
+    transcriptId?: string
+    decisionPreview?: CaptureDecisionPreview
   }) => void
 }) {
   const [raw, setRaw] = useState(initialRaw)
@@ -35,14 +45,32 @@ export function CaptureSheet({
   const [fileKind, setFileKind] = useState<'file' | 'screenshot' | undefined>(undefined)
   const [fileDataUrl, setFileDataUrl] = useState<string | undefined>(undefined)
   const [error, setError] = useState('')
+  const [phase, setPhase] = useState<CapturePhase>('idle')
+  const [seconds, setSeconds] = useState(0)
+  const [preview, setPreview] = useState<CaptureDecisionPreview | undefined>(undefined)
+  const [kept, setKept] = useState<string[]>([])
+  const [audioRef, setAudioRef] = useState<string | undefined>(undefined)
   const fileRef = useRef<HTMLInputElement | null>(null)
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const chunksRef = useRef<Blob[]>([])
+  const timerRef = useRef<number>(0)
+  const streamRef = useRef<MediaStream | null>(null)
+  const liveTranscriptRef = useRef('')
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
+  useEffect(() => () => {
+    window.clearInterval(timerRef.current)
+    streamRef.current?.getTracks().forEach(track => track.stop())
+    if (audioRef?.startsWith('blob:')) URL.revokeObjectURL(audioRef)
+  }, [audioRef])
+
+  const commit = (nextPreview?: CaptureDecisionPreview) => {
     if (!raw.trim() && !url.trim() && !fileName) {
       setError('Schreib etwas, füge einen Link hinzu oder wähle eine Datei.')
       return
     }
+    const filtered = nextPreview ?? (preview
+      ? { ...preview, items: preview.items.filter(item => kept.includes(item.actionId)) }
+      : undefined)
     onCapture({
       raw: raw.trim() || url.trim() || fileName,
       url: url.trim() || undefined,
@@ -51,7 +79,41 @@ export function CaptureSheet({
       fileDataUrl,
       classifyAs: target,
       lifeArea,
+      source: audioRef ? 'voice' : 'quick_add',
+      audioRef,
+      decisionPreview: filtered,
     })
+  }
+
+  const runDecide = async (content: string, source: 'quick_add' | 'voice') => {
+    if (!onDecide || !content.trim()) {
+      commit()
+      return
+    }
+    setPhase('processing')
+    setError('')
+    try {
+      const next = await onDecide({ content, source })
+      if (next && next.items.length > 0) {
+        setPreview(next)
+        setKept(next.items.map(item => item.actionId))
+        setPhase('preview')
+        return
+      }
+      commit(next)
+    } catch {
+      setError('Einordnen nicht möglich — du kannst trotzdem speichern.')
+      setPhase('idle')
+    }
+  }
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    if (phase === 'preview') {
+      commit()
+      return
+    }
+    void runDecide(raw.trim() || url.trim() || fileName, audioRef ? 'voice' : 'quick_add')
   }
 
   const onFile = (file: File | undefined) => {
@@ -76,70 +138,214 @@ export function CaptureSheet({
     reader.readAsDataURL(file)
   }
 
+  const stopTracks = () => {
+    streamRef.current?.getTracks().forEach(track => track.stop())
+    streamRef.current = null
+    window.clearInterval(timerRef.current)
+  }
+
+  const startRecording = async () => {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setError('Aufnahme ist auf diesem Gerät nicht verfügbar. Schreib den Gedanken.')
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      streamRef.current = stream
+      chunksRef.current = []
+      const recorder = new MediaRecorder(stream)
+      recorderRef.current = recorder
+      recorder.ondataavailable = event => {
+        if (event.data.size > 0) chunksRef.current.push(event.data)
+      }
+      recorder.start()
+      liveTranscriptRef.current = ''
+      setSeconds(0)
+      setPhase('recording')
+      setError('')
+      timerRef.current = window.setInterval(() => setSeconds(current => current + 1), 1000)
+      void webSpeechTranscriptionProvider().transcribe({ audioRef: 'live' }).then(result => {
+        const transcript = result.transcript.trim()
+        if (!transcript) return
+        liveTranscriptRef.current = liveTranscriptRef.current || transcript
+        setRaw(current => current || transcript)
+      }).catch(() => undefined)
+    } catch {
+      setError('Mikrofonzugriff wurde verweigert.')
+    }
+  }
+
+  const finishRecording = (keep: boolean) => {
+    const recorder = recorderRef.current
+    if (!recorder || recorder.state === 'inactive') {
+      stopTracks()
+      setPhase('idle')
+      return
+    }
+    recorder.onstop = () => {
+      stopTracks()
+      if (!keep) {
+        liveTranscriptRef.current = ''
+        setPhase('idle')
+        return
+      }
+      const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' })
+      const nextRef = URL.createObjectURL(blob)
+      setAudioRef(nextRef)
+      setPhase('processing')
+      void transcribeCaptureAudio({
+        liveTranscript: liveTranscriptRef.current || raw,
+        audioRef: nextRef,
+        mimeType: blob.type,
+      }).then(result => {
+        if (!result?.transcript) {
+          setError('Kein Text erkannt. Ergänze kurz, worum es ging.')
+          setPhase('idle')
+          return
+        }
+        setRaw(result.transcript)
+        return runDecide(result.transcript, 'voice')
+      }).catch(() => {
+        setError('Kein Text erkannt. Ergänze kurz, worum es ging.')
+        setPhase('idle')
+      })
+    }
+    recorder.stop()
+  }
+
+  const toggleItem = (item: CaptureDecisionPreviewItem) => {
+    setKept(current => current.includes(item.actionId)
+      ? current.filter(id => id !== item.actionId)
+      : [...current, item.actionId])
+  }
+
+  const clock = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
+
   return (
     <div
-      className="modal-backdrop"
+      className="modal-backdrop capture-sheet-backdrop"
       role="presentation"
       aria-hidden={inactive || undefined}
       inert={inactive || undefined}
       onMouseDown={event => event.target === event.currentTarget && onClose()}
     >
-      <form className="modal modal--small" onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="capture-title">
+      <form className="modal modal--small capture-sheet" onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="capture-title">
         <div className="modal-header">
           <div>
-            <span className="eyebrow">Capture</span>
-            <h2 id="capture-title">Schnell erfassen</h2>
+            <span className="eyebrow">
+              {phase === 'recording' ? 'Listening' : phase === 'processing' ? 'Organizing' : phase === 'preview' ? 'Vorschläge' : 'Capture'}
+            </span>
+            <h2 id="capture-title">
+              {phase === 'recording' ? 'Sprich ruhig' : phase === 'processing' ? 'Wird eingeordnet' : phase === 'preview' ? 'So würde LifeOS das ablegen' : 'Schnell erfassen'}
+            </h2>
           </div>
           <button type="button" className="icon-button" onClick={onClose} aria-label="Schließen"><X size={18} /></button>
         </div>
-        <p className="field-hint">Erst ablegen. Klassifizieren kannst du später in der Inbox.</p>
-        <Field label="Was liegt an?">
-          <textarea
-            value={raw}
-            onChange={event => setRaw(event.target.value)}
-            placeholder="Gedanke, Aufgabe, Link, Entscheidung…"
-            rows={4}
-            autoFocus
-          />
-        </Field>
-        <Field label="Link (optional)">
-          <input value={url} onChange={event => setUrl(event.target.value)} placeholder="https://" inputMode="url" />
-        </Field>
-        <div className="lifeos-file-row">
-          <button type="button" className="secondary-button" onClick={() => fileRef.current?.click()}>
-            Datei / Screenshot
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            hidden
-            onChange={event => onFile(event.target.files?.[0])}
-          />
-          {fileName && <span className="lifeos-file-name">{fileName}</span>}
-        </div>
-        <div className="lifeos-chip-row" role="group" aria-label="Zieltyp">
-          {TARGETS.map(item => (
-            <button
-              key={item}
-              type="button"
-              className={target === item ? 'choice-button is-active' : 'choice-button'}
-              onClick={() => setTarget(item)}
-            >
-              {CAPTURE_TARGET_LABELS[item]}
-            </button>
-          ))}
-        </div>
-        <LifeAreaSelect value={lifeArea} onChange={setLifeArea} />
+
+        {phase === 'recording' && (
+          <div className="capture-voice" role="status">
+            <strong>{clock}</strong>
+            <span>Aufnahme läuft</span>
+            <div className="capture-voice__actions">
+              <button type="button" className="secondary-button" onClick={() => finishRecording(false)}>Abbrechen</button>
+              <button type="button" className="primary-button" onClick={() => finishRecording(true)}>
+                <Square size={14} /> Stop
+              </button>
+            </div>
+          </div>
+        )}
+
+        {phase !== 'recording' && (
+          <Field label="Was liegt an?">
+            <textarea
+              value={raw}
+              onChange={event => setRaw(event.target.value)}
+              placeholder={audioRef ? 'Voice ist da — ein Satz reicht.' : 'Gedanke, Aufgabe, Mahlzeit, Einkauf…'}
+              rows={4}
+              autoFocus={phase === 'idle'}
+            />
+          </Field>
+        )}
+        {phase === 'idle' && audioRef && (
+          <p className="capture-voice-note" role="status">Voice Memo aufgenommen</p>
+        )}
+
+        {phase === 'idle' && (
+          <>
+            <Field label="Link (optional)">
+              <input value={url} onChange={event => setUrl(event.target.value)} placeholder="https://" inputMode="url" />
+            </Field>
+            <div className="lifeos-file-row">
+              <button type="button" className="secondary-button" onClick={() => fileRef.current?.click()}>
+                Datei / Screenshot
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                hidden
+                onChange={event => onFile(event.target.files?.[0])}
+              />
+              {fileName && <span className="lifeos-file-name">{fileName}</span>}
+            </div>
+            <div className="lifeos-chip-row" role="group" aria-label="Zieltyp">
+              {TARGETS.map(item => (
+                <button
+                  key={item}
+                  type="button"
+                  className={target === item ? 'choice-button is-active' : 'choice-button'}
+                  onClick={() => setTarget(item)}
+                >
+                  {CAPTURE_TARGET_LABELS[item]}
+                </button>
+              ))}
+            </div>
+            <LifeAreaSelect value={lifeArea} onChange={setLifeArea} />
+          </>
+        )}
+
+        {phase === 'preview' && preview && (
+          <ul className="capture-preview">
+            {preview.items.map(item => (
+              <li key={item.actionId} className={kept.includes(item.actionId) ? 'is-on' : undefined}>
+                <button type="button" onClick={() => toggleItem(item)}>
+                  <Check size={14} />
+                  <span>
+                    <strong>{item.intent} · {item.domain}</strong>
+                    <small>
+                      {item.content}
+                      {item.mealLabel ? ` · ${item.mealLabel}` : ''}
+                      {item.due ? ` · ${item.due}` : ''}
+                    </small>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
         {error && <p className="lifeos-error">{error}</p>}
+
         <div className="modal-actions capture-modal-actions">
-          {onOpenPrivateNotes && (
+          {phase === 'idle' && (
+            <button type="button" className="secondary-button capture-mic" onClick={() => void startRecording()}>
+              <Mic size={16} /> Voice
+            </button>
+          )}
+          {phase === 'idle' && onOpenPrivateNotes && (
             <button type="button" className="secondary-button" onClick={() => onOpenPrivateNotes(raw.trim())}>
               <LockKeyhole size={16} /> Passcode-geschützt
             </button>
           )}
-          <button type="submit" className="primary-button">
-            <Inbox size={16} /> In Inbox legen
-          </button>
+          {phase === 'preview' && (
+            <button type="button" className="secondary-button" onClick={() => { setKept(preview?.items.map(item => item.actionId) ?? []); commit(preview) }}>
+              Alles übernehmen
+            </button>
+          )}
+          {phase !== 'recording' && (
+            <button type="submit" className="primary-button" disabled={phase === 'processing'}>
+              <Inbox size={16} /> {phase === 'preview' ? 'Übernehmen' : phase === 'processing' ? 'Organizing…' : 'In Inbox legen'}
+            </button>
+          )}
         </div>
       </form>
     </div>
