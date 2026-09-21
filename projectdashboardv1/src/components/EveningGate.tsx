@@ -332,26 +332,28 @@ export function EveningGate({
         <span className="morning-gate__orb morning-gate__orb--one" />
         <span className="morning-gate__orb morning-gate__orb--two" />
       </div>
-      <header className="morning-gate__top">
-        <div>
-          <span className="morning-gate__kicker">Evening Gate {completed ? '7/7' : `${stepIndex + 1}/7`}</span>
-          <p>{completed ? 'Tag bewusst abgeschlossen' : `Schritt ${stepIndex + 1} von 7 · ${step ? STEP_LABELS[step] : ''}`}</p>
-        </div>
-        <div className="morning-gate__top-actions">
-          <button type="button" className="icon-button" onClick={onClose} aria-label="Abendroutine schließen">
-            <X size={18} />
-          </button>
-        </div>
-      </header>
-      <ol className="morning-gate__dots" aria-label="Abendfortschritt">
-        {EVENING_GATE_STEP_IDS.map((item, index) => (
-          <li
-            key={item}
-            className={item === step ? 'is-current' : draft.done.includes(item) || (completed && index <= stepIndex) ? 'is-done' : undefined}
-          />
-        ))}
-      </ol>
-      {card}
+      <div className="morning-gate__shell">
+        <header className="morning-gate__top">
+          <div>
+            <span className="morning-gate__kicker">Evening Gate {completed ? '7/7' : `${stepIndex + 1}/7`}</span>
+            <p>{completed ? 'Tag bewusst abgeschlossen' : `Schritt ${stepIndex + 1} von 7 · ${step ? STEP_LABELS[step] : ''}`}</p>
+          </div>
+          <div className="morning-gate__top-actions">
+            <button type="button" className="icon-button" onClick={onClose} aria-label="Abendroutine schließen">
+              <X size={18} />
+            </button>
+          </div>
+        </header>
+        <ol className="morning-gate__dots" aria-label="Abendfortschritt">
+          {EVENING_GATE_STEP_IDS.map((item, index) => (
+            <li
+              key={item}
+              className={item === step ? 'is-current' : draft.done.includes(item) || (completed && index <= stepIndex) ? 'is-done' : undefined}
+            />
+          ))}
+        </ol>
+        {card}
+      </div>
     </div>
   )
 }

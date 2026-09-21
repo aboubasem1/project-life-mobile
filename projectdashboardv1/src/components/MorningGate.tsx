@@ -729,46 +729,48 @@ export function MorningGate({
         <span className="morning-gate__orb morning-gate__orb--two" />
       </div>
 
-      <header className="morning-gate__top">
-        <div>
-          <span className="morning-gate__kicker">Morning Gate {stepIndex + 1}/{stepCount}</span>
-          <p>Schritt {stepIndex + 1} von {stepCount} · {meta.label}</p>
-        </div>
-        <div className="morning-gate__top-actions">
-          {onClosePreview && (
-            <button type="button" className="icon-button" onClick={onClosePreview} aria-label="Zurück zu Home">
-              <X size={18} />
+      <div className="morning-gate__shell">
+        <header className="morning-gate__top">
+          <div>
+            <span className="morning-gate__kicker">Morning Gate {stepIndex + 1}/{stepCount}</span>
+            <p>Schritt {stepIndex + 1} von {stepCount} · {meta.label}</p>
+          </div>
+          <div className="morning-gate__top-actions">
+            {onClosePreview && (
+              <button type="button" className="icon-button" onClick={onClosePreview} aria-label="Zurück zu Home">
+                <X size={18} />
+              </button>
+            )}
+            <button type="button" className="icon-button" onClick={onOpenSettings} aria-label="Einstellungen öffnen">
+              <Settings size={18} />
             </button>
-          )}
-          <button type="button" className="icon-button" onClick={onOpenSettings} aria-label="Einstellungen öffnen">
-            <Settings size={18} />
-          </button>
-        </div>
-      </header>
+          </div>
+        </header>
 
-      <ol className="morning-gate__dots" aria-label="Ritualfortschritt">
-        {track.map((item, index) => {
-          const done = doneSteps.includes(item.id) || index < stepIndex
-          const current = item.id === step
-          return (
-            <li
-              key={item.id}
-              className={current ? 'is-current' : done ? 'is-done' : undefined}
-            />
-          )
-        })}
-      </ol>
+        <ol className="morning-gate__dots" aria-label="Ritualfortschritt">
+          {track.map((item, index) => {
+            const done = doneSteps.includes(item.id) || index < stepIndex
+            const current = item.id === step
+            return (
+              <li
+                key={item.id}
+                className={current ? 'is-current' : done ? 'is-done' : undefined}
+              />
+            )
+          })}
+        </ol>
 
-      <section className="morning-gate__card" key={step}>
-        <div className="morning-gate__icon" aria-hidden="true">{chrome.icon}</div>
-        <span className="eyebrow">{chrome.eyebrow}</span>
-        <h2 id="morning-gate-title">{chrome.title}</h2>
-        {stage}
-      </section>
+        <section className="morning-gate__card" key={step}>
+          <div className="morning-gate__icon" aria-hidden="true">{chrome.icon}</div>
+          <span className="eyebrow">{chrome.eyebrow}</span>
+          <h2 id="morning-gate-title">{chrome.title}</h2>
+          {stage}
+        </section>
 
-      <button type="button" className="text-button morning-gate__skip" onClick={onSkipToday}>
-        Ritual heute überspringen
-      </button>
+        <button type="button" className="text-button morning-gate__skip" onClick={onSkipToday}>
+          Ritual heute überspringen
+        </button>
+      </div>
     </div>
   )
 }
