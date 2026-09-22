@@ -56,6 +56,7 @@ jobs:
       OVH_USER: ${{ vars.OVH_USER }}
       OVH_SSH_PORT: ${{ vars.OVH_SSH_PORT || '22' }}
       OVH_DEPLOY_PATH: ${{ vars.OVH_DEPLOY_PATH || '/opt/lifeos' }}
+      LIFEOS_SITE_ADDRESS: vps-01d88277.vps.ovh.net
       OVH_SSH_PRIVATE_KEY: ${{ secrets.OVH_SSH_PRIVATE_KEY }}
       OVH_KNOWN_HOSTS: ${{ secrets.OVH_KNOWN_HOSTS }}
       R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
@@ -120,6 +121,7 @@ jobs:
             printf '%s:%s\n' "$key" "$(printf '%s' "$value" | base64 -w 0)" >> "$patch_file"
           }
 
+          append_optional LIFEOS_SITE_ADDRESS "$LIFEOS_SITE_ADDRESS"
           append_optional R2_ACCOUNT_ID "$R2_ACCOUNT_ID"
           append_optional R2_ENDPOINT "$R2_ENDPOINT"
           append_optional R2_ACCESS_KEY_ID "$R2_ACCESS_KEY_ID"
