@@ -2681,7 +2681,7 @@ button.status-chip.status-chip--good {
 .lab-data-sheet-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 120;
+  z-index: 260;
   display: grid;
   align-items: end;
   padding: 12px;
