@@ -7773,10 +7773,63 @@ button.status-chip.status-chip--good {
   flex: 1;
 }
 
+.capture-primary-row {
+  display: grid;
+  gap: 8px;
+}
+
+.capture-primary-row .capture-mic {
+  width: 100%;
+  min-height: 52px;
+  font-size: 16px;
+}
+
 .capture-voice-note {
-  margin: -4px 0 0;
+  margin: 0;
   color: var(--text-muted);
   font-size: 13px;
+}
+
+.capture-extras {
+  display: grid;
+  gap: 10px;
+}
+
+.capture-text-button,
+.capture-more-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.capture-more-toggle {
+  justify-content: space-between;
+  width: 100%;
+  min-height: 40px;
+}
+
+.capture-more-toggle svg {
+  transition: transform 160ms ease;
+}
+
+.capture-more-toggle svg.is-open {
+  transform: rotate(180deg);
+}
+
+.capture-more-panel {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--bg) 88%, var(--surface-solid));
 }
 
 .capture-preview {

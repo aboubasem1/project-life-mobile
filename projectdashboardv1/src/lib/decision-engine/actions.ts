@@ -46,6 +46,8 @@ export type ActionApplyInput = {
   routineMeals?: RoutineMealRef[]
   executedKeys?: string[]
   autoActionsEnabled: boolean
+  /** User explicitly confirmed preview items — apply even when policyResult is REVIEW. */
+  confirmedByUser?: boolean
   today: string
 }
 
@@ -69,13 +71,13 @@ export function previewFromBatch(batch: DecisionBatch): CaptureDecisionPreview {
       const action = batch.proposedActions[index]
       return {
         actionId: action?.actionId ?? decision.decisionId,
-        content: decision.content,
+        content: decision.entities.title || decision.content,
         domain: decision.domain,
         intent: decision.intent,
         confidence: decision.confidence,
         actionLevel: decision.actionLevel,
         policyResult: decision.policyResult,
-        suggestedAction: decision.suggestedAction,
+        suggestedAction: decision.suggestedAction || decision.intent,
         requiresConfirmation: decision.requiresConfirmation,
         due: decision.entities.due,
         mealLabel: decision.entities.mealLabel,
@@ -107,7 +109,7 @@ export function applyDecisionBatch(input: ActionApplyInput): ActionApplyResult {
   let entry = input.entry
   const shoppingAdds: ShoppingDraft[] = []
 
-  if (!input.autoActionsEnabled) {
+  if (!input.autoActionsEnabled && !input.confirmedByUser) {
     return {
       lifeOs,
       dashboard,
@@ -121,9 +123,17 @@ export function applyDecisionBatch(input: ActionApplyInput): ActionApplyResult {
   }
 
   for (const action of input.batch.proposedActions) {
-    if (action.policyResult !== 'EXECUTE' || action.actionLevel === 'CONFIRM') {
-      skipped.push({ action, reason: action.policyResult === 'EXECUTE' ? 'LEVEL_CONFIRM' : action.policyResult })
-      continue
+    const confirmedReview = input.confirmedByUser
+      && action.policyResult === 'REVIEW'
+      && action.actionLevel !== 'CONFIRM'
+      && action.intent !== 'REVIEW'
+      && action.intent !== 'UNKNOWN'
+      && action.intent !== 'REQUEST_INFORMATION'
+    if ((!input.confirmedByUser && action.policyResult !== 'EXECUTE') || action.actionLevel === 'CONFIRM') {
+      if (!confirmedReview) {
+        skipped.push({ action, reason: action.policyResult === 'EXECUTE' ? 'LEVEL_CONFIRM' : action.policyResult })
+        continue
+      }
     }
     if (replayGuard(executedKeys, action.actionId)) {
       skipped.push({ action, reason: 'IDEMPOTENT_REPLAY' })
