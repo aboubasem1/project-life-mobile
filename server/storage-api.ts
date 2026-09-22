@@ -4,6 +4,7 @@ import {
   createObjectKey,
   createPresignedDownload,
   createPresignedUpload,
+  handleSignedLocalObject,
   headStoredObject,
   normalizeContentType,
   objectStorageConfigured,
@@ -266,6 +267,7 @@ export async function handleStorageRequest(request: Request): Promise<Response> 
     if (request.method === 'OPTIONS') return syncJson({ ok: true })
     const url = new URL(request.url)
     const pathname = url.pathname.replace(/\/$/, '')
+    if (pathname.endsWith('/api/storage/local')) return await handleSignedLocalObject(request)
     const operation = url.searchParams.get('operation') ?? pathname.split('/').pop() ?? ''
 
     if (operation === 'presign-upload' && request.method === 'POST') {

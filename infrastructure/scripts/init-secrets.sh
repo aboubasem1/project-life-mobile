@@ -15,6 +15,7 @@ fi
 
 postgres_password=$(openssl rand -hex 32)
 developer_secret=$(openssl rand -hex 32)
+object_storage_secret=$(openssl rand -hex 32)
 
 {
   printf '%s\n' 'LIFEOS_SITE_ADDRESS=:80'
@@ -29,6 +30,8 @@ developer_secret=$(openssl rand -hex 32)
   printf '%s\n' 'R2_SECRET_ACCESS_KEY='
   printf '%s\n' 'R2_BUCKET=lifeos-production'
   printf '%s\n' 'R2_REGION=auto'
+  printf '%s\n' 'LOCAL_OBJECT_STORAGE_ROOT=/data/object-storage'
+  printf 'OBJECT_STORAGE_SIGNING_SECRET=%s\n' "$object_storage_secret"
   printf '%s\n' 'SYNC_UPSTASH_BRIDGE=true'
   printf '%s\n' 'UPSTASH_REDIS_REST_URL='
   printf '%s\n' 'UPSTASH_REDIS_REST_TOKEN='
@@ -57,8 +60,9 @@ developer_secret=$(openssl rand -hex 32)
   printf '%s\n' 'GITHUB_ADMIN_TOKEN='
   printf '%s\n' 'BACKUP_CRON=15 3 * * *'
   printf '%s\n' 'BACKUP_RUN_ON_START=false'
+  printf '%s\n' 'LOCAL_BACKUP_ROOT=/backups'
 } > "$env_file"
 
 chmod 0600 "$env_file"
-unset postgres_password developer_secret
+unset postgres_password developer_secret object_storage_secret
 echo "Created protected environment file: $env_file"

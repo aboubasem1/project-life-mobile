@@ -51,7 +51,14 @@ if [ ! -f "$shared_env" ]; then
   exit 1
 fi
 
-for required_key in POSTGRES_PASSWORD R2_ENDPOINT R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET; do
+object_storage_secret=$(awk -F= '$1 == "OBJECT_STORAGE_SIGNING_SECRET" { sub(/^[^=]*=/, ""); print; exit }' "$shared_env")
+if [ -z "$object_storage_secret" ]; then
+  umask 077
+  printf 'OBJECT_STORAGE_SIGNING_SECRET=%s\n' "$(openssl rand -hex 32)" >> "$shared_env"
+fi
+unset object_storage_secret
+
+for required_key in POSTGRES_PASSWORD OBJECT_STORAGE_SIGNING_SECRET; do
   required_value=$(awk -F= -v key="$required_key" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$shared_env")
   if [ -z "$required_value" ]; then
     echo "$required_key is missing from the protected server environment." >&2
@@ -98,7 +105,7 @@ while [ "$attempt" -le 30 ]; do
     && compose_release "$release" "$revision" exec -T db sh -c \
       'pg_isready --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" >/dev/null' \
     && compose_release "$release" "$revision" exec -T backup sh -c \
-      'pg_isready --host "$PGHOST" --port "$PGPORT" --username "$PGUSER" --dbname "$PGDATABASE" >/dev/null && aws --endpoint-url "$R2_ENDPOINT" s3api head-bucket --bucket "$R2_BUCKET" >/dev/null'; then
+      'pg_isready --host "$PGHOST" --port "$PGPORT" --username "$PGUSER" --dbname "$PGDATABASE" >/dev/null && test -d "$LOCAL_BACKUP_ROOT"'; then
     healthy=true
     break
   fi

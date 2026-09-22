@@ -28,6 +28,7 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 3000
+      MAX_REQUEST_BODY_BYTES: 110100480
       TZ: Europe/Berlin
       PGHOST: db
       PGPORT: 5432
@@ -41,6 +42,8 @@ services:
       R2_BUCKET: ${R2_BUCKET:-lifeos-production}
       R2_REGION: ${R2_REGION:-auto}
       R2_REQUIRED: "true"
+      LOCAL_OBJECT_STORAGE_ROOT: ${LOCAL_OBJECT_STORAGE_ROOT:-/data/object-storage}
+      OBJECT_STORAGE_SIGNING_SECRET: ${OBJECT_STORAGE_SIGNING_SECRET:?OBJECT_STORAGE_SIGNING_SECRET is required}
       SYNC_UPSTASH_BRIDGE: ${SYNC_UPSTASH_BRIDGE:-true}
       UPSTASH_REDIS_REST_URL: ${UPSTASH_REDIS_REST_URL:-}
       UPSTASH_REDIS_REST_TOKEN: ${UPSTASH_REDIS_REST_TOKEN:-}
@@ -76,6 +79,8 @@ services:
       start_period: 10s
     networks:
       - internal
+    volumes:
+      - object_data:/data/object-storage
 
   web:
     image: lifeos-web:${LIFEOS_IMAGE_TAG:-local}
@@ -128,16 +133,21 @@ services:
       AWS_EC2_METADATA_DISABLED: "true"
       BACKUP_CRON: ${BACKUP_CRON:-15 3 * * *}
       BACKUP_RUN_ON_START: ${BACKUP_RUN_ON_START:-false}
+      LOCAL_BACKUP_ROOT: ${LOCAL_BACKUP_ROOT:-/backups}
     depends_on:
       db:
         condition: service_healthy
     networks:
       - internal
+    volumes:
+      - backup_data:/backups
 
 volumes:
   postgres_data:
   caddy_data:
   caddy_config:
+  object_data:
+  backup_data:
 
 networks:
   internal:

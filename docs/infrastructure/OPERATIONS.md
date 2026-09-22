@@ -5,9 +5,9 @@
 | Service | Purpose | Public port |
 |---|---|---:|
 | `web` | Caddy, static PWA, API reverse proxy and HTTPS | 80/443 |
-| `api` | Sync, health ingest, hooks, decisions, transcription, developer API and R2 presigning | none |
+| `api` | Sync, health ingest, hooks, decisions, transcription, developer API and private object storage | none |
 | `db` | PostgreSQL | none |
-| `backup` | Scheduled compressed database dumps to R2 | none |
+| `backup` | Scheduled compressed database dumps to OVH and, when configured, R2 | none |
 
 PostgreSQL and the API are reachable only on the internal Compose network.
 
@@ -28,7 +28,15 @@ be transferred from existing production are the active Upstash variables and whi
 transcription, Typesafe/JEV and developer-console variables are actually configured in Vercel.
 The credential-free `VITE_JEV_*` values are build-time flags and are passed to the web image.
 
-## R2 configuration
+## Object storage and R2 configuration
+
+The first OVH deployment uses the persistent `object_data` Docker volume with short-lived,
+HMAC-signed upload and download URLs. This keeps uploads private and fully functional while R2
+credentials are not yet available. `OBJECT_STORAGE_SIGNING_SECRET` is generated automatically on
+the VPS and never committed.
+
+R2 remains the target off-server backend. Once its credentials are configured, the same API uses
+R2 without a frontend change:
 
 - Bucket: `lifeos-production`
 - Access: private
@@ -38,7 +46,7 @@ The credential-free `VITE_JEV_*` values are build-time flags and are passed to t
   `Content-Type`; expose `ETag`; use a short cache duration
 
 R2 secret keys exist only in `/opt/lifeos/shared/.env`. The browser receives a short-lived URL for
-one object operation and never receives R2 credentials.
+one object operation and never receives storage credentials.
 
 During the Vercel fallback period, the same bucket-scoped R2 variables are also configured as
 server-only Vercel environment variables. Storage requests are folded into the existing Decision
@@ -54,7 +62,7 @@ and `backups/database/`.
 - `GET /api/health/live`: API process liveness
 - `GET /api/health`: PostgreSQL and R2 readiness without hostnames, credentials or stack traces
 
-Expected production response:
+Expected production response. During the OVH-local stage, `objectStorage.status` is still `ok`:
 
 ```json
 {
@@ -105,7 +113,8 @@ LIFEOS_IMAGE_TAG="$(basename "$(readlink -f /opt/lifeos/current)")" \
 ## Backups
 
 The backup container runs at 03:15 Europe/Berlin by default. `pg_dump` custom format is already
-compressed. Copies are written to:
+compressed. Copies are written to the persistent OVH `backup_data` volume until R2 is configured,
+then to R2:
 
 - `backups/database/daily/` — newest 7
 - `backups/database/weekly/` — newest 4
