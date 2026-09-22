@@ -101,7 +101,7 @@ attempt=1
 while [ "$attempt" -le 30 ]; do
   if compose_release "$release" "$revision" exec -T api node -e \
     "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" \
-    && compose_release "$release" "$revision" exec -T web wget --quiet --tries=1 --spider http://127.0.0.1/healthz \
+    && compose_release "$release" "$revision" exec -T web wget --quiet --tries=1 --spider http://127.0.0.1:8080/healthz \
     && compose_release "$release" "$revision" exec -T db sh -c \
       'pg_isready --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" >/dev/null' \
     && compose_release "$release" "$revision" exec -T backup sh -c \
