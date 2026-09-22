@@ -16,9 +16,13 @@ export type EveningPreparationItem = {
   done: boolean
 }
 
+export type EveningEnergyLevel = 'low' | 'okay' | 'high'
+
 export type EveningGateState = {
   startedAt?: string
   completedAt?: string
+  /** Separate evening reading; the Morning Gate owns DashboardEntry.energyLevel. */
+  energyLevel?: EveningEnergyLevel
   done: EveningGateStepId[]
   breathingRounds: number
   preparationItems: EveningPreparationItem[]
@@ -57,6 +61,9 @@ export function createEveningGateState(raw?: Partial<EveningGateState> | null): 
   return {
     startedAt: typeof raw?.startedAt === 'string' && raw.startedAt ? raw.startedAt : undefined,
     completedAt: typeof raw?.completedAt === 'string' && raw.completedAt ? raw.completedAt : undefined,
+    energyLevel: raw?.energyLevel === 'low' || raw?.energyLevel === 'okay' || raw?.energyLevel === 'high'
+      ? raw.energyLevel
+      : undefined,
     done: Array.isArray(raw?.done)
       ? [...new Set(raw.done.filter(isEveningGateStepId))]
       : [],
@@ -98,6 +105,7 @@ export function restartEveningGate(state: EveningGateState): EveningGateState {
     ...state,
     startedAt: undefined,
     completedAt: undefined,
+    energyLevel: undefined,
     done: [],
     breathingRounds: 0,
     preparationItems: state.preparationItems.map(item => ({ ...item, done: false })),
@@ -112,4 +120,3 @@ export function nextEveningGateStep(state: EveningGateState): EveningGateStepId 
 export function isEveningGateComplete(state: EveningGateState | undefined): boolean {
   return Boolean(state?.completedAt)
 }
-

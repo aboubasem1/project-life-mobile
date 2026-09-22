@@ -38,7 +38,7 @@ export function buildWeekInsights(entries: DashboardEntry[], today: string): Wee
     return [{
       id: 'warming-up',
       title: 'Noch zu früh für Muster',
-      text: 'Nach ein paar Check-ins zeigt der Verlauf, was dich trägt — und was du streichen kannst.',
+      text: 'Nach ein paar Gate-Einträgen zeigt Lab, was dich trägt — und was du streichen kannst.',
     }]
   }
 

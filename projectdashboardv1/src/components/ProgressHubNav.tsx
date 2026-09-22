@@ -2,9 +2,8 @@ import type { AppView } from '../lib/routing'
 
 const TABS: Array<{ id: AppView; label: string }> = [
   { id: 'progress', label: 'Überblick' },
-  { id: 'dashboardPlus', label: 'Labor' },
+  { id: 'dashboardPlus', label: 'Daten' },
   { id: 'plan', label: 'Plan' },
-  { id: 'checkin', label: 'Check-in' },
 ]
 
 export function ProgressHubNav({
@@ -15,7 +14,7 @@ export function ProgressHubNav({
   onNavigate: (view: AppView) => void
 }) {
   return (
-    <nav className="progress-hub" aria-label="Verlauf">
+    <nav className="progress-hub" aria-label="Lab">
       {TABS.map(tab => (
         <button
           key={tab.id}

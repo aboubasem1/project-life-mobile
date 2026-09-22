@@ -129,7 +129,7 @@ describe('now selection', () => {
       ],
       hour: 20,
     })
-    expect(now.map(item => item.habitKey ?? item.title)).toEqual(['journalDone', 'breathingDone', 'Deep Work'])
+    expect(now.map(item => item.habitKey ?? item.title)).toEqual(['Deep Work'])
   })
 
   it('lets the evening gate own breathing and journal', () => {
@@ -167,41 +167,56 @@ describe('now selection', () => {
       ],
       hour: 8,
     })
-    expect(now.map(item => item.habitKey)).toEqual(['proteinShake'])
+    expect(now).toEqual([])
   })
 
-  it('adds life area and urgency without inventing data', () => {
+  it('preserves urgency without inventing a life area for unknown regular items', () => {
     const items = selectNowItems({
-      anchors: [],
-      anchorsDone: [],
-      anchorMinutes: [],
-      habits: [{ key: 'proteinShake', label: 'Proteinshake', done: false }],
+      anchors: ['Wichtigster Schritt'],
+      anchorsDone: [false],
+      anchorMinutes: [25],
+      habits: [{ key: 'walkDone', label: 'Spaziergang', done: false }],
       hour: 8,
     })
-    expect(items[0]?.area).toBe('health')
-    expect(items[0]?.urgency).toBe('now')
+    expect(items.find(item => item.habitKey === 'walkDone')?.area).toBeUndefined()
+    expect(items.find(item => item.kind === 'anchor')?.urgency).toBe('now')
+  })
+
+  it('never leaks completed gate habits into NOW or overview', () => {
+    const habits = [
+      { key: 'proteinShake', label: 'Proteinshake', done: true },
+      { key: 'coldShower', label: 'Cold Shower', done: true },
+      { key: 'breathingDone', label: 'Atmung', done: true },
+      { key: 'journalDone', label: 'Journal', done: true },
+      { key: 'familyTimeDone', label: 'Familienzeit', done: true },
+    ]
+    expect(selectNowItems({
+      anchors: [], anchorsDone: [], anchorMinutes: [], habits, hour: 20,
+    })).toEqual([])
+    expect(selectOverviewItems({
+      anchors: [], anchorsDone: [], anchorMinutes: [], habits,
+    }).map(item => item.habitKey)).toEqual(['familyTimeDone'])
   })
 })
 
 describe('overview slots', () => {
-  it('groups real morning, day and evening items without inventing rows', () => {
+  it('groups regular day and evening items while retaining stable slot semantics', () => {
     const items = selectOverviewItems({
       anchors: ['Life OS Migration'],
       anchorsDone: [false],
       anchorMinutes: [45],
       habits: [
-        { key: 'coldShower', label: 'Cold Shower', done: true },
-        { key: 'journalDone', label: 'Abendessen', done: false },
+        { key: 'familyTimeDone', label: 'Familienzeit', done: false },
       ],
     })
-    expect(overviewSlot(items.find(item => item.habitKey === 'coldShower')!)).toBe('morning')
+    expect(overviewSlot({ kind: 'habit', habitKey: 'coldShower' })).toBe('morning')
     expect(overviewSlot(items.find(item => item.kind === 'anchor')!)).toBe('day')
-    expect(overviewSlot(items.find(item => item.habitKey === 'journalDone')!)).toBe('evening')
+    expect(overviewSlot(items.find(item => item.habitKey === 'familyTimeDone')!)).toBe('evening')
   })
 })
 
 describe('daily progress', () => {
-  it('counts morning completions without evening tasks', () => {
+  it('counts only visible Today work and never hidden gate inputs', () => {
     const entry = {
       ...createDefaultEntry('2026-09-20'),
       energyLevel: 'okay' as const,
@@ -217,9 +232,10 @@ describe('daily progress', () => {
       habitDone: { proteinShake: true, coldShower: true, journalDone: false },
       hour: 9,
     })
-    expect(progress.total).toBeGreaterThan(0)
-    expect(progress.percent).toBeGreaterThan(50)
-    expect(progress.meaning).toContain('Morgen')
+    expect(progress.total).toBe(1)
+    expect(progress.done).toBe(0)
+    expect(progress.percent).toBe(0)
+    expect(progress.meaning).not.toContain('Energie')
   })
 })
 

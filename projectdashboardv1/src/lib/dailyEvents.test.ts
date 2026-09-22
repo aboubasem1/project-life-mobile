@@ -37,6 +37,22 @@ describe('daily events', () => {
     expect(merged.map(event => event.id)).toEqual(['older', 'newer'])
   })
 
+  it('uses one occurrence id for a completed gate step per day', () => {
+    const first = createRitualStepEvent({
+      date: '2026-09-20',
+      stepId: 'energy',
+      occurredAt: '2026-09-20T07:00:00.000Z',
+    })!
+    const repeated = createRitualStepEvent({
+      date: '2026-09-20',
+      stepId: 'energy',
+      occurredAt: '2026-09-20T07:01:00.000Z',
+    })!
+
+    expect(first.id).toBe(repeated.id)
+    expect(mergeDailyEvents([first], [repeated])).toHaveLength(1)
+  })
+
   it('keeps only changed entry fields and excludes derived metadata', () => {
     const changes = diffEntryChanges(
       { waterLiters: 1, dailyScore: 5, updatedAt: 'before' },

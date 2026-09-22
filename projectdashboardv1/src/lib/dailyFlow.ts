@@ -246,34 +246,28 @@ export function assessDailyProgress(input: {
   habitDone: Record<string, boolean>
   hour?: number
 }): DailyProgress {
-  const hour = input.hour ?? new Date().getHours()
-  const mode = getDayMode(hour)
   const checks: Array<{ id: string; ok: boolean }> = []
 
-  checks.push({ id: 'energy', ok: Boolean(input.entry.energyLevel) })
-  checks.push({ id: 'head', ok: isHeadRecoveryDone(input.entry) })
-
   for (const key of input.activeHabits) {
-    if (!habitRelevantNow(key, mode)) continue
+    if (isGateOnlyHabit(key)) continue
     checks.push({ id: `habit:${key}`, ok: Boolean(input.habitDone[key]) })
   }
 
-  if (mode !== 'morning') {
-    const anchors = input.entry.anchors ?? []
-    const anchorsDone = input.entry.anchorsDone ?? []
-    anchors.forEach((_, index) => {
-      checks.push({ id: `anchor:${index}`, ok: Boolean(anchorsDone[index]) })
-    })
-  }
+  const anchors = input.entry.anchors ?? []
+  const anchorsDone = input.entry.anchorsDone ?? []
+  anchors.forEach((_, index) => {
+    checks.push({ id: `anchor:${index}`, ok: Boolean(anchorsDone[index]) })
+  })
 
   const total = checks.length
   const done = checks.filter(item => item.ok).length
-  const percent = total === 0 ? 100 : Math.round((done / total) * 100)
-  const meaning = mode === 'morning'
-    ? 'Morgen: Energie, Stimmung & Erholung und fällige Morgen-Routinen'
-    : mode === 'evening'
-      ? 'Abend: offene Routinen, Anker und Abendpunkte'
-      : 'Tag: fällige Routinen und Anker'
+  const percent = total === 0 ? 0 : Math.round((done / total) * 100)
+  const remaining = Math.max(0, total - done)
+  const meaning = total === 0
+    ? 'Dein Tageskern ist frei.'
+    : remaining === 0
+      ? 'Tageskern abgeschlossen.'
+      : `${remaining} ${remaining === 1 ? 'Punkt' : 'Punkte'} im Tageskern offen`
 
   return { percent, done, total, meaning }
 }
@@ -391,6 +385,7 @@ export function selectNowItems(input: {
 
   input.habits.forEach(habit => {
     if (habit.done) return
+    if (isGateOnlyHabit(habit.key)) return
     if (excluded.has(habit.key)) return
     if (!habitRelevantNow(habit.key, mode)) return
     const intensity = HABIT_INTENSITY[habit.key] ?? 'steady'
@@ -436,7 +431,9 @@ export function selectOverviewItems(input: {
   excludeHabitKeys?: Iterable<string>
 }): NowItem[] {
   const excluded = new Set(input.excludeHabitKeys ?? [])
-  const habits = input.habits.filter(habit => !excluded.has(habit.key)).map(habit => ({
+  const habits = input.habits.filter(habit => (
+    !isGateOnlyHabit(habit.key) && !excluded.has(habit.key)
+  )).map(habit => ({
     id: `habit:${habit.key}`,
     kind: 'habit' as const,
     title: habit.label,
@@ -466,6 +463,20 @@ export const MORNING_HABITS = new Set([
   'winnerModeDone',
   'pushupsDone',
 ])
+
+/**
+ * Tasks completed inside a guided gate never become standalone Today rows.
+ * This is deliberately independent from completion state so reopening or
+ * finishing a gate cannot leak its steps back into NOW or the overview.
+ */
+export const GATE_ONLY_HABITS = new Set([
+  ...MORNING_HABITS,
+  'journalDone',
+])
+
+export function isGateOnlyHabit(key: string): boolean {
+  return GATE_ONLY_HABITS.has(key)
+}
 
 export function overviewSlot(item: Pick<NowItem, 'kind' | 'habitKey'>): DaySlot {
   if (item.kind === 'habit' && item.habitKey) {

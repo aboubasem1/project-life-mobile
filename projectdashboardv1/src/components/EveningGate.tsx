@@ -23,6 +23,7 @@ import {
   restartEveningGate,
   type EveningGateState,
   type EveningGateStepId,
+  type EveningEnergyLevel,
 } from '../lib/eveningGate'
 
 const STEP_LABELS: Record<EveningGateStepId, string> = {
@@ -34,6 +35,12 @@ const STEP_LABELS: Record<EveningGateStepId, string> = {
   memo: 'Memo',
   noScreen: 'No Screen',
 }
+
+const EVENING_ENERGY_CHOICES: Array<{ value: EveningEnergyLevel; label: string }> = [
+  { value: 'low', label: 'Niedrig' },
+  { value: 'okay', label: 'Okay' },
+  { value: 'high', label: 'Gut' },
+]
 
 function GateCard({
   icon,
@@ -156,7 +163,28 @@ export function EveningGate({
         card = (
           <GateCard icon={<Moon size={26} />} eyebrow="Abendmodus" title="Runterkommen">
             <p>Der Tag ist vorbei. Licht ruhiger, Tempo raus, offene Gedanken dürfen für heute liegen bleiben.</p>
-            <button type="button" className="primary-button morning-gate__cta" onClick={() => completeStep(draft, 'windDown')}>
+            <div className="evening-gate__energy" role="group" aria-label="Energie am Abend">
+              <span className="eyebrow">Energie am Abend</span>
+              <div className="choice-grid">
+                {EVENING_ENERGY_CHOICES.map(option => (
+                  <button
+                    type="button"
+                    key={option.value}
+                    className={draft.energyLevel === option.value ? 'choice-button is-active' : 'choice-button'}
+                    aria-pressed={draft.energyLevel === option.value}
+                    onClick={() => saveDraft({ ...draft, energyLevel: option.value })}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button
+              type="button"
+              className="primary-button morning-gate__cta"
+              disabled={!draft.energyLevel}
+              onClick={() => completeStep(draft, 'windDown')}
+            >
               <Moon size={17} /> Abendmodus starten
             </button>
           </GateCard>

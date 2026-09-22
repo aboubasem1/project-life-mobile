@@ -108,6 +108,7 @@ const RITUAL_STEP_LABELS: Record<string, string> = {
   winnerPose: 'Winner Mode',
   prayer: 'Gebet',
   energy: 'Energie',
+  headRecovery: 'Stimmung & Erholung',
   todos: 'Todos',
   workout: 'Workout',
   postShower: 'Dusche',
@@ -306,15 +307,18 @@ export function createRitualStepEvent(input: {
   occurredAt?: string
 }): RitualStepEvent | null {
   const now = new Date().toISOString()
+  const status = input.status ?? 'completed'
   return normalizeDailyEvent({
-    id: newEventId(),
+    id: status === 'completed'
+      ? `ritual:${input.date}:${input.stepId}:completed`
+      : newEventId(),
     date: input.date,
     occurredAt: input.occurredAt ?? now,
     recordedAt: now,
     source: 'morning_gate',
     type: 'ritual_step',
     stepId: input.stepId,
-    status: input.status ?? 'completed',
+    status,
     details: input.details,
   }) as RitualStepEvent | null
 }

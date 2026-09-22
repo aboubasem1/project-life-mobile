@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { Check, Inbox, LockKeyhole, Mic, Square, X } from 'lucide-react'
+import { Check, Image, LockKeyhole, Mic, Sparkles, Square, X } from 'lucide-react'
 import { transcribeCaptureAudio, webSpeechTranscriptionProvider } from '../../lib/decision-engine/transcription'
 import { CAPTURE_TARGET_LABELS, type CaptureTargetType, type LifeAreaKey } from '../../lib/lifeos'
 import type { CaptureDecisionPreview, CaptureDecisionPreviewItem } from '../../lib/lifeos/types'
@@ -233,10 +233,10 @@ export function CaptureSheet({
         <div className="modal-header">
           <div>
             <span className="eyebrow">
-              {phase === 'recording' ? 'Listening' : phase === 'processing' ? 'Organizing' : phase === 'preview' ? 'Vorschläge' : 'Capture'}
+              {phase === 'recording' ? 'Jo AI · hört zu' : phase === 'processing' ? 'Jo AI · ordnet ein' : phase === 'preview' ? 'Jo AI · Vorschläge' : 'Jo AI · Universal Capture'}
             </span>
             <h2 id="capture-title">
-              {phase === 'recording' ? 'Sprich ruhig' : phase === 'processing' ? 'Wird eingeordnet' : phase === 'preview' ? 'So würde LifeOS das ablegen' : 'Schnell erfassen'}
+              {phase === 'recording' ? 'Sprich einfach los.' : phase === 'processing' ? 'Einen Moment.' : phase === 'preview' ? 'So wird es abgelegt.' : 'Was möchtest du festhalten?'}
             </h2>
           </div>
           <button type="button" className="icon-button" onClick={onClose} aria-label="Schließen"><X size={18} /></button>
@@ -256,11 +256,11 @@ export function CaptureSheet({
         )}
 
         {phase !== 'recording' && (
-          <Field label="Was liegt an?">
+          <Field label="Eingabe">
             <textarea
               value={raw}
               onChange={event => setRaw(event.target.value)}
-              placeholder={audioRef ? 'Voice ist da — ein Satz reicht.' : 'Gedanke, Aufgabe, Mahlzeit, Einkauf…'}
+              placeholder={audioRef ? 'Voice ist da — ergänze nur, falls etwas fehlt.' : 'Gedanke, Aufgabe, Mahlzeit, Einkauf…'}
               rows={4}
               autoFocus={phase === 'idle'}
             />
@@ -277,7 +277,7 @@ export function CaptureSheet({
             </Field>
             <div className="lifeos-file-row">
               <button type="button" className="secondary-button" onClick={() => fileRef.current?.click()}>
-                Datei / Screenshot
+                <Image size={16} /> Foto / Datei
               </button>
               <input
                 ref={fileRef}
@@ -343,7 +343,7 @@ export function CaptureSheet({
           )}
           {phase !== 'recording' && (
             <button type="submit" className="primary-button" disabled={phase === 'processing'}>
-              <Inbox size={16} /> {phase === 'preview' ? 'Übernehmen' : phase === 'processing' ? 'Organizing…' : 'In Inbox legen'}
+              <Sparkles size={16} /> {phase === 'preview' ? 'Übernehmen' : phase === 'processing' ? 'Jo ordnet ein…' : 'Mit Jo einordnen'}
             </button>
           )}
         </div>
