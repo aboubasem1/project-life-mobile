@@ -1,14 +1,17 @@
 {
   "cleanUrls": true,
-  "buildCommand": "cd projectdashboardv1 && npm install && npm run build",
+  "buildCommand": "npm --prefix projectdashboardv1 run build",
   "outputDirectory": "projectdashboardv1/dist",
-  "installCommand": "echo 'deps installed in buildCommand'",
+  "installCommand": "npm ci && npm --prefix projectdashboardv1 ci",
   "functions": {
     "api/**/*.ts": {
       "maxDuration": 15
     }
   },
   "rewrites": [
-    { "source": "/api/transcribe", "destination": "/api/decision?mode=transcribe" }
+    { "source": "/api/transcribe", "destination": "/api/decision?mode=transcribe" },
+    { "source": "/api/storage/presign-upload", "destination": "/api/decision?mode=storage&operation=presign-upload" },
+    { "source": "/api/storage/complete", "destination": "/api/decision?mode=storage&operation=complete" },
+    { "source": "/api/storage/presign-download", "destination": "/api/decision?mode=storage&operation=presign-download" }
   ]
 }

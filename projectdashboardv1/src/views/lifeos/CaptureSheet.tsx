@@ -3,12 +3,23 @@ import { Check, Image, LockKeyhole, Mic, Sparkles, Square, X } from 'lucide-reac
 import { transcribeCaptureAudio, webSpeechTranscriptionProvider } from '../../lib/decision-engine/transcription'
 import { CAPTURE_TARGET_LABELS, type CaptureTargetType, type LifeAreaKey } from '../../lib/lifeos'
 import type { CaptureDecisionPreview, CaptureDecisionPreviewItem } from '../../lib/lifeos/types'
+import { uploadLifeOsFile } from '../../lib/objectStorage'
 import { Field, LifeAreaSelect } from './lifeosUi'
 
 const TARGETS: CaptureTargetType[] = ['inbox', 'task', 'note', 'knowledge', 'goal', 'event', 'decision', 'reference']
 const MAX_FILE_CHARS = 350_000
+const MAX_CLOUD_FILE_BYTES = 100 * 1024 * 1024
 
 type CapturePhase = 'idle' | 'recording' | 'processing' | 'preview'
+
+function fileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '')
+    reader.onerror = () => reject(new Error('Datei konnte nicht gelesen werden.'))
+    reader.readAsDataURL(file)
+  })
+}
 
 export function CaptureSheet({
   onClose,
@@ -29,13 +40,17 @@ export function CaptureSheet({
     fileName?: string
     fileKind?: 'file' | 'screenshot'
     fileDataUrl?: string
+    fileObjectId?: string
+    fileStorageKey?: string
+    fileContentType?: string
+    fileSize?: number
     classifyAs?: CaptureTargetType
     lifeArea?: LifeAreaKey
     source?: string
     audioRef?: string
     transcriptId?: string
     decisionPreview?: CaptureDecisionPreview
-  }) => void
+  }) => void | Promise<void>
 }) {
   const [raw, setRaw] = useState(initialRaw)
   const [url, setUrl] = useState('')
@@ -43,7 +58,7 @@ export function CaptureSheet({
   const [lifeArea, setLifeArea] = useState<LifeAreaKey | undefined>(undefined)
   const [fileName, setFileName] = useState('')
   const [fileKind, setFileKind] = useState<'file' | 'screenshot' | undefined>(undefined)
-  const [fileDataUrl, setFileDataUrl] = useState<string | undefined>(undefined)
+  const [selectedFile, setSelectedFile] = useState<File | undefined>(undefined)
   const [error, setError] = useState('')
   const [phase, setPhase] = useState<CapturePhase>('idle')
   const [seconds, setSeconds] = useState(0)
@@ -63,7 +78,7 @@ export function CaptureSheet({
     if (audioRef?.startsWith('blob:')) URL.revokeObjectURL(audioRef)
   }, [audioRef])
 
-  const commit = (nextPreview?: CaptureDecisionPreview) => {
+  const commit = async (nextPreview?: CaptureDecisionPreview) => {
     if (!raw.trim() && !url.trim() && !fileName) {
       setError('Schreib etwas, füge einen Link hinzu oder wähle eine Datei.')
       return
@@ -71,12 +86,45 @@ export function CaptureSheet({
     const filtered = nextPreview ?? (preview
       ? { ...preview, items: preview.items.filter(item => kept.includes(item.actionId)) }
       : undefined)
-    onCapture({
+    let attachment: {
+      fileDataUrl?: string
+      fileObjectId?: string
+      fileStorageKey?: string
+      fileContentType?: string
+      fileSize?: number
+    } = {}
+    if (selectedFile) {
+      setPhase('processing')
+      setError('')
+      try {
+        const stored = await uploadLifeOsFile(selectedFile, 'captures')
+        attachment = {
+          fileObjectId: stored.objectId,
+          fileStorageKey: stored.storageKey,
+          fileContentType: stored.contentType,
+          fileSize: stored.sizeBytes,
+        }
+      } catch {
+        if (selectedFile.size > 220_000) {
+          setError('Cloud-Dateispeicher nicht erreichbar. Für den lokalen Fallback darf die Datei maximal etwa 200 KB groß sein.')
+          setPhase('idle')
+          return
+        }
+        const localDataUrl = await fileAsDataUrl(selectedFile).catch(() => '')
+        if (!localDataUrl || localDataUrl.length > MAX_FILE_CHARS) {
+          setError('Datei konnte nicht sicher gespeichert werden.')
+          setPhase('idle')
+          return
+        }
+        attachment = { fileDataUrl: localDataUrl, fileSize: selectedFile.size }
+      }
+    }
+    await onCapture({
       raw: raw.trim() || url.trim() || fileName,
       url: url.trim() || undefined,
       fileName: fileName || undefined,
       fileKind,
-      fileDataUrl,
+      ...attachment,
       classifyAs: target,
       lifeArea,
       source: audioRef ? 'voice' : 'quick_add',
@@ -87,7 +135,7 @@ export function CaptureSheet({
 
   const runDecide = async (content: string, source: 'quick_add' | 'voice') => {
     if (!onDecide || !content.trim()) {
-      commit()
+      await commit()
       return
     }
     setPhase('processing')
@@ -100,7 +148,7 @@ export function CaptureSheet({
         setPhase('preview')
         return
       }
-      commit(next)
+      await commit(next)
     } catch {
       setError('Einordnen nicht möglich — du kannst trotzdem speichern.')
       setPhase('idle')
@@ -110,7 +158,7 @@ export function CaptureSheet({
   const submit = (event: FormEvent) => {
     event.preventDefault()
     if (phase === 'preview') {
-      commit()
+      void commit()
       return
     }
     void runDecide(raw.trim() || url.trim() || fileName, audioRef ? 'voice' : 'quick_add')
@@ -118,24 +166,15 @@ export function CaptureSheet({
 
   const onFile = (file: File | undefined) => {
     if (!file) return
-    if (file.size > 220_000) {
-      setError('Datei ist zu groß für den lokalen Speicher (max. ~200 KB).')
+    if (file.size > MAX_CLOUD_FILE_BYTES) {
+      setError('Datei ist größer als 100 MB.')
       return
     }
     const kind: 'file' | 'screenshot' = file.type.startsWith('image/') ? 'screenshot' : 'file'
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = typeof reader.result === 'string' ? reader.result : ''
-      if (result.length > MAX_FILE_CHARS) {
-        setError('Datei ist zu groß für den lokalen Speicher.')
-        return
-      }
-      setFileName(file.name)
-      setFileKind(kind)
-      setFileDataUrl(result)
-      setError('')
-    }
-    reader.readAsDataURL(file)
+    setSelectedFile(file)
+    setFileName(file.name)
+    setFileKind(kind)
+    setError('')
   }
 
   const stopTracks = () => {
@@ -337,7 +376,7 @@ export function CaptureSheet({
             </button>
           )}
           {phase === 'preview' && (
-            <button type="button" className="secondary-button" onClick={() => { setKept(preview?.items.map(item => item.actionId) ?? []); commit(preview) }}>
+            <button type="button" className="secondary-button" onClick={() => { setKept(preview?.items.map(item => item.actionId) ?? []); void commit(preview) }}>
               Alles übernehmen
             </button>
           )}

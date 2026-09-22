@@ -1,6 +1,6 @@
 import { applyHealthIngest } from './health-ingest-core.js'
 import { applyInboundHook, resolveInboundHookType, type InboundHook } from './hook-core.js'
-import { probeSyncStorage } from './sync-store.js'
+import { buildHealthStatus } from './health-status.js'
 import {
   createSyncRoom,
   joinSyncRoom,
@@ -15,6 +15,7 @@ import { type SyncSnapshot } from './sync-store.js'
 import { applyInboundConnectorWebhook, dispatchOutboundWebhook } from './lifeos-webhook-core.js'
 import { runDecisionRequest } from './decision-core.js'
 import { runTranscriptionRequest } from './transcription-core.js'
+import { handleStorageRequest } from './storage-api.js'
 
 function bearerToken(request: Request): string {
   const header = request.headers.get('authorization') ?? ''
@@ -29,6 +30,10 @@ export async function handleSyncRequest(request: Request): Promise<Response> {
     const url = new URL(request.url)
     const pathname = url.pathname.replace(/\/$/, '')
 
+    if (pathname.endsWith('/api/health/live') && (request.method === 'GET' || request.method === 'HEAD')) {
+      return syncJson({ service: 'life-os', status: 'ok', ok: true })
+    }
+
     if (pathname.endsWith('/api/health/ingest') && request.method === 'POST') {
       const body = await readSyncJson<unknown>(request)
       const result = await applyHealthIngest(request, body)
@@ -36,11 +41,12 @@ export async function handleSyncRequest(request: Request): Promise<Response> {
     }
 
     if (pathname.endsWith('/api/health') && (request.method === 'GET' || request.method === 'HEAD')) {
-      const probe = await probeSyncStorage()
-      return syncJson({
-        service: 'life-os',
-        ...probe,
-      }, probe.ok ? 200 : 503)
+      const health = await buildHealthStatus()
+      return syncJson(health, health.ok ? 200 : 503)
+    }
+
+    if (pathname.includes('/api/storage/')) {
+      return await handleStorageRequest(request)
     }
 
     const webhookMatch = pathname.match(/\/api\/integrations\/webhooks\/([^/]+)$/)
@@ -71,7 +77,7 @@ export async function handleSyncRequest(request: Request): Promise<Response> {
     }
 
     if (pathname.endsWith('/api/transcribe') && (request.method === 'POST' || request.method === 'OPTIONS')) {
-      return runTranscriptionRequest(request)
+      return await runTranscriptionRequest(request)
     }
 
     if (pathname.endsWith('/api/decision') && request.method === 'POST') {
@@ -136,9 +142,12 @@ export async function handleSyncRequest(request: Request): Promise<Response> {
 
     if (pathname.endsWith('/api/sync/pull')) {
       if (request.method === 'GET') {
+        const authorization = request.headers.get('authorization') ?? ''
         return syncJson(await pullSyncSnapshot(
-          url.searchParams.get('roomId') ?? '',
-          url.searchParams.get('deviceToken') ?? '',
+          request.headers.get('x-life-os-room') ?? url.searchParams.get('roomId') ?? '',
+          authorization.toLowerCase().startsWith('bearer ')
+            ? authorization.slice(7).trim()
+            : request.headers.get('x-life-os-token') ?? url.searchParams.get('deviceToken') ?? '',
         ))
       }
       if (request.method === 'POST') {

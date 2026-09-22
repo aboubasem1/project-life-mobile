@@ -53,6 +53,10 @@ export function createCapture(input: {
   fileName?: string
   fileKind?: Capture['fileKind']
   fileDataUrl?: string
+  fileObjectId?: string
+  fileStorageKey?: string
+  fileContentType?: string
+  fileSize?: number
   projectId?: string
   goalId?: string
   lifeArea?: LifeAreaKey
@@ -71,6 +75,10 @@ export function createCapture(input: {
     fileName: input.fileName,
     fileKind: input.fileKind,
     fileDataUrl: input.fileDataUrl,
+    fileObjectId: input.fileObjectId,
+    fileStorageKey: input.fileStorageKey,
+    fileContentType: input.fileContentType,
+    fileSize: input.fileSize,
     targetType: 'inbox',
     status: 'inbox',
     projectId: input.projectId,

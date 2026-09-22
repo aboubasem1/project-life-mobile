@@ -11,6 +11,7 @@ import { mergeBodyMeasurements, mergeHealthIngestState, normalizeBodyMeasurement
 import { applyEventFieldsToEntry, mergeDailyEvents, projectRitualDoneFromEvents } from '../projectdashboardv1/src/lib/dailyEvents.js'
 import { mergeDayJournal, mergeQuickNoteStates, parseQuickNote } from './inbound-note.js'
 import { mergeLifeOsSnapshots } from './lifeos-merge.js'
+import { mergePrivateVaultEnvelopes } from '../projectdashboardv1/src/lib/privateVault.js'
 
 const PAIR_TTL_MS = 30 * 60 * 1000
 const MAX_DEVICES = 8
@@ -42,7 +43,10 @@ export function syncError(error: unknown): Response {
   if (error instanceof SyncHttpError) {
     return syncJson({ error: error.message, storage: syncStorageMode() }, error.status)
   }
-  const message = error instanceof Error ? error.message : 'Unbekannter Sync-Fehler'
+  console.error(error)
+  const message = process.env.NODE_ENV === 'production'
+    ? 'Interner Serverfehler.'
+    : error instanceof Error ? error.message : 'Unbekannter Sync-Fehler'
   return syncJson({ error: message, storage: syncStorageMode() }, 500)
 }
 
@@ -274,6 +278,10 @@ export async function pushSyncSnapshot(input: {
     lifeOs: incoming.lifeOs != null || room.snapshot?.lifeOs != null
       ? mergeLifeOsSnapshots(room.snapshot?.lifeOs, incoming.lifeOs)
       : undefined,
+    privateVault: mergePrivateVaultEnvelopes(
+      room.snapshot?.privateVault,
+      incoming.privateVault,
+    ) ?? undefined,
   }
   room.updatedAt = updatedAt
   await saveRoom(room)

@@ -48,6 +48,10 @@ export type Capture = {
   fileName?: string
   fileKind?: 'file' | 'screenshot'
   fileDataUrl?: string
+  fileObjectId?: string
+  fileStorageKey?: string
+  fileContentType?: string
+  fileSize?: number
   targetType: CaptureTargetType
   status: CaptureStatus
   projectId?: string

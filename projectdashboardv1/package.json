@@ -6,10 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:server": "../node_modules/.bin/esbuild ../server/http.ts --bundle --platform=node --format=esm --target=node22 --outfile=../dist-server/server.mjs --packages=external",
     "typecheck": "tsc -b && tsc -p tsconfig.server.json",
     "test": "vitest run",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start:server": "node ../dist-server/server.mjs"
   },
   "dependencies": {
     "chart.js": "^4.5.1",

@@ -1,0 +1,144 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lifeos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-lifeos}
+      TZ: Europe/Berlin
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - internal
+
+  api:
+    image: lifeos-api:${LIFEOS_IMAGE_TAG:-local}
+    build:
+      context: .
+      target: api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      TZ: Europe/Berlin
+      PGHOST: db
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:-lifeos}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PGDATABASE: ${POSTGRES_DB:-lifeos}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_BUCKET: ${R2_BUCKET:-lifeos-production}
+      R2_REGION: ${R2_REGION:-auto}
+      R2_REQUIRED: "true"
+      SYNC_UPSTASH_BRIDGE: ${SYNC_UPSTASH_BRIDGE:-true}
+      UPSTASH_REDIS_REST_URL: ${UPSTASH_REDIS_REST_URL:-}
+      UPSTASH_REDIS_REST_TOKEN: ${UPSTASH_REDIS_REST_TOKEN:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_API_URL: ${LLM_API_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-4000}
+      TRANSCRIPTION_API_KEY: ${TRANSCRIPTION_API_KEY:-}
+      TRANSCRIPTION_API_URL: ${TRANSCRIPTION_API_URL:-}
+      TRANSCRIPTION_ENABLED: ${TRANSCRIPTION_ENABLED:-}
+      TRANSCRIPTION_LANGUAGE: ${TRANSCRIPTION_LANGUAGE:-de}
+      TRANSCRIPTION_MODEL: ${TRANSCRIPTION_MODEL:-whisper-1}
+      TRANSCRIPTION_TIMEOUT_MS: ${TRANSCRIPTION_TIMEOUT_MS:-25000}
+      JEV_API_KEY: ${JEV_API_KEY:-}
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+      JEV_API_URL: ${JEV_API_URL:-}
+      JEV_MODEL: ${JEV_MODEL:-}
+      JEV_ENABLED: ${JEV_ENABLED:-false}
+      JEV_AUTO_ACTIONS_ENABLED: ${JEV_AUTO_ACTIONS_ENABLED:-false}
+      JEV_LLM_FALLBACK_ENABLED: ${JEV_LLM_FALLBACK_ENABLED:-false}
+      JEV_TIMEOUT_MS: ${JEV_TIMEOUT_MS:-2500}
+      DEV_ADMIN_SECRET: ${DEV_ADMIN_SECRET:-}
+      GITHUB_ADMIN_TOKEN: ${GITHUB_ADMIN_TOKEN:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health/live').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - internal
+
+  web:
+    image: lifeos-web:${LIFEOS_IMAGE_TAG:-local}
+    build:
+      context: .
+      target: web
+      args:
+        VITE_JEV_ENABLED: ${VITE_JEV_ENABLED:-false}
+        VITE_JEV_AUTO_ACTIONS_ENABLED: ${VITE_JEV_AUTO_ACTIONS_ENABLED:-false}
+    restart: unless-stopped
+    environment:
+      LIFEOS_SITE_ADDRESS: ${LIFEOS_SITE_ADDRESS:-:80}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - internal
+
+  backup:
+    image: lifeos-backup:${LIFEOS_IMAGE_TAG:-local}
+    build:
+      context: .
+      target: backup
+    restart: unless-stopped
+    environment:
+      TZ: Europe/Berlin
+      PGHOST: db
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:-lifeos}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PGDATABASE: ${POSTGRES_DB:-lifeos}
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_BUCKET: ${R2_BUCKET:-lifeos-production}
+      AWS_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${R2_REGION:-auto}
+      AWS_EC2_METADATA_DISABLED: "true"
+      BACKUP_CRON: ${BACKUP_CRON:-15 3 * * *}
+      BACKUP_RUN_ON_START: ${BACKUP_RUN_ON_START:-false}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:
+    driver: bridge

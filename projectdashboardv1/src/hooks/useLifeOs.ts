@@ -44,7 +44,16 @@ export function useLifeOs() {
     return next
   }, [])
 
-  const captureQuick = useCallback((raw: string, extras?: { url?: string; fileName?: string; fileKind?: Capture['fileKind']; fileDataUrl?: string }) => {
+  const captureQuick = useCallback((raw: string, extras?: {
+    url?: string
+    fileName?: string
+    fileKind?: Capture['fileKind']
+    fileDataUrl?: string
+    fileObjectId?: string
+    fileStorageKey?: string
+    fileContentType?: string
+    fileSize?: number
+  }) => {
     const capture = createCapture({ raw, ...extras })
     commit(current => ({
       ...current,
