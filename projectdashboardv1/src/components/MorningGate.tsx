@@ -394,7 +394,7 @@ export function MorningGate({
             </p>
             <ul className="morning-gate__meds">
               {medications.length === 0 ? (
-                <li><p className="morning-gate__empty">Keine Medikamente im Labor — Shake reicht.</p></li>
+                <li><p className="morning-gate__empty">Keine Medikamente in Lab — Shake reicht.</p></li>
               ) : medications.map(item => (
                 <li key={item.id}>
                   <CheckRow

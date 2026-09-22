@@ -60,7 +60,7 @@ export function ProjectDetailView({
     return (
       <LifeOsPage eyebrow="Projekte" title="Projekt">
         <section className="card">
-          <LifeOsEmpty title="Projekt nicht gefunden" text="Öffne ein Board aus Labor." action={<button type="button" className="secondary-button" onClick={onBack}>Zurück</button>} />
+          <LifeOsEmpty title="Projekt nicht gefunden" text="Öffne ein Board aus Lab." action={<button type="button" className="secondary-button" onClick={onBack}>Zurück</button>} />
         </section>
       </LifeOsPage>
     )
@@ -70,7 +70,7 @@ export function ProjectDetailView({
     <LifeOsPage
       eyebrow="Projekt"
       title={project.label}
-      action={<button type="button" className="small-button" onClick={onBack}><ArrowLeft size={14} /> Labor</button>}
+      action={<button type="button" className="small-button" onClick={onBack}><ArrowLeft size={14} /> Lab</button>}
     >
       <section className="card">
         <Field label="Titel">

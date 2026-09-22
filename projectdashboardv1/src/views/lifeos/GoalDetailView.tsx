@@ -24,7 +24,7 @@ export function GoalDetailView({
     return (
       <LifeOsPage eyebrow="Ziele" title="Ziel">
         <section className="card">
-          <LifeOsEmpty title="Ziel nicht gefunden" text="Öffne ein Ziel aus Labor." action={<button type="button" className="secondary-button" onClick={onBack}>Zurück</button>} />
+          <LifeOsEmpty title="Ziel nicht gefunden" text="Öffne ein Ziel aus Lab." action={<button type="button" className="secondary-button" onClick={onBack}>Zurück</button>} />
         </section>
       </LifeOsPage>
     )
@@ -34,7 +34,7 @@ export function GoalDetailView({
     <LifeOsPage
       eyebrow="Goal"
       title={goal.title}
-      action={<button type="button" className="small-button" onClick={onBack}><ArrowLeft size={14} /> Labor</button>}
+      action={<button type="button" className="small-button" onClick={onBack}><ArrowLeft size={14} /> Lab</button>}
     >
       <section className="card">
         <Field label="Titel"><input value={goal.title} onChange={event => onChange({ title: event.target.value })} /></Field>

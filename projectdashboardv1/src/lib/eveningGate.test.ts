@@ -12,7 +12,14 @@ describe('evening gate', () => {
   it('starts with the wind-down card and preserves configured preparation items', () => {
     const state = createEveningGateState()
     expect(nextEveningGateStep(state)).toBe('windDown')
+    expect(state.energyLevel).toBeUndefined()
     expect(state.preparationItems.length).toBeGreaterThan(0)
+  })
+
+  it('persists a separate evening energy reading', () => {
+    const state = createEveningGateState({ energyLevel: 'low' })
+    expect(state.energyLevel).toBe('low')
+    expect(createEveningGateState({ ...state, energyLevel: 'high' }).energyLevel).toBe('high')
   })
 
   it('resumes at the first incomplete card', () => {
@@ -31,7 +38,7 @@ describe('evening gate', () => {
 
     const restarted = restartEveningGate(finished)
     expect(restarted.completedAt).toBeUndefined()
+    expect(restarted.energyLevel).toBeUndefined()
     expect(nextEveningGateStep(restarted)).toBe('windDown')
   })
 })
-

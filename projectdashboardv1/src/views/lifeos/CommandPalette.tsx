@@ -20,7 +20,7 @@ const COMMANDS: Command[] = [
   { id: 'signals', title: 'Signale', hint: 'Messen', view: 'signals' },
   { id: 'insights', title: 'Insights', hint: 'Nur belegte Muster', view: 'insights' },
   { id: 'integrations', title: 'Integrationen', hint: 'Connectoren', view: 'integrations' },
-  { id: 'labor', title: 'Labor / Projekte', hint: 'Bestehende Boards', view: 'dashboardPlus' },
+  { id: 'labor', title: 'Lab / Daten', hint: 'Projekte, Ziele und Bestände', view: 'dashboardPlus' },
 ]
 
 export function CommandPalette({

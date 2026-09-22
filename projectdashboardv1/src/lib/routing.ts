@@ -41,10 +41,13 @@ const HASH_TO_VIEW: Record<string, AppView> = {
   '/heute': 'today',
   '/today': 'today',
   '/plan': 'plan',
-  '/checkin': 'checkin',
-  '/check-in': 'checkin',
+  '/lab/plan': 'plan',
+  '/checkin': 'progress',
+  '/check-in': 'progress',
+  '/lab': 'progress',
   '/verlauf': 'progress',
   '/progress': 'progress',
+  '/lab/daten': 'dashboardPlus',
   '/labor': 'dashboardPlus',
   '/dashboard': 'dashboardPlus',
   '/dashboard-plus': 'dashboardPlus',
@@ -64,10 +67,10 @@ const HASH_TO_VIEW: Record<string, AppView> = {
 
 const VIEW_TO_HASH: Record<AppView, string> = {
   today: '#/heute',
-  plan: '#/plan',
-  checkin: '#/checkin',
-  progress: '#/verlauf',
-  dashboardPlus: '#/labor',
+  plan: '#/lab/plan',
+  checkin: '#/lab',
+  progress: '#/lab',
+  dashboardPlus: '#/lab/daten',
   inbox: '#/inbox',
   project: '#/project',
   goal: '#/goal',
@@ -81,7 +84,7 @@ const VIEW_TO_HASH: Record<AppView, string> = {
 
 const ACTION_TO_VIEW: Record<AppActionKind, AppView> = {
   focus: 'today',
-  checkin: 'checkin',
+  checkin: 'today',
   note: 'today',
   plan: 'plan',
   'add-task': 'plan',
@@ -92,10 +95,10 @@ const ACTION_TO_VIEW: Record<AppActionKind, AppView> = {
 
 export const VIEW_LABELS: Record<AppView, string> = {
   today: 'Heute',
-  plan: 'Plan',
-  checkin: 'Check-in',
-  progress: 'Verlauf',
-  dashboardPlus: 'Labor',
+  plan: 'Lab · Plan',
+  checkin: 'Lab',
+  progress: 'Lab',
+  dashboardPlus: 'Lab · Daten',
   inbox: 'Inbox',
   project: 'Projekt',
   goal: 'Ziel',
@@ -148,10 +151,10 @@ export function hashFromView(view: AppView): string {
   return VIEW_TO_HASH[view]
 }
 
-export const PROGRESS_HUB_VIEWS: AppView[] = ['progress', 'dashboardPlus', 'plan', 'checkin']
+export const PROGRESS_HUB_VIEWS: AppView[] = ['progress', 'dashboardPlus', 'plan']
 
 export function isProgressHubView(view: AppView): boolean {
-  return view === 'progress' || view === 'dashboardPlus' || view === 'plan' || view === 'checkin'
+  return view === 'progress' || view === 'dashboardPlus' || view === 'plan'
 }
 
 export function navigateHash(view: AppView, replace = false): void {
@@ -276,7 +279,7 @@ export function buildActionUrl(
 export const SHORTCUT_RECIPES: Array<{ label: string; kind: AppActionKind; hint: string; text?: string }> = [
   { label: 'Heute öffnen', kind: 'today', hint: 'Kurzbefehl → URL öffnen' },
   { label: 'Fokus starten', kind: 'focus', hint: 'Optional: &min=25' },
-  { label: 'Check-in', kind: 'checkin', hint: 'Abend-Automation' },
+  { label: 'Routine Check-in', kind: 'checkin', hint: 'Öffnet Morning- oder Evening Gate' },
   { label: 'Kurznotiz', kind: 'note', hint: 'Kurzbefehl / Brille: &text= durch Diktat ersetzen', text: 'DEIN TEXT' },
   { label: 'Aufgabe anlegen', kind: 'add-task', hint: '&title=Creatine holen' },
   { label: 'Protein loggen', kind: 'log', hint: 'Schreibt ins Heute-Protokoll', text: '180g protein' },
