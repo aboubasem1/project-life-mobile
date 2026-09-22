@@ -77,11 +77,12 @@ Expected production response. During the OVH-local stage, `objectStorage.status`
 
 ## Deployment
 
-The OVH workflow is inert until repository variable `OVH_DEPLOY_ENABLED` is `true`.
+Pushes to `main` deploy to OVH by default. Set repository variable `OVH_DEPLOY_ENABLED` to
+`false` to pause automatic deploys. Manual `workflow_dispatch` still requires the confirm input.
 
 Repository variables:
 
-- `OVH_DEPLOY_ENABLED`
+- `OVH_DEPLOY_ENABLED` (optional; set to `false` to pause push deploys)
 - `OVH_HOST`
 - `OVH_USER`
 - `OVH_SSH_PORT`
