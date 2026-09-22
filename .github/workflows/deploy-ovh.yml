@@ -20,7 +20,12 @@ concurrency:
 
 jobs:
   verify:
-    if: vars.OVH_DEPLOY_ENABLED == 'true' || (github.event_name == 'workflow_dispatch' && inputs.deploy == true)
+    # Deploy on every main push unless explicitly disabled. Manual runs still require the confirm input.
+    if: >-
+      vars.OVH_DEPLOY_ENABLED != 'false' && (
+        github.event_name == 'push' ||
+        (github.event_name == 'workflow_dispatch' && inputs.deploy == true)
+      )
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
