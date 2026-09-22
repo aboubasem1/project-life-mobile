@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Check, ChevronDown, MoreHorizontal, Search, X } from 'lucide-react'
 import {
   LAB_DATA_AREAS,
@@ -106,7 +107,11 @@ export function LabDataMobileChrome({
           className="lab-data-taskbar__current"
           aria-haspopup="dialog"
           aria-expanded={sheetOpen}
-          onClick={() => setSheetOpen(true)}
+          data-testid="lab-data-area-trigger"
+          onClick={() => {
+            setMenuOpen(false)
+            setSheetOpen(true)
+          }}
         >
           <span className="lab-data-taskbar__icon" aria-hidden="true">
             <Icon size={16} />
@@ -121,6 +126,7 @@ export function LabDataMobileChrome({
           <button
             type="button"
             className="lab-data-taskbar__action"
+            data-testid="lab-data-quick-action"
             onClick={() => onQuickAction(area.quickAction!.id)}
           >
             {area.quickAction.label}
@@ -128,7 +134,7 @@ export function LabDataMobileChrome({
         )}
       </div>
 
-      {sheetOpen && (
+      {sheetOpen && createPortal(
         <LabDataAreaSheet
           section={section}
           contextBySection={{ [section]: contextLine }}
@@ -137,7 +143,8 @@ export function LabDataMobileChrome({
             setSheetOpen(false)
           }}
           onClose={() => setSheetOpen(false)}
-        />
+        />,
+        document.body,
       )}
     </div>
   )
