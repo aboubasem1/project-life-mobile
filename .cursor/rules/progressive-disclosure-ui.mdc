@@ -1,0 +1,27 @@
+---
+description: Prefer guided sequential UI with progressive disclosure where appropriate
+alwaysApply: true
+---
+
+# Progressive disclosure UI
+
+Prefer **guided, sequential interfaces** over information-dense all-at-once screens.
+
+## Default pattern
+
+- One step → one relevant decision (or one focused action cluster).
+- Reveal the next choice only after the current one is settled.
+- Hide secondary fields, advanced options, and rare actions behind clear progressive disclosure (e.g. “Link hinzufügen”, “Weitere Optionen”).
+- Put the primary input and primary action first; do not bury them under optional controls.
+
+## Apply only where it fits
+
+Use this for capture, onboarding, multi-step flows, wizards, confirm/review sheets, and dense forms that can be sequenced.
+
+Do **not** force it onto surfaces that are meant to be glanceable or comparative in one view (e.g. dashboards, calendars, kanban boards, settings overviews, data tables) unless the user is clearly in a decision funnel.
+
+## Quality bar
+
+- If removing a block from the first screen does not hurt the current decision, remove or defer it.
+- Prefer fewer simultaneous chips, stats, and side panels in the active step.
+- Confirmation/preview steps should show only the proposed outcomes and accept/reject actions, not re-open the full capture form.
