@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: Confirm this one-time OVH production deployment
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -14,7 +20,7 @@ concurrency:
 
 jobs:
   verify:
-    if: vars.OVH_DEPLOY_ENABLED == 'true'
+    if: vars.OVH_DEPLOY_ENABLED == 'true' || (github.event_name == 'workflow_dispatch' && inputs.deploy == true)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
