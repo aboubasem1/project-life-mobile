@@ -2219,6 +2219,10 @@ function App() {
     fileName?: string
     fileKind?: 'file' | 'screenshot'
     fileDataUrl?: string
+    fileObjectId?: string
+    fileStorageKey?: string
+    fileContentType?: string
+    fileSize?: number
     classifyAs?: CaptureTargetType
     lifeArea?: LifeAreaKey
     source?: string
@@ -2320,18 +2324,27 @@ function App() {
       }))
     }
     if (openInbox) {
-      setCaptureOpen(false)
-      setCapturePreset('')
-      navigateTo(appliedFromConfirm ? 'today' : 'inbox', appliedFromConfirm ? undefined : classified.id)
-      showToast(appliedFromConfirm ? 'Vorschläge übernommen' : 'In Inbox gelegt')
+      const captureId = nextCapture.id
+      navigateTo(appliedFromConfirm ? 'today' : 'inbox', appliedFromConfirm ? undefined : captureId)
+      if (appliedFromConfirm) {
+        showToast('Gespeichert')
+      } else {
+        showToast('Gespeichert', 'Rückgängig', () => {
+          lifeOs.commit(current => ({
+            ...current,
+            captures: current.captures.filter(item => item.id !== captureId),
+          }))
+          showToast('Capture entfernt')
+        })
+      }
     } else {
       showToast('Als Universal Memo gespeichert.')
     }
   }
 
-  const handleLifeOsCapture = (input: Parameters<typeof commitLifeOsCapture>[0]) => {
+  const handleLifeOsCapture = (input: Parameters<typeof commitLifeOsCapture>[0]) => (
     commitLifeOsCapture(input)
-  }
+  )
 
   const openPrivateNotes = (text = '', onSaved?: () => void) => {
     setPrivateNotePreset(text)
