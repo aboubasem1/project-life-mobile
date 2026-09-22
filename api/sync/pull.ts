@@ -10,8 +10,11 @@ async function handle(request: Request): Promise<Response> {
 
     if (request.method === 'GET') {
       const url = new URL(request.url)
-      const roomId = url.searchParams.get('roomId') ?? ''
-      const deviceToken = url.searchParams.get('deviceToken') ?? ''
+      const authorization = request.headers.get('authorization') ?? ''
+      const roomId = request.headers.get('x-life-os-room') ?? url.searchParams.get('roomId') ?? ''
+      const deviceToken = authorization.toLowerCase().startsWith('bearer ')
+        ? authorization.slice(7).trim()
+        : request.headers.get('x-life-os-token') ?? url.searchParams.get('deviceToken') ?? ''
       const result = await pullSyncSnapshot(roomId, deviceToken)
       return syncJson(result)
     }

@@ -1,6 +1,7 @@
 import { runDecisionRequest } from '../server/decision-core.js'
 import { readSyncJson, syncError, syncJson } from '../server/sync-core.js'
 import { runTranscriptionRequest } from '../server/transcription-core.js'
+import { handleStorageRequest } from '../server/storage-api.js'
 
 export const config = {
   maxDuration: 30,
@@ -12,9 +13,15 @@ function isTranscriptionRequest(request: Request): boolean {
   return url.searchParams.get('mode') === 'transcribe' || pathname.endsWith('/transcribe')
 }
 
+function isStorageRequest(request: Request): boolean {
+  const url = new URL(request.url)
+  return url.searchParams.get('mode') === 'storage'
+}
+
 async function handle(request: Request): Promise<Response> {
   try {
     if (request.method === 'OPTIONS') return syncJson({ ok: true })
+    if (isStorageRequest(request)) return await handleStorageRequest(request)
     if (isTranscriptionRequest(request)) return await runTranscriptionRequest(request)
     if (request.method !== 'POST') return syncJson({ error: 'Methode nicht erlaubt.' }, 405)
     const body = await readSyncJson<{

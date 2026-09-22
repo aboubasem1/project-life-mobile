@@ -11,7 +11,9 @@ mit optionalem Geräte-Sync und externen Imports.
 - **lucide-react** für Icons
 - **vite-plugin-pwa** — installierbar als App
 - **localStorage** als primäre Offline-Persistenz
-- **Vercel Functions + Upstash Redis** für optionalen Geräte-Sync, Webhooks und Health-Ingest
+- **Node API + PostgreSQL** auf OVH für Geräte-Sync, Webhooks und Health-Ingest
+- **Cloudflare R2** für private Capture-Dateien; kleine Dateien fallen auf Vercel weiterhin lokal zurück
+- **Vercel Functions + Upstash Redis** bleiben während der Migration als funktionierender Fallback bestehen
 
 Es gibt bewusst keine Accounts. Ohne Kopplung bleibt alles lokal; nach dem Koppeln
 wird ein privater Sync-Raum über Geräte-Token verwendet. Details stehen in
@@ -65,8 +67,9 @@ append-only Tagesereignisprotokoll. Neuere Backup-Versionen als die App werden a
 - Apple Health / Fitdays: `POST /api/health/ingest`
 - Store prüfen: `GET /api/health`
 
-Production benötigt `UPSTASH_REDIS_REST_URL` und `UPSTASH_REDIS_REST_TOKEN`.
-Lokale Einrichtung, Auth-Header und Beispiele: [`SYNC.md`](SYNC.md).
+Vercel benötigt weiterhin `UPSTASH_REDIS_REST_URL` und `UPSTASH_REDIS_REST_TOKEN`.
+Die parallele OVH-Installation nutzt PostgreSQL und kann Upstash vorübergehend als Migrationsbrücke
+lesen und spiegeln. Lokale Einrichtung, Auth-Header und Beispiele: [`SYNC.md`](SYNC.md).
 
 ## Roadmap
 

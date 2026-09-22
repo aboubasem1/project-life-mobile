@@ -21,11 +21,29 @@ function lifeOsSyncDevPlugin(): Plugin {
       if (env.TRANSCRIPTION_ENABLED) process.env.TRANSCRIPTION_ENABLED = env.TRANSCRIPTION_ENABLED
       if (env.TRANSCRIPTION_TIMEOUT_MS) process.env.TRANSCRIPTION_TIMEOUT_MS = env.TRANSCRIPTION_TIMEOUT_MS
       if (env.TRANSCRIPTION_MODEL) process.env.TRANSCRIPTION_MODEL = env.TRANSCRIPTION_MODEL
+      for (const key of [
+        'DATABASE_URL',
+        'PGHOST',
+        'PGPORT',
+        'PGUSER',
+        'PGPASSWORD',
+        'PGDATABASE',
+        'R2_ACCOUNT_ID',
+        'R2_ENDPOINT',
+        'R2_ACCESS_KEY_ID',
+        'R2_SECRET_ACCESS_KEY',
+        'R2_BUCKET',
+        'R2_REGION',
+        'R2_REQUIRED',
+        'SYNC_UPSTASH_BRIDGE',
+      ]) {
+        if (env[key]) process.env[key] = env[key]
+      }
 
       server.middlewares.use((req, res, next) => {
         void (async () => {
           const url = req.url ?? ''
-          if (!url.startsWith('/api/sync') && !url.startsWith('/api/hooks') && !url.startsWith('/api/health') && !url.startsWith('/api/integrations') && !url.startsWith('/api/decision') && !url.startsWith('/api/transcribe')) {
+          if (!url.startsWith('/api/sync') && !url.startsWith('/api/hooks') && !url.startsWith('/api/health') && !url.startsWith('/api/storage') && !url.startsWith('/api/integrations') && !url.startsWith('/api/decision') && !url.startsWith('/api/transcribe')) {
             next()
             return
           }

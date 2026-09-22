@@ -295,6 +295,7 @@ export async function applyInboundHook(raw: InboundHook): Promise<{
     morningRitualProgress: snapshot?.morningRitualProgress,
     dailyEvents: mergeDailyEvents(snapshot?.dailyEvents, event ? [event] : []),
     lifeOs: snapshot?.lifeOs,
+    privateVault: snapshot?.privateVault,
   }
   room.snapshot = nextSnapshot
   room.updatedAt = updatedAt

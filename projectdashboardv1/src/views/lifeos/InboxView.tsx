@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Archive, Inbox, Trash2 } from 'lucide-react'
 import {
   CAPTURE_TARGET_LABELS,
@@ -6,9 +6,37 @@ import {
   type CaptureTargetType,
   type LifeAreaKey,
 } from '../../lib/lifeos'
+import { getLifeOsFileUrl } from '../../lib/objectStorage'
 import { ChipRow, LifeAreaSelect, LifeOsEmpty, LifeOsPage } from './lifeosUi'
 
 const TARGETS: CaptureTargetType[] = ['task', 'note', 'knowledge', 'goal', 'event', 'decision', 'reference']
+
+function CaptureAttachment({ capture }: { capture: Capture }) {
+  const [url, setUrl] = useState('')
+
+  useEffect(() => {
+    let active = true
+    if (!capture.fileStorageKey) return () => { active = false }
+    void getLifeOsFileUrl({
+      objectId: capture.fileObjectId,
+      storageKey: capture.fileStorageKey,
+      fileName: capture.fileName,
+      contentType: capture.fileContentType,
+    })
+      .then(next => { if (active) setUrl(next) })
+      .catch(() => undefined)
+    return () => { active = false }
+  }, [capture.fileContentType, capture.fileName, capture.fileObjectId, capture.fileStorageKey])
+
+  if (!capture.fileStorageKey) return null
+  if (url && capture.fileContentType?.startsWith('image/')) {
+    return <img src={url} alt={capture.fileName || 'Screenshot'} className="lifeos-preview" />
+  }
+  if (url) {
+    return <p><a href={url} target="_blank" rel="noreferrer">{capture.fileName || 'Datei öffnen'}</a></p>
+  }
+  return <p className="field-hint">{capture.fileName || 'Cloud-Datei'} · wird geladen</p>
+}
 
 export function InboxView({
   items,
@@ -89,8 +117,12 @@ export function InboxView({
                 </div>
               )}
               {selected.url && <p><a href={selected.url} target="_blank" rel="noreferrer">{selected.url}</a></p>}
-              {selected.fileName && <p className="field-hint">{selected.fileName}</p>}
-              {selected.fileDataUrl?.startsWith('data:image/') && (
+              {selected.fileStorageKey ? (
+                <CaptureAttachment key={selected.fileStorageKey} capture={selected} />
+              ) : selected.fileName ? (
+                <p className="field-hint">{selected.fileName}</p>
+              ) : null}
+              {!selected.fileStorageKey && selected.fileDataUrl?.startsWith('data:image/') && (
                 <img src={selected.fileDataUrl} alt={selected.fileName || 'Screenshot'} className="lifeos-preview" />
               )}
               <ChipRow>

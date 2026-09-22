@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true,
@@ -13,8 +13,13 @@
   },
   "include": [
     "../server/decision-core.ts",
+    "../server/database.ts",
+    "../server/health-status.ts",
+    "../server/http.ts",
     "../server/hook-core.ts",
     "../server/health-ingest-core.ts",
+    "../server/object-storage.ts",
+    "../server/storage-api.ts",
     "../server/entry-score.ts",
     "../server/sync-core.ts",
     "../server/sync-store.ts",
@@ -29,6 +34,7 @@
     "../server/lifeos-webhook-core.ts",
     "../server/lifeos-merge.ts",
     "src/lib/bodyMeasurement.ts",
+    "src/lib/privateVault.ts",
     "src/lib/lifeos/areas.ts",
     "src/lib/lifeos/types.ts",
     "src/lib/lifeos/store.ts",

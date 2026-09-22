@@ -1,0 +1,14 @@
+.git
+.github
+.vercel
+.env
+.env.*
+node_modules
+projectdashboardv1/node_modules
+projectdashboardv1/dist
+projectdashboardv1/.data
+dist-server
+coverage
+*.log
+.DS_Store
+

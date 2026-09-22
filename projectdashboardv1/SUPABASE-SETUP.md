@@ -1,12 +1,15 @@
 # Cloud-Sync — nicht aktiv
 
-Life OS speichert **nur lokal** im Browser (`localStorage`) und per JSON-Backup.
+Life OS verwendet **kein Supabase**. Primär arbeitet die PWA lokal im Browser (`localStorage`);
+der optionale Geräte-Sync läuft in der bestehenden Vercel-Production über Upstash und in der
+OVH-Zielarchitektur über PostgreSQL.
 
 Ein früherer Supabase-Entwurf existiert nicht mehr im laufenden Code. Diese Datei bleibt
 als Hinweis, falls jemand alte Links oder `.env`-Vorlagen findet:
 
 - Keine `VITE_SUPABASE_*` Variablen nötig
 - Keine SQL-Migrationen ausführen
-- Sync-Status in der UI meint „Lokal auf diesem Gerät“, nicht Cloud
+- Keine Supabase-Tabellen oder SQL-Migrationen aus historischen Planungsdateien verwenden
 
-Für echte Multi-Gerät-Nutzung: regelmäßig Vollbackup exportieren und auf dem anderen Gerät importieren — oder später bewusst eine Sync-Architektur wählen (nicht in Phase 5-KI vermischen).
+Für Multi-Gerät-Nutzung den vorhandenen Geräte-Sync verwenden. JSON-Vollbackups bleiben als
+zusätzlicher manueller Export erhalten.

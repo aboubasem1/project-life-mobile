@@ -1,0 +1,188 @@
+name: Deploy OVH
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lifeos-ovh-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: vars.OVH_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            projectdashboardv1/package-lock.json
+      - name: Install server dependencies
+        run: npm ci
+      - name: Install web dependencies
+        run: npm --prefix projectdashboardv1 ci
+      - name: Verify application
+        run: |
+          npm --prefix projectdashboardv1 run typecheck
+          npm --prefix projectdashboardv1 test
+          npm --prefix projectdashboardv1 run build
+          npm --prefix projectdashboardv1 run build:server
+      - name: Verify container images
+        run: |
+          docker build --target api --tag lifeos-api:verify .
+          docker build --target web --tag lifeos-web:verify .
+          docker build --target backup --tag lifeos-backup:verify .
+
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      OVH_HOST: ${{ vars.OVH_HOST }}
+      OVH_USER: ${{ vars.OVH_USER }}
+      OVH_SSH_PORT: ${{ vars.OVH_SSH_PORT || '22' }}
+      OVH_DEPLOY_PATH: ${{ vars.OVH_DEPLOY_PATH || '/opt/lifeos' }}
+      OVH_SSH_PRIVATE_KEY: ${{ secrets.OVH_SSH_PRIVATE_KEY }}
+      OVH_KNOWN_HOSTS: ${{ secrets.OVH_KNOWN_HOSTS }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ vars.R2_BUCKET || 'lifeos-production' }}
+      R2_REGION: ${{ vars.R2_REGION || 'auto' }}
+      UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+      UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      LLM_API_URL: ${{ secrets.LLM_API_URL }}
+      LLM_MODEL: ${{ secrets.LLM_MODEL }}
+      TRANSCRIPTION_API_KEY: ${{ secrets.TRANSCRIPTION_API_KEY }}
+      TRANSCRIPTION_API_URL: ${{ secrets.TRANSCRIPTION_API_URL }}
+      TRANSCRIPTION_ENABLED: ${{ secrets.TRANSCRIPTION_ENABLED }}
+      JEV_API_KEY: ${{ secrets.JEV_API_KEY }}
+      TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+      JEV_API_URL: ${{ secrets.JEV_API_URL }}
+      JEV_MODEL: ${{ secrets.JEV_MODEL }}
+      GITHUB_ADMIN_TOKEN: ${{ secrets.GITHUB_ADMIN_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "$OVH_HOST" && "$OVH_HOST" =~ ^[A-Za-z0-9._:-]+$ ]]
+          [[ -n "$OVH_USER" && "$OVH_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]
+          [[ "$OVH_SSH_PORT" =~ ^[0-9]{1,5}$ ]]
+          [[ "$OVH_DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]]
+          [[ "$OVH_DEPLOY_PATH" != *"//"* && "$OVH_DEPLOY_PATH" != *"/../"* && "$OVH_DEPLOY_PATH" != */.. ]]
+          [[ "$OVH_DEPLOY_PATH" != *"/./"* && "$OVH_DEPLOY_PATH" != */. && "$OVH_DEPLOY_PATH" != "/" ]]
+          [[ -n "$OVH_SSH_PRIVATE_KEY" ]]
+          [[ -n "$OVH_KNOWN_HOSTS" ]]
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/lifeos-ssh"
+          printf '%s\n' "$OVH_SSH_PRIVATE_KEY" > "$RUNNER_TEMP/lifeos-ssh/key"
+          printf '%s\n' "$OVH_KNOWN_HOSTS" > "$RUNNER_TEMP/lifeos-ssh/known_hosts"
+      - name: Prepare protected server environment patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          patch_file="$RUNNER_TEMP/lifeos-env.patch"
+          : > "$patch_file"
+
+          append_required() {
+            local key=$1 value=$2
+            [[ -n "$value" ]] || { echo "$key is required." >&2; exit 1; }
+            printf '%s:%s\n' "$key" "$(printf '%s' "$value" | base64 -w 0)" >> "$patch_file"
+          }
+
+          append_optional() {
+            local key=$1 value=$2
+            [[ -n "$value" ]] || return 0
+            printf '%s:%s\n' "$key" "$(printf '%s' "$value" | base64 -w 0)" >> "$patch_file"
+          }
+
+          append_optional R2_ACCOUNT_ID "$R2_ACCOUNT_ID"
+          append_optional R2_ENDPOINT "$R2_ENDPOINT"
+          append_optional R2_ACCESS_KEY_ID "$R2_ACCESS_KEY_ID"
+          append_optional R2_SECRET_ACCESS_KEY "$R2_SECRET_ACCESS_KEY"
+          append_optional R2_BUCKET "$R2_BUCKET"
+          append_optional R2_REGION "$R2_REGION"
+          append_optional UPSTASH_REDIS_REST_URL "$UPSTASH_REDIS_REST_URL"
+          append_optional UPSTASH_REDIS_REST_TOKEN "$UPSTASH_REDIS_REST_TOKEN"
+          append_optional OPENAI_API_KEY "$OPENAI_API_KEY"
+          append_optional LLM_API_KEY "$LLM_API_KEY"
+          append_optional LLM_API_URL "$LLM_API_URL"
+          append_optional LLM_MODEL "$LLM_MODEL"
+          append_optional TRANSCRIPTION_API_KEY "$TRANSCRIPTION_API_KEY"
+          append_optional TRANSCRIPTION_API_URL "$TRANSCRIPTION_API_URL"
+          append_optional TRANSCRIPTION_ENABLED "$TRANSCRIPTION_ENABLED"
+          append_optional JEV_API_KEY "$JEV_API_KEY"
+          append_optional TYPESAFE_API_KEY "$TYPESAFE_API_KEY"
+          append_optional JEV_API_URL "$JEV_API_URL"
+          append_optional JEV_MODEL "$JEV_MODEL"
+          append_optional GITHUB_ADMIN_TOKEN "$GITHUB_ADMIN_TOKEN"
+      - name: Update protected server environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_patch="$OVH_DEPLOY_PATH/incoming/env-$GITHUB_RUN_ID.patch"
+          ssh \
+            -i "$RUNNER_TEMP/lifeos-ssh/key" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/lifeos-ssh/known_hosts" \
+            -p "$OVH_SSH_PORT" \
+            "$OVH_USER@$OVH_HOST" \
+            "install -d -m 0750 '$OVH_DEPLOY_PATH/incoming' && umask 077 && cat > '$remote_patch'" \
+            < "$RUNNER_TEMP/lifeos-env.patch"
+          ssh \
+            -i "$RUNNER_TEMP/lifeos-ssh/key" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/lifeos-ssh/known_hosts" \
+            -p "$OVH_SSH_PORT" \
+            "$OVH_USER@$OVH_HOST" \
+            "LIFEOS_ENV_FILE='$OVH_DEPLOY_PATH/shared/.env' sh -s -- '$remote_patch'" \
+            < infrastructure/scripts/merge-server-env.sh
+      - name: Create release archive
+        shell: bash
+        run: git archive --format=tar.gz --output="$RUNNER_TEMP/lifeos-$GITHUB_SHA.tar.gz" "$GITHUB_SHA"
+      - name: Upload release archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh \
+            -i "$RUNNER_TEMP/lifeos-ssh/key" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/lifeos-ssh/known_hosts" \
+            -p "$OVH_SSH_PORT" \
+            "$OVH_USER@$OVH_HOST" \
+            "install -d -m 0750 '$OVH_DEPLOY_PATH/incoming' && umask 077 && cat > '$OVH_DEPLOY_PATH/incoming/$GITHUB_SHA.tar.gz'" \
+            < "$RUNNER_TEMP/lifeos-$GITHUB_SHA.tar.gz"
+      - name: Deploy revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh \
+            -i "$RUNNER_TEMP/lifeos-ssh/key" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/lifeos-ssh/known_hosts" \
+            -p "$OVH_SSH_PORT" \
+            "$OVH_USER@$OVH_HOST" \
+            "LIFEOS_DEPLOY_ROOT='$OVH_DEPLOY_PATH' sh -s -- '$GITHUB_SHA'" \
+            < infrastructure/scripts/remote-deploy.sh

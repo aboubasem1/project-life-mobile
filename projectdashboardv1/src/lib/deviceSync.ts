@@ -387,7 +387,13 @@ export async function pullDeviceSync(): Promise<{
     if (!creds || !navigator.onLine) return null
 
     const result = await syncFetch<{ snapshot: DeviceSyncSnapshot | null }>(
-      `/api/sync/pull?roomId=${encodeURIComponent(creds.roomId)}&deviceToken=${encodeURIComponent(creds.deviceToken)}`,
+      '/api/sync/pull',
+      {
+        headers: {
+          Authorization: `Bearer ${creds.deviceToken}`,
+          'X-Life-Os-Room': creds.roomId,
+        },
+      },
     )
 
     if (!result.snapshot) {

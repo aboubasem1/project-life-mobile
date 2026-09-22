@@ -1,4 +1,10 @@
 .vercel
+node_modules/
+.env
+.env.*
+!.env.example
 .env*.local
+dist-server/
+*.dump
 projectdashboardv1/.data/
 projectdashboardv1/projectdashboardv1/
