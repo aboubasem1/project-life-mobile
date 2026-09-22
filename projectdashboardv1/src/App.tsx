@@ -5412,8 +5412,9 @@ function DashboardPlusView({
     : tabsToRender[0].id
 
   useEffect(() => {
-    if (currentSection !== activeSection) onSectionChange(currentSection)
-  }, [activeSection, currentSection, onSectionChange])
+    if (tabsToRender.some(tab => tab.id === section)) return
+    onSectionChange(tabsToRender[0].id)
+  }, [section, tabsToRender, onSectionChange])
 
   const setActiveSection = (next: DashboardPlusSection) => {
     onSectionChange(next)
@@ -5944,7 +5945,7 @@ function DashboardPlusView({
           <SectionTitle
             eyebrow="Todos"
             title="Fokus"
-            action={<button type="button" className="small-button" onClick={() => onQuickAction('capture-task')}><Plus size={14} /> Aufgabe</button>}
+            action={<button type="button" className="small-button labor-inline-create" onClick={() => onQuickAction('capture-task')}><Plus size={14} /> Aufgabe</button>}
           />
           <LifeAreaFilter value={todoAreaFilter} onChange={setTodoAreaFilter} />
           <label className="life-area-group-toggle">
@@ -6112,7 +6113,7 @@ function DashboardPlusView({
                     )
                   })}
               </div>
-              <button type="button" className="secondary-button secondary-button--full" onClick={() => onQuickAction('capture-task')}>
+              <button type="button" className="secondary-button secondary-button--full labor-inline-create" onClick={() => onQuickAction('capture-task')}>
                 <Plus size={15} /> Aufgabe hinzufügen
               </button>
             </>

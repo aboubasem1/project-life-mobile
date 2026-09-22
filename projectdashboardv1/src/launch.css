@@ -2516,11 +2516,11 @@ button.status-chip.status-chip--good {
     display: grid;
     gap: 10px;
     position: sticky;
-    top: 52px;
-    z-index: 11;
+    top: 56px;
+    z-index: 14;
     margin: 0 0 12px;
     padding: 4px 0 8px;
-    background: color-mix(in srgb, var(--bg) 78%, transparent);
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
     backdrop-filter: blur(14px);
     transition: gap 200ms ease, padding 200ms ease;
   }
@@ -2671,6 +2671,10 @@ button.status-chip.status-chip--good {
   .lab-data-taskbar__action:active,
   .lab-data-taskbar__current:active {
     transform: scale(0.98);
+  }
+
+  .labor-inline-create {
+    display: none !important;
   }
 }
 
@@ -8005,8 +8009,13 @@ button.status-chip.status-chip--good {
 
 @media (max-width: 680px) {
   .progress-hub {
+    display: flex;
+  }
+
+  .progress-hub__track {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
   }
 
   .progress-hub button {

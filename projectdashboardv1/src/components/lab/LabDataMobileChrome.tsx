@@ -45,9 +45,12 @@ export function LabDataMobileChrome({
     return () => window.removeEventListener('keydown', onKey)
   }, [sheetOpen])
 
+  const wasSheetOpen = useRef(false)
   useEffect(() => {
-    if (sheetOpen) return
-    triggerRef.current?.focus()
+    if (wasSheetOpen.current && !sheetOpen) {
+      triggerRef.current?.focus()
+    }
+    wasSheetOpen.current = sheetOpen
   }, [sheetOpen])
 
   return (
