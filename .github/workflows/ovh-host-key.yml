@@ -1,0 +1,23 @@
+name: OVH Host Key Discovery
+
+on:
+  push:
+    branches:
+      - migration/ovh-r2
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Read OVH SSH host key
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh-keyscan -T 10 -t ed25519 57.131.134.73 | tee ovh_known_hosts
+          test -s ovh_known_hosts
+          ssh-keygen -lf ovh_known_hosts
