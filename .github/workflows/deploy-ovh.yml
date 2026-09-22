@@ -78,6 +78,12 @@ jobs:
       TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
       JEV_API_URL: ${{ secrets.JEV_API_URL }}
       JEV_MODEL: ${{ secrets.JEV_MODEL }}
+      # Feature flags: repo vars override; defaults turn TypeSafe judgments on, auto-actions off.
+      JEV_ENABLED: ${{ vars.JEV_ENABLED }}
+      JEV_AUTO_ACTIONS_ENABLED: ${{ vars.JEV_AUTO_ACTIONS_ENABLED }}
+      JEV_LLM_FALLBACK_ENABLED: ${{ vars.JEV_LLM_FALLBACK_ENABLED }}
+      VITE_JEV_ENABLED: ${{ vars.VITE_JEV_ENABLED }}
+      VITE_JEV_AUTO_ACTIONS_ENABLED: ${{ vars.VITE_JEV_AUTO_ACTIONS_ENABLED }}
       GITHUB_ADMIN_TOKEN: ${{ secrets.GITHUB_ADMIN_TOKEN }}
     steps:
       - uses: actions/checkout@v4
@@ -141,6 +147,12 @@ jobs:
           append_optional TYPESAFE_API_KEY "$TYPESAFE_API_KEY"
           append_optional JEV_API_URL "$JEV_API_URL"
           append_optional JEV_MODEL "$JEV_MODEL"
+          # Defaults enable Jev/TypeSafe as judge-only; auto-actions stay off unless vars say otherwise.
+          append_optional JEV_ENABLED "${JEV_ENABLED:-true}"
+          append_optional JEV_AUTO_ACTIONS_ENABLED "${JEV_AUTO_ACTIONS_ENABLED:-false}"
+          append_optional JEV_LLM_FALLBACK_ENABLED "${JEV_LLM_FALLBACK_ENABLED:-false}"
+          append_optional VITE_JEV_ENABLED "${VITE_JEV_ENABLED:-true}"
+          append_optional VITE_JEV_AUTO_ACTIONS_ENABLED "${VITE_JEV_AUTO_ACTIONS_ENABLED:-false}"
           append_optional GITHUB_ADMIN_TOKEN "$GITHUB_ADMIN_TOKEN"
       - name: Update protected server environment
         shell: bash
