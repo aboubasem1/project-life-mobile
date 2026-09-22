@@ -2488,46 +2488,331 @@ button.status-chip.status-chip--good {
     gap: 14px;
   }
 
-  .labor-nav {
-    position: static;
-    flex-direction: row;
-    gap: 6px;
-    padding: 0 0 12px;
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
-    overflow-x: auto;
-    overflow-y: hidden;
-  }
-
-  .labor-nav-item {
-    flex: 0 0 auto;
-    width: auto;
-    min-height: 38px;
-    grid-template-columns: 16px auto;
-    white-space: nowrap;
-  }
-
-  .labor-nav-item small {
+  .labor-nav,
+  .labor-nav--desktop {
     display: none;
   }
 
-  .labor-toolbar {
-    flex-wrap: wrap;
+  .labor-toolbar:not(.is-search-open) {
+    display: none;
+  }
+
+  .labor-toolbar.is-search-open .labor-toolbar__actions {
+    display: none;
   }
 
   .labor-toolbar .labor-search {
     min-width: 0;
     width: 100%;
   }
+}
 
-  .labor-toolbar__actions {
-    width: 100%;
+.lab-data-mobile {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  .lab-data-mobile {
+    display: grid;
+    gap: 10px;
+    position: sticky;
+    top: 52px;
+    z-index: 11;
+    margin: 0 0 12px;
+    padding: 4px 0 8px;
+    background: color-mix(in srgb, var(--bg) 78%, transparent);
+    backdrop-filter: blur(14px);
+    transition: gap 200ms ease, padding 200ms ease;
   }
 
-  .labor-toolbar__actions .secondary-button {
-    flex: 1;
-    justify-content: center;
+  .lab-data-mobile.is-collapsed .lab-data-mobile__title {
+    font-size: 18px;
+    letter-spacing: -0.03em;
+  }
+
+  .lab-data-mobile.is-collapsed .lab-data-mobile__eyebrow {
+    opacity: 0;
+    height: 0;
+    margin: 0;
+  }
+
+  .lab-data-mobile__header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 44px;
+  }
+
+  .lab-data-mobile__titles {
     min-width: 0;
+  }
+
+  .lab-data-mobile__eyebrow {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    transition: opacity 180ms ease, height 180ms ease;
+  }
+
+  .lab-data-mobile__title {
+    margin: 2px 0 0;
+    font-size: 28px;
+    font-weight: 620;
+    letter-spacing: -0.045em;
+    line-height: 1.05;
+    transition: font-size 200ms ease;
+  }
+
+  .lab-data-mobile__actions {
+    display: flex;
+    gap: 4px;
+  }
+
+  .lab-data-mobile__actions .icon-button.is-active {
+    background: color-mix(in srgb, #CFECF3 55%, var(--surface-solid));
+  }
+
+  .lab-data-mobile__more {
+    position: relative;
+  }
+
+  .lab-data-mobile__menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    min-width: 180px;
+    padding: 6px;
+    border: 1px solid var(--border-strong);
+    border-radius: 14px;
+    background: var(--surface-solid);
+    box-shadow: var(--shadow-lg);
+    z-index: 20;
+  }
+
+  .lab-data-mobile__menu button {
+    width: 100%;
+    min-height: 44px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .lab-data-taskbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .lab-data-taskbar__current {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 48px;
+    padding: 8px 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--surface-solid) 88%, transparent);
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .lab-data-taskbar__icon {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    background: color-mix(in srgb, #CFECF3 55%, var(--bg));
+    color: var(--text);
+  }
+
+  .lab-data-taskbar__copy {
+    display: grid;
+    gap: 1px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .lab-data-taskbar__copy strong {
+    font-size: 14px;
+    font-weight: 650;
+  }
+
+  .lab-data-taskbar__copy small {
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
+  .lab-data-taskbar__action {
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: color-mix(in srgb, #CFECF3 70%, var(--surface-solid));
+    color: var(--text);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 650;
+    cursor: pointer;
+  }
+
+  .lab-data-taskbar__action:active,
+  .lab-data-taskbar__current:active {
+    transform: scale(0.98);
+  }
+}
+
+.lab-data-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  align-items: end;
+  padding: 12px;
+  background: rgba(17, 19, 18, 0.42);
+  backdrop-filter: blur(14px);
+}
+
+.lab-data-sheet {
+  width: min(100%, 480px);
+  max-height: min(78dvh, 640px);
+  margin: 0 auto;
+  overflow: auto;
+  padding: 10px 14px calc(14px + env(safe-area-inset-bottom));
+  border: 1px solid var(--border-strong);
+  border-radius: 24px 24px 18px 18px;
+  background: color-mix(in srgb, var(--surface-solid) 92%, transparent);
+  box-shadow: var(--shadow-lg);
+  animation: lab-data-sheet-in 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.lab-data-sheet__handle {
+  width: 36px;
+  height: 4px;
+  margin: 2px auto 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 45%, transparent);
+}
+
+.lab-data-sheet__chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.lab-data-sheet__chrome h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.lab-data-sheet__group {
+  margin: 0 0 14px;
+}
+
+.lab-data-sheet__group h3 {
+  margin: 0 0 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.lab-data-sheet__group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.lab-data-sheet__row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg) 80%, var(--surface-solid));
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lab-data-sheet__row.is-active {
+  border-color: color-mix(in srgb, #CFECF3 70%, var(--border-strong));
+  background: color-mix(in srgb, #CFECF3 48%, var(--bg));
+}
+
+.lab-data-sheet__row-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: color-mix(in srgb, #CFECF3 40%, var(--surface-solid));
+}
+
+.lab-data-sheet__row-copy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.lab-data-sheet__row-copy strong {
+  font-size: 14px;
+}
+
+.lab-data-sheet__row-copy small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+@keyframes lab-data-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-hub__indicator,
+  .lab-data-mobile,
+  .lab-data-mobile__title,
+  .lab-data-mobile__eyebrow,
+  .lab-data-sheet {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+@media (min-width: 861px) {
+  .lab-data-mobile {
+    display: none !important;
   }
 }
 
@@ -7467,10 +7752,36 @@ button.status-chip.status-chip--good {
   padding: 4px;
   border-radius: 999px;
   background: rgba(23, 26, 27, 0.06);
+  position: sticky;
+  top: 0;
+  z-index: 12;
+  backdrop-filter: blur(12px);
+}
+
+.progress-hub__track {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: 100%;
+  gap: 0;
+}
+
+.progress-hub__indicator {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, #CFECF3 72%, var(--surface-solid));
+  box-shadow: 0 1px 2px rgba(17, 19, 18, 0.08);
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1), width 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
 }
 
 .progress-hub button {
-  min-height: 40px;
+  position: relative;
+  z-index: 1;
+  min-height: 44px;
   padding: 0 14px;
   border: 0;
   border-radius: 999px;
@@ -7482,7 +7793,7 @@ button.status-chip.status-chip--good {
 }
 
 .progress-hub button.is-on {
-  background: var(--surface-solid);
+  background: transparent;
   color: var(--text);
 }
 

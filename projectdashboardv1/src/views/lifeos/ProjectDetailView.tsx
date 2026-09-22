@@ -45,13 +45,12 @@ export function ProjectDetailView({
   notes: string[]
   onBack: () => void
   onChange: (patch: Partial<ProjectBoard>) => void
-  onAddTask: (title: string) => void
+  onAddTask: () => void
   onToggleTask: (taskId: string) => void
   onPatchTask: (taskId: string, patch: { lifeArea?: LifeAreaKey }) => void
   onOpenDecision: (id: string) => void
   onOpenKnowledge: (id: string) => void
 }) {
-  const [taskDraft, setTaskDraft] = useState('')
   const [milestoneDraft, setMilestoneDraft] = useState('')
   const next = useMemo(() => project ? resolveNextAction(project) : null, [project])
   const progress = project ? projectProgress(project) : 0
@@ -222,17 +221,12 @@ export function ProjectDetailView({
           })}
         </div>
         <div className="lifeos-inline">
-          <input className="dashboard-plus-input" value={taskDraft} onChange={event => setTaskDraft(event.target.value)} placeholder="Neue Aufgabe" />
           <button
             type="button"
-            className="secondary-button"
-            onClick={() => {
-              if (!taskDraft.trim()) return
-              onAddTask(taskDraft.trim())
-              setTaskDraft('')
-            }}
+            className="secondary-button secondary-button--full"
+            onClick={() => onAddTask()}
           >
-            <Plus size={14} /> Aufgabe
+            <Plus size={14} /> Aufgabe erfassen
           </button>
         </div>
       </section>

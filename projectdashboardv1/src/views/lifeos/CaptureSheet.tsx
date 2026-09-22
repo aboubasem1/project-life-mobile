@@ -114,10 +114,14 @@ export function CaptureSheet({
   onDecide,
   onOpenPrivateNotes,
   initialRaw = '',
+  initialClassifyAs,
+  initialMode = 'default',
   inactive = false,
 }: {
   onClose: () => void
   initialRaw?: string
+  initialClassifyAs?: CaptureTargetType
+  initialMode?: 'default' | 'shopping' | 'stock' | 'med-log' | 'goal' | 'finance' | 'list'
   onOpenPrivateNotes?: (text: string) => void
   inactive?: boolean
   onDecide?: (input: { content: string; source: 'quick_add' | 'voice' }) => Promise<CaptureDecisionPreview | undefined>
@@ -138,13 +142,14 @@ export function CaptureSheet({
     transcriptId?: string
     decisionPreview?: CaptureDecisionPreview
     applyConfirmedDecisions?: boolean
+    captureMode?: 'default' | 'shopping' | 'stock' | 'med-log' | 'goal' | 'finance' | 'list'
   }) => void | Promise<void>
 }) {
   const titleId = useId()
   const [raw, setRaw] = useState(initialRaw)
   const [url, setUrl] = useState('')
   const [showLink, setShowLink] = useState(false)
-  const [target, setTarget] = useState<CaptureTargetType>('inbox')
+  const [target, setTarget] = useState<CaptureTargetType>(initialClassifyAs ?? 'inbox')
   const [lifeArea, setLifeArea] = useState<LifeAreaKey | undefined>(undefined)
   const [dueOverride, setDueOverride] = useState<string | undefined>(undefined)
   const [whenChoice, setWhenChoice] = useState<WhenChoice>('keep')
@@ -165,6 +170,7 @@ export function CaptureSheet({
   const streamRef = useRef<MediaStream | null>(null)
   const liveTranscriptRef = useRef('')
   const closeTimerRef = useRef<number>(0)
+  const captureMode = initialMode
 
   useEffect(() => () => {
     window.clearInterval(timerRef.current)
@@ -268,6 +274,7 @@ export function CaptureSheet({
         audioRef,
         decisionPreview: filtered,
         applyConfirmedDecisions: Boolean(options?.applyConfirmed && filtered?.items.length),
+        captureMode,
       })
       setStep('saved')
       await new Promise<void>(resolve => {
@@ -286,13 +293,27 @@ export function CaptureSheet({
       setError('Schreib kurz, was du festhalten willst.')
       return
     }
+    if (captureMode !== 'default') {
+      const modeTarget: CaptureTargetType =
+        captureMode === 'goal' ? 'goal'
+          : captureMode === 'med-log' || captureMode === 'stock' || captureMode === 'finance' || captureMode === 'list'
+            ? 'note'
+            : captureMode === 'shopping'
+              ? 'inbox'
+              : 'task'
+      setTarget(initialClassifyAs ?? modeTarget)
+      setPreview(undefined)
+      setKept([])
+      setStep('suggest')
+      return
+    }
     if (!onDecide) {
-      await commit({ classifyAs: 'inbox' })
+      await commit({ classifyAs: initialClassifyAs ?? 'inbox' })
       return
     }
     if (offline) {
       setError('Offline — Jo speichert lokal ohne Cloud-Einordnung.')
-      await commit({ classifyAs: target === 'inbox' ? 'inbox' : target })
+      await commit({ classifyAs: target === 'inbox' ? (initialClassifyAs ?? 'inbox') : target })
       return
     }
     setStep('processing')
@@ -303,13 +324,13 @@ export function CaptureSheet({
         setPreview(next)
         setKept(next.items.map(item => item.actionId))
         const first = next.items[0]
-        setTarget(targetFromItem(first))
+        setTarget(initialClassifyAs ?? targetFromItem(first))
         setDueOverride(first?.due)
         setWhenChoice(first?.due ? 'keep' : 'none')
         setStep('suggest')
         return
       }
-      await commit({ nextPreview: next, classifyAs: 'inbox' })
+      await commit({ nextPreview: next, classifyAs: initialClassifyAs ?? 'inbox' })
     } catch {
       setError('Einordnen nicht möglich — du kannst trotzdem speichern.')
       setStep('input')
@@ -486,6 +507,52 @@ export function CaptureSheet({
   const clock = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
   const canGoBack = step !== 'input' && step !== 'processing' && step !== 'saving' && step !== 'saved'
 
+  const modeSuggestLabel = (() => {
+    switch (captureMode) {
+      case 'shopping':
+        return 'Einkaufsartikel'
+      case 'stock':
+        return 'Bestand'
+      case 'med-log':
+        return 'Einnahme'
+      case 'goal':
+        return 'Ziel'
+      case 'finance':
+        return 'Finanzeintrag'
+      case 'list':
+        return 'Liste'
+      case 'default':
+        return CAPTURE_TARGET_LABELS[target] || (primaryItem ? intentLabel(primaryItem) : 'Capture')
+      default: {
+        const _exhaustive: never = captureMode
+        return _exhaustive
+      }
+    }
+  })()
+
+  const inputPlaceholder = (() => {
+    switch (captureMode) {
+      case 'shopping':
+        return 'Welchen Artikel brauchst du?'
+      case 'stock':
+        return 'Welches Produkt / welchen Bestand?'
+      case 'med-log':
+        return 'Welche Einnahme dokumentieren?'
+      case 'goal':
+        return 'Welches Ziel oder welchen Fortschritt?'
+      case 'finance':
+        return 'Welchen Finanzeintrag?'
+      case 'list':
+        return 'Wie soll die Liste heißen?'
+      case 'default':
+        return 'Was möchtest du festhalten?'
+      default: {
+        const _exhaustive: never = captureMode
+        return _exhaustive
+      }
+    }
+  })()
+
   const primaryLabel = (() => {
     switch (step) {
       case 'suggest':
@@ -562,7 +629,7 @@ export function CaptureSheet({
                 value={raw}
                 onChange={event => setRaw(event.target.value)}
                 onKeyDown={onTextKeyDown}
-                placeholder="Was möchtest du festhalten?"
+                placeholder={inputPlaceholder}
                 rows={3}
                 autoFocus
               />
@@ -594,13 +661,13 @@ export function CaptureSheet({
             </div>
           )}
 
-          {step === 'suggest' && primaryItem && (
+          {(step === 'suggest' && (primaryItem || captureMode !== 'default')) && (
             <div className="capture-suggest">
               <p className="capture-suggest__quote">{raw.trim()}</p>
               <dl className="capture-suggest__meta">
                 <div>
                   <dt>Erkannt als</dt>
-                  <dd>{CAPTURE_TARGET_LABELS[target] || intentLabel(primaryItem)}</dd>
+                  <dd>{modeSuggestLabel}</dd>
                 </div>
                 {formatDueLabel(effectiveDue) && (
                   <div>

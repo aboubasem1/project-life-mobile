@@ -8,6 +8,7 @@ describe('progress hub routes', () => {
     expect(viewFromHash('#/checkin')).toBe('progress')
     expect(viewFromHash('#/labor')).toBe('dashboardPlus')
     expect(viewFromHash('#/lab/daten')).toBe('dashboardPlus')
+    expect(viewFromHash('#/lab/daten/todos')).toBe('dashboardPlus')
     expect(isProgressHubView('plan')).toBe(true)
     expect(isProgressHubView('checkin')).toBe(false)
     expect(isProgressHubView('dashboardPlus')).toBe(true)

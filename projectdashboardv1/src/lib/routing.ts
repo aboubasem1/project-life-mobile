@@ -1,5 +1,14 @@
 /** Hash routing for Life OS views — no router dependency. */
 
+import {
+  isLabDataSection,
+  readStoredLabDataSection,
+  storeLabDataSection,
+  type LabDataSection,
+} from './labDataNav.js'
+
+export type { LabDataSection }
+
 export type AppView =
   | 'today'
   | 'plan'
@@ -141,13 +150,48 @@ export function hashPathOnly(hash = window.location.hash): string {
   return `#${normalized === '/' ? '/heute' : normalized}`
 }
 
+const LAB_DATEN_PATH = /^\/(?:lab\/daten|labor|dashboard(?:-plus)?)(?:\/([a-z-]+))?$/i
+
+export function labDataSectionFromPath(path: string): LabDataSection | undefined {
+  const match = path.match(LAB_DATEN_PATH)
+  if (!match) return undefined
+  const section = match[1]?.toLowerCase()
+  return isLabDataSection(section) ? section : undefined
+}
+
+export function labDataSectionFromHash(hash = window.location.hash): LabDataSection {
+  const { path } = splitHash(hash)
+  const normalized = path.replace(/\/$/, '') || '/'
+  return labDataSectionFromPath(normalized)
+    ?? readStoredLabDataSection()
+    ?? 'overview'
+}
+
+export function hashFromLabDataSection(section: LabDataSection): string {
+  return `#/lab/daten/${section}`
+}
+
+export function navigateLabDataSection(section: LabDataSection, replace = false): void {
+  storeLabDataSection(section)
+  const next = hashFromLabDataSection(section)
+  if (hashPathOnly(window.location.hash) === next) return
+  if (replace) window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${next}`)
+  else window.location.hash = next
+}
+
 export function viewFromHash(hash = window.location.hash): AppView {
   const { path } = splitHash(hash)
   const normalized = path.replace(/\/$/, '') || '/'
+  if (labDataSectionFromPath(normalized)) return 'dashboardPlus'
+  if (/^\/(?:lab\/daten|labor|dashboard(?:-plus)?)$/i.test(normalized)) return 'dashboardPlus'
   return HASH_TO_VIEW[normalized] ?? HASH_TO_VIEW[path] ?? 'today'
 }
 
 export function hashFromView(view: AppView): string {
+  if (view === 'dashboardPlus') {
+    const section = readStoredLabDataSection()
+    return section ? hashFromLabDataSection(section) : VIEW_TO_HASH.dashboardPlus
+  }
   return VIEW_TO_HASH[view]
 }
 
