@@ -10,6 +10,7 @@ import {
   headStoredObject,
   normalizeContentType,
   parseObjectCategory,
+  usesLocalObjectStorage,
 } from './object-storage.ts'
 
 let temporaryRoot = ''
@@ -17,6 +18,11 @@ let temporaryRoot = ''
 afterEach(async () => {
   delete process.env.LOCAL_OBJECT_STORAGE_ROOT
   delete process.env.OBJECT_STORAGE_SIGNING_SECRET
+  delete process.env.R2_ACCOUNT_ID
+  delete process.env.R2_ENDPOINT
+  delete process.env.R2_ACCESS_KEY_ID
+  delete process.env.R2_SECRET_ACCESS_KEY
+  delete process.env.R2_BUCKET
   if (temporaryRoot) await rm(temporaryRoot, { recursive: true, force: true })
   temporaryRoot = ''
 })
@@ -65,5 +71,17 @@ describe('object storage boundaries', () => {
     const downloadResponse = await handleSignedLocalObject(new Request(new URL(download.url, 'http://lifeos.test')))
     expect(downloadResponse.status).toBe(200)
     await expect(downloadResponse.text()).resolves.toBe('LifeOS local storage')
+  })
+
+  it('prefers R2 over local disk once cloud credentials exist', () => {
+    process.env.LOCAL_OBJECT_STORAGE_ROOT = '/tmp/lifeos-object-storage-prefer-r2'
+    process.env.OBJECT_STORAGE_SIGNING_SECRET = 'test-only-signing-secret'
+    expect(usesLocalObjectStorage()).toBe(true)
+
+    process.env.R2_ACCOUNT_ID = 'acct'
+    process.env.R2_ACCESS_KEY_ID = 'key'
+    process.env.R2_SECRET_ACCESS_KEY = 'secret'
+    process.env.R2_BUCKET = 'lifeos-production'
+    expect(usesLocalObjectStorage()).toBe(false)
   })
 })

@@ -28,6 +28,9 @@ be transferred from existing production are the active Upstash variables and whi
 transcription, Typesafe/JEV and developer-console variables are actually configured in Vercel.
 The credential-free `VITE_JEV_*` values are build-time flags and are passed to the web image.
 
+Step-by-step secret checklist for R2, Upstash, OpenAI and Whisper:
+[INTEGRATIONS_SETUP.md](./INTEGRATIONS_SETUP.md).
+
 ## Object storage and R2 configuration
 
 The first OVH deployment uses the persistent `object_data` Docker volume with short-lived,

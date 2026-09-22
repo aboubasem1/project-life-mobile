@@ -69,18 +69,23 @@ jobs:
       R2_REGION: ${{ vars.R2_REGION || 'auto' }}
       UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
       UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+      SYNC_UPSTASH_BRIDGE: ${{ vars.SYNC_UPSTASH_BRIDGE }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
       LLM_API_URL: ${{ secrets.LLM_API_URL }}
       LLM_MODEL: ${{ secrets.LLM_MODEL }}
+      LLM_TIMEOUT_MS: ${{ vars.LLM_TIMEOUT_MS }}
       TRANSCRIPTION_API_KEY: ${{ secrets.TRANSCRIPTION_API_KEY }}
       TRANSCRIPTION_API_URL: ${{ secrets.TRANSCRIPTION_API_URL }}
       TRANSCRIPTION_ENABLED: ${{ secrets.TRANSCRIPTION_ENABLED }}
+      TRANSCRIPTION_LANGUAGE: ${{ vars.TRANSCRIPTION_LANGUAGE }}
+      TRANSCRIPTION_MODEL: ${{ vars.TRANSCRIPTION_MODEL }}
+      TRANSCRIPTION_TIMEOUT_MS: ${{ vars.TRANSCRIPTION_TIMEOUT_MS }}
       JEV_API_KEY: ${{ secrets.JEV_API_KEY }}
       TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
       JEV_API_URL: ${{ secrets.JEV_API_URL }}
       JEV_MODEL: ${{ secrets.JEV_MODEL }}
-      # Feature flags: repo vars override; defaults turn TypeSafe judgments on, auto-actions off.
+      # Feature flags: repo vars override; defaults turn TypeSafe + LLM fallback on, auto-actions off.
       JEV_ENABLED: ${{ vars.JEV_ENABLED }}
       JEV_AUTO_ACTIONS_ENABLED: ${{ vars.JEV_AUTO_ACTIONS_ENABLED }}
       JEV_LLM_FALLBACK_ENABLED: ${{ vars.JEV_LLM_FALLBACK_ENABLED }}
@@ -138,21 +143,26 @@ jobs:
           append_optional R2_REGION "$R2_REGION"
           append_optional UPSTASH_REDIS_REST_URL "$UPSTASH_REDIS_REST_URL"
           append_optional UPSTASH_REDIS_REST_TOKEN "$UPSTASH_REDIS_REST_TOKEN"
+          append_optional SYNC_UPSTASH_BRIDGE "${SYNC_UPSTASH_BRIDGE:-true}"
           append_optional OPENAI_API_KEY "$OPENAI_API_KEY"
           append_optional LLM_API_KEY "$LLM_API_KEY"
           append_optional LLM_API_URL "$LLM_API_URL"
-          append_optional LLM_MODEL "$LLM_MODEL"
+          append_optional LLM_MODEL "${LLM_MODEL:-gpt-4o-mini}"
+          append_optional LLM_TIMEOUT_MS "${LLM_TIMEOUT_MS:-4000}"
           append_optional TRANSCRIPTION_API_KEY "$TRANSCRIPTION_API_KEY"
           append_optional TRANSCRIPTION_API_URL "$TRANSCRIPTION_API_URL"
-          append_optional TRANSCRIPTION_ENABLED "$TRANSCRIPTION_ENABLED"
+          append_optional TRANSCRIPTION_ENABLED "${TRANSCRIPTION_ENABLED:-true}"
+          append_optional TRANSCRIPTION_LANGUAGE "${TRANSCRIPTION_LANGUAGE:-de}"
+          append_optional TRANSCRIPTION_MODEL "${TRANSCRIPTION_MODEL:-whisper-1}"
+          append_optional TRANSCRIPTION_TIMEOUT_MS "${TRANSCRIPTION_TIMEOUT_MS:-25000}"
           append_optional JEV_API_KEY "$JEV_API_KEY"
           append_optional TYPESAFE_API_KEY "$TYPESAFE_API_KEY"
           append_optional JEV_API_URL "$JEV_API_URL"
           append_optional JEV_MODEL "$JEV_MODEL"
-          # Defaults enable Jev/TypeSafe as judge-only; auto-actions stay off unless vars say otherwise.
+          # Defaults enable Jev + LLM fallback; auto-actions stay off unless vars say otherwise.
           append_optional JEV_ENABLED "${JEV_ENABLED:-true}"
           append_optional JEV_AUTO_ACTIONS_ENABLED "${JEV_AUTO_ACTIONS_ENABLED:-false}"
-          append_optional JEV_LLM_FALLBACK_ENABLED "${JEV_LLM_FALLBACK_ENABLED:-false}"
+          append_optional JEV_LLM_FALLBACK_ENABLED "${JEV_LLM_FALLBACK_ENABLED:-true}"
           append_optional VITE_JEV_ENABLED "${VITE_JEV_ENABLED:-true}"
           append_optional VITE_JEV_AUTO_ACTIONS_ENABLED "${VITE_JEV_AUTO_ACTIONS_ENABLED:-false}"
           append_optional GITHUB_ADMIN_TOKEN "$GITHUB_ADMIN_TOKEN"
