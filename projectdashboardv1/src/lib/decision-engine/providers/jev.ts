@@ -1,4 +1,5 @@
 import { parseProviderDecision } from '../schemas.js'
+import { parseDueDate, taskTitle } from '../decisions/task.js'
 import {
   DECISION_DOMAINS,
   DECISION_INTENTS,
@@ -64,7 +65,7 @@ const DOMAIN_CRITERIA: Record<DecisionDomain, string> = {
 }
 
 const INTENT_CRITERIA: Record<DecisionIntent, string> = {
-  CREATE_TASK: 'Create a task from this item',
+  CREATE_TASK: 'Create a clear to-do the user wants done; prefer this over REVIEW for concrete actions',
   CREATE_NOTE: 'Save a note',
   LOG_MEAL: 'Log a known routine meal; do not invent macros',
   ADD_SHOPPING_ITEM: 'Add an item to the shopping list',
@@ -74,7 +75,7 @@ const INTENT_CRITERIA: Record<DecisionIntent, string> = {
   PRIORITIZE: 'Set priority only',
   COMPLETE_ROUTINE: 'Mark a routine step done',
   REQUEST_INFORMATION: 'A required fact is missing',
-  REVIEW: 'A person should review this',
+  REVIEW: 'Only when the utterance is ambiguous or incomplete and a person must clarify',
   UNKNOWN: 'No supported intent',
   DELETE: 'Delete something existing',
   UPDATE_CALENDAR: 'Create or change a calendar event',
@@ -147,7 +148,7 @@ export function buildSystemOneRequest(input: {
       },
       intent: {
         type: 'choice',
-        instructions: 'Which LifeOS action should be proposed for `content`? Prefer REVIEW or UNKNOWN when unsure. Never invent nutrition values or new projects.',
+        instructions: 'Which LifeOS action should be proposed for `content`? Prefer CREATE_TASK for concrete to-dos, LOG_MEAL for consumed meals, CREATE_NOTE for remember/merken, and ADD_SHOPPING_ITEM for buy/order. Use REVIEW only when the utterance is truly ambiguous or incomplete. Never invent nutrition values or new projects.',
         criteria: INTENT_CRITERIA,
       },
       hedge: {
@@ -192,6 +193,7 @@ export function mapSystemOneAnswers(payload: unknown, content: string): Provider
   const projectChoice = isChoiceAnswer(answers.project) && answers.project.choice !== 'none' ? answers.project.choice : undefined
   const confidences = [domainAnswer.confidence, intentAnswer.confidence].filter((value): value is number => typeof value === 'number')
   const confidence = confidences.length > 0 ? Math.min(...confidences) : 0.5
+  const due = parseDueDate(content)
   const next = parseProviderDecision({
     content,
     domain,
@@ -202,7 +204,10 @@ export function mapSystemOneAnswers(payload: unknown, content: string): Provider
       product: mealChoice,
       projectId: projectChoice,
       relatedProject: projectChoice,
-      title: content,
+      title: intent === 'CREATE_TASK' || intent === 'CREATE_NOTE' || intent === 'ADD_SHOPPING_ITEM'
+        ? taskTitle(content)
+        : content,
+      due,
     },
     suggestedAction: intent,
     reasonCode: hedge >= 0.7 ? 'HEDGE_LANGUAGE' : 'OK',

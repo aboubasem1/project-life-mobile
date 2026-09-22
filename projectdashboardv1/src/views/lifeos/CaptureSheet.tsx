@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { Check, Image, LockKeyhole, Mic, Sparkles, Square, X } from 'lucide-react'
+import { Check, ChevronDown, Image, Link2, LockKeyhole, Mic, Sparkles, Square, X } from 'lucide-react'
 import { transcribeCaptureAudio, webSpeechTranscriptionProvider } from '../../lib/decision-engine/transcription'
 import { CAPTURE_TARGET_LABELS, type CaptureTargetType, type LifeAreaKey } from '../../lib/lifeos'
 import type { CaptureDecisionPreview, CaptureDecisionPreviewItem } from '../../lib/lifeos/types'
@@ -11,6 +11,39 @@ const MAX_FILE_CHARS = 350_000
 const MAX_CLOUD_FILE_BYTES = 100 * 1024 * 1024
 
 type CapturePhase = 'idle' | 'recording' | 'processing' | 'preview'
+
+const INTENT_LABELS: Record<string, string> = {
+  CREATE_TASK: 'Aufgabe',
+  CREATE_NOTE: 'Notiz',
+  LOG_MEAL: 'Mahlzeit',
+  ADD_SHOPPING_ITEM: 'Einkauf',
+  COMPLETE_ROUTINE: 'Routine',
+  REVIEW: 'Prüfen',
+  REQUEST_INFORMATION: 'Nachfragen',
+  CLASSIFY: 'Einordnen',
+  UNKNOWN: 'Unklar',
+}
+
+const DOMAIN_LABELS: Record<string, string> = {
+  TASK: 'Task',
+  NOTE: 'Notiz',
+  NUTRITION: 'Ernährung',
+  SHOPPING: 'Einkauf',
+  WORK: 'Arbeit',
+  PROJECT: 'Projekt',
+  PERSONAL: 'Privat',
+  UNKNOWN: 'Offen',
+}
+
+function previewHeading(item: CaptureDecisionPreviewItem): string {
+  const intent = INTENT_LABELS[item.suggestedAction] || INTENT_LABELS[item.intent] || item.intent
+  const domain = DOMAIN_LABELS[item.domain] || item.domain
+  return `${intent} · ${domain}`
+}
+
+function previewBody(item: CaptureDecisionPreviewItem): string {
+  return item.content
+}
 
 function fileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -50,10 +83,13 @@ export function CaptureSheet({
     audioRef?: string
     transcriptId?: string
     decisionPreview?: CaptureDecisionPreview
+    applyConfirmedDecisions?: boolean
   }) => void | Promise<void>
 }) {
   const [raw, setRaw] = useState(initialRaw)
   const [url, setUrl] = useState('')
+  const [showLink, setShowLink] = useState(false)
+  const [showMore, setShowMore] = useState(false)
   const [target, setTarget] = useState<CaptureTargetType>('inbox')
   const [lifeArea, setLifeArea] = useState<LifeAreaKey | undefined>(undefined)
   const [fileName, setFileName] = useState('')
@@ -78,7 +114,7 @@ export function CaptureSheet({
     if (audioRef?.startsWith('blob:')) URL.revokeObjectURL(audioRef)
   }, [audioRef])
 
-  const commit = async (nextPreview?: CaptureDecisionPreview) => {
+  const commit = async (nextPreview?: CaptureDecisionPreview, applyConfirmed = false) => {
     if (!raw.trim() && !url.trim() && !fileName) {
       setError('Schreib etwas, füge einen Link hinzu oder wähle eine Datei.')
       return
@@ -130,6 +166,7 @@ export function CaptureSheet({
       source: audioRef ? 'voice' : 'quick_add',
       audioRef,
       decisionPreview: filtered,
+      applyConfirmedDecisions: applyConfirmed && Boolean(filtered?.items.length),
     })
   }
 
@@ -158,7 +195,7 @@ export function CaptureSheet({
   const submit = (event: FormEvent) => {
     event.preventDefault()
     if (phase === 'preview') {
-      void commit()
+      void commit(undefined, true)
       return
     }
     void runDecide(raw.trim() || url.trim() || fileName, audioRef ? 'voice' : 'quick_add')
@@ -295,7 +332,7 @@ export function CaptureSheet({
         )}
 
         {phase !== 'recording' && (
-          <Field label="Eingabe">
+          <Field label="Notiz">
             <textarea
               value={raw}
               onChange={event => setRaw(event.target.value)}
@@ -305,41 +342,68 @@ export function CaptureSheet({
             />
           </Field>
         )}
-        {phase === 'idle' && audioRef && (
-          <p className="capture-voice-note" role="status">Voice Memo aufgenommen</p>
+
+        {phase === 'idle' && (
+          <div className="capture-primary-row">
+            <button type="button" className="secondary-button capture-mic" onClick={() => void startRecording()}>
+              <Mic size={16} /> Voice
+            </button>
+            {audioRef && <p className="capture-voice-note" role="status">Voice Memo aufgenommen</p>}
+          </div>
         )}
 
         {phase === 'idle' && (
-          <>
-            <Field label="Link (optional)">
-              <input value={url} onChange={event => setUrl(event.target.value)} placeholder="https://" inputMode="url" />
-            </Field>
-            <div className="lifeos-file-row">
-              <button type="button" className="secondary-button" onClick={() => fileRef.current?.click()}>
-                <Image size={16} /> Foto / Datei
+          <div className="capture-extras">
+            {!showLink ? (
+              <button type="button" className="capture-text-button" onClick={() => setShowLink(true)}>
+                <Link2 size={14} /> Link hinzufügen
               </button>
-              <input
-                ref={fileRef}
-                type="file"
-                hidden
-                onChange={event => onFile(event.target.files?.[0])}
-              />
-              {fileName && <span className="lifeos-file-name">{fileName}</span>}
-            </div>
-            <div className="lifeos-chip-row" role="group" aria-label="Zieltyp">
-              {TARGETS.map(item => (
-                <button
-                  key={item}
-                  type="button"
-                  className={target === item ? 'choice-button is-active' : 'choice-button'}
-                  onClick={() => setTarget(item)}
-                >
-                  {CAPTURE_TARGET_LABELS[item]}
-                </button>
-              ))}
-            </div>
-            <LifeAreaSelect value={lifeArea} onChange={setLifeArea} />
-          </>
+            ) : (
+              <Field label="Link (optional)">
+                <input value={url} onChange={event => setUrl(event.target.value)} placeholder="https://" inputMode="url" autoFocus />
+              </Field>
+            )}
+
+            <button
+              type="button"
+              className="capture-more-toggle"
+              aria-expanded={showMore}
+              onClick={() => setShowMore(current => !current)}
+            >
+              <span>Weitere Optionen</span>
+              <ChevronDown size={16} className={showMore ? 'is-open' : undefined} />
+            </button>
+
+            {showMore && (
+              <div className="capture-more-panel">
+                <div className="lifeos-file-row">
+                  <button type="button" className="secondary-button" onClick={() => fileRef.current?.click()}>
+                    <Image size={16} /> Foto / Datei
+                  </button>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    hidden
+                    onChange={event => onFile(event.target.files?.[0])}
+                  />
+                  {fileName && <span className="lifeos-file-name">{fileName}</span>}
+                </div>
+                <div className="lifeos-chip-row" role="group" aria-label="Zieltyp">
+                  {TARGETS.map(item => (
+                    <button
+                      key={item}
+                      type="button"
+                      className={target === item ? 'choice-button is-active' : 'choice-button'}
+                      onClick={() => setTarget(item)}
+                    >
+                      {CAPTURE_TARGET_LABELS[item]}
+                    </button>
+                  ))}
+                </div>
+                <LifeAreaSelect value={lifeArea} onChange={setLifeArea} />
+              </div>
+            )}
+          </div>
         )}
 
         {phase === 'preview' && preview && (
@@ -349,9 +413,9 @@ export function CaptureSheet({
                 <button type="button" onClick={() => toggleItem(item)}>
                   <Check size={14} />
                   <span>
-                    <strong>{item.intent} · {item.domain}</strong>
+                    <strong>{previewHeading(item)}</strong>
                     <small>
-                      {item.content}
+                      {previewBody(item)}
                       {item.mealLabel ? ` · ${item.mealLabel}` : ''}
                       {item.due ? ` · ${item.due}` : ''}
                     </small>
@@ -365,18 +429,20 @@ export function CaptureSheet({
         {error && <p className="lifeos-error">{error}</p>}
 
         <div className="modal-actions capture-modal-actions">
-          {phase === 'idle' && (
-            <button type="button" className="secondary-button capture-mic" onClick={() => void startRecording()}>
-              <Mic size={16} /> Voice
-            </button>
-          )}
           {phase === 'idle' && onOpenPrivateNotes && (
             <button type="button" className="secondary-button" onClick={() => onOpenPrivateNotes(raw.trim())}>
               <LockKeyhole size={16} /> Passcode-geschützt
             </button>
           )}
           {phase === 'preview' && (
-            <button type="button" className="secondary-button" onClick={() => { setKept(preview?.items.map(item => item.actionId) ?? []); void commit(preview) }}>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => {
+                setKept(preview?.items.map(item => item.actionId) ?? [])
+                void commit(preview, true)
+              }}
+            >
               Alles übernehmen
             </button>
           )}

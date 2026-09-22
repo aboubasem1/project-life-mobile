@@ -187,6 +187,7 @@ import {
   recordDecisionAudits,
   rememberExecutedKeys,
   resolveDecisionFlags,
+  type DecisionBatch,
 } from './lib/decision-engine'
 import { CaptureSheet } from './views/lifeos/CaptureSheet'
 import { CommandPalette } from './views/lifeos/CommandPalette'
@@ -1464,6 +1465,7 @@ function App() {
   const [privateNotesOpen, setPrivateNotesOpen] = useState(false)
   const [privateNotePreset, setPrivateNotePreset] = useState('')
   const privateNoteSavedRef = useRef<(() => void) | null>(null)
+  const lastCaptureBatchRef = useRef<DecisionBatch | null>(null)
   const [lifeOsEntityId, setLifeOsEntityId] = useState<string | undefined>(() => entityIdFromHash())
   const [reviewType, setReviewType] = useState<ReviewType>('weekly')
   const [reviewDraft, setReviewDraft] = useState<Review | null>(null)
@@ -2223,15 +2225,30 @@ function App() {
     audioRef?: string
     transcriptId?: string
     decisionPreview?: ReturnType<typeof previewFromBatch>
+    applyConfirmedDecisions?: boolean
   }, openInbox = true) => {
     const capture = createCapture(input)
     const classified = input.classifyAs && input.classifyAs !== 'inbox'
       ? { ...capture, targetType: input.classifyAs, status: 'classified' as const }
       : capture
     let nextCapture = classified
+    let appliedFromConfirm = false
     try {
       const flags = resolveDecisionFlags()
-      const batch = input.decisionPreview
+      const confirmedIds = new Set((input.decisionPreview?.items ?? []).map(item => item.actionId))
+      const sourceBatch = lastCaptureBatchRef.current
+      const confirmedBatch = input.applyConfirmedDecisions && sourceBatch && confirmedIds.size > 0
+        ? {
+          ...sourceBatch,
+          proposedActions: sourceBatch.proposedActions.filter(action => confirmedIds.has(action.actionId)),
+          decisions: sourceBatch.decisions.filter((_decision, index) => {
+            const action = sourceBatch.proposedActions[index]
+            return action ? confirmedIds.has(action.actionId) : false
+          }),
+        }
+        : null
+
+      const batch = confirmedBatch || input.decisionPreview
         ? null
         : await decideCaptureInput({
           id: classified.id,
@@ -2243,6 +2260,7 @@ function App() {
           flags,
           context: captureDecisionContext(),
         })
+      if (batch) lastCaptureBatchRef.current = batch
       nextCapture = {
         ...classified,
         source: input.source ?? 'quick_add',
@@ -2251,9 +2269,11 @@ function App() {
         decisionPreview: input.decisionPreview ?? (batch ? previewFromBatch(batch) : undefined),
       }
       if (batch) recordDecisionAudits(batch.audits)
-      if (batch && flags.autoActionsEnabled) {
+
+      const applyBatch = confirmedBatch ?? (batch && flags.autoActionsEnabled ? batch : null)
+      if (applyBatch) {
         const applied = applyDecisionBatch({
-          batch,
+          batch: applyBatch,
           lifeOs: lifeOs.state,
           dashboard: {
             focusTodos: dashboardPlus.focusTodos,
@@ -2262,10 +2282,12 @@ function App() {
           },
           entry,
           routineMeals: captureDecisionContext().routineMeals,
-          autoActionsEnabled: true,
+          autoActionsEnabled: flags.autoActionsEnabled || Boolean(confirmedBatch),
+          confirmedByUser: Boolean(confirmedBatch),
           today,
         })
         if (applied.applied.length > 0) {
+          appliedFromConfirm = Boolean(confirmedBatch)
           lifeOs.commit(() => applied.lifeOs)
           setDashboardPlus(current => ({
             ...current,
@@ -2286,19 +2308,22 @@ function App() {
           rememberExecutedKeys(applied.executedKeys)
         }
       }
+      if (confirmedBatch) lastCaptureBatchRef.current = null
     } catch {
       nextCapture = classified
     }
-    lifeOs.commit(current => ({
-      ...current,
-      captures: [nextCapture, ...current.captures],
-      events: [...current.events, emitDomainEvent('capture.created', { title: nextCapture.title }, { kind: 'capture', id: nextCapture.id })],
-    }))
+    if (!appliedFromConfirm) {
+      lifeOs.commit(current => ({
+        ...current,
+        captures: [nextCapture, ...current.captures],
+        events: [...current.events, emitDomainEvent('capture.created', { title: nextCapture.title }, { kind: 'capture', id: nextCapture.id })],
+      }))
+    }
     if (openInbox) {
       setCaptureOpen(false)
       setCapturePreset('')
-      navigateTo('inbox', classified.id)
-      showToast('In Inbox gelegt')
+      navigateTo(appliedFromConfirm ? 'today' : 'inbox', appliedFromConfirm ? undefined : classified.id)
+      showToast(appliedFromConfirm ? 'Vorschläge übernommen' : 'In Inbox gelegt')
     } else {
       showToast('Als Universal Memo gespeichert.')
     }
@@ -3235,6 +3260,7 @@ function App() {
               flags: resolveDecisionFlags(),
               context: captureDecisionContext(),
             })
+            lastCaptureBatchRef.current = batch
             recordDecisionAudits(batch.audits)
             return previewFromBatch(batch)
           }}

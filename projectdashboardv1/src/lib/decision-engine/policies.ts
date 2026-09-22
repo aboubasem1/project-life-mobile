@@ -60,7 +60,8 @@ export function evaluatePolicy(input: PolicyInput): PolicyVerdict {
 
   if (confidenceBand(candidate.confidence) === 'low') {
     reasons.push(candidate.reasonCode === 'HEDGE_LANGUAGE' ? 'HEDGE_LANGUAGE' : 'LOW_CONFIDENCE')
-    return verdict('REVIEW', reasons, level, true, 'REVIEW', entities)
+    // Keep the proposed intent so the preview still shows Aufgabe/Notiz — only gate execution.
+    return verdict('REVIEW', reasons, level, true, intent, entities)
   }
 
   switch (candidate.intent) {
@@ -127,7 +128,7 @@ export function evaluatePolicy(input: PolicyInput): PolicyVerdict {
   const needed = level === 'SAFE_AUTO' ? 'medium' : 'high'
   if (!meetsConfidence(candidate.confidence, needed)) {
     reasons.push('LOW_CONFIDENCE')
-    return verdict('REVIEW', reasons, level, true, 'REVIEW', entities)
+    return verdict('REVIEW', reasons, level, true, intent, entities)
   }
 
   if (level === 'REVERSIBLE_AUTO' && !flags.autoActionsEnabled) {

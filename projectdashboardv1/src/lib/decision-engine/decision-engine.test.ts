@@ -126,6 +126,7 @@ describe('policy engine', () => {
       flags: { jevEnabled: true, autoActionsEnabled: false, llmFallbackEnabled: false, jevTimeoutMs: 2500, llmTimeoutMs: 4000 },
     })
     expect(review.result).toBe('REVIEW')
+    expect(review.intent).toBe('LOG_MEAL')
     expect(review.entities?.mealId).toBe('protein-shake')
 
     const execute = evaluatePolicy({
@@ -146,6 +147,23 @@ describe('policy engine', () => {
     expect(verdict.result).toBe('REVIEW')
     expect(verdict.actionLevel).toBe('CONFIRM')
     expect(verdict.requiresConfirmation).toBe(true)
+  })
+
+  it('keeps CREATE_TASK intent when confidence only warrants review', () => {
+    const verdict = evaluatePolicy({
+      candidate: {
+        content: 'LifeOS zu Ende programmieren',
+        domain: 'TASK',
+        intent: 'CREATE_TASK',
+        confidence: 0.72,
+        entities: { title: 'LifeOS zu Ende programmieren' },
+        suggestedAction: 'CREATE_TASK',
+      },
+      context: { now: NOW },
+      flags: { jevEnabled: true, autoActionsEnabled: false, llmFallbackEnabled: false, jevTimeoutMs: 2500, llmTimeoutMs: 4000 },
+    })
+    expect(verdict.result).toBe('REVIEW')
+    expect(verdict.intent).toBe('CREATE_TASK')
   })
 })
 
@@ -226,6 +244,13 @@ describe('multi intent splitting', () => {
     expect(items).toHaveLength(2)
     expect(items[0]?.content).toMatch(/Weider/i)
     expect(items[1]?.content).toMatch(/Tom/i)
+  })
+
+  it('splits sequential to-dos joined with und dann', () => {
+    const items = splitIntents('Routine abschließen und dann LifeOS zu Ende programmieren')
+    expect(items.length).toBeGreaterThanOrEqual(2)
+    expect(items[0]?.content).toMatch(/Routine/i)
+    expect(items.at(-1)?.content).toMatch(/LifeOS|programmieren/i)
   })
 
   it('keeps a single note idea together', () => {

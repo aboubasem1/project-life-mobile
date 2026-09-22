@@ -14,11 +14,12 @@ const NUTRITION = /\b(getrunken|getrunken|getrunken|getrunken|gegessen|shake|pro
 const SHOPPING = /\b(bestellen|kaufen|einkauf|nachbestellen|order|buy)\b/i
 const NOTE = /^\s*(merken|notiz|note|idea|idee)\b/i
 const WORK = /\b(dhl|claim|claims|arbeit|projekt|kunde|meeting|deadline)\b/i
-const TASK = /\b(fertig\s+machen|erledigen|anrufen|machen|abschlie[sß]en|task)\b/i
+const TASK = /\b(fertig\s+machen|erledigen|anrufen|machen|abschlie[sß]en|programmieren|öffnen|zu\s+ende|task)\b/i
 const PERSONAL = /\b(familie|freund|arzt|privat)\b/i
 const CONSUME = /\b(getrunken|getrunken|gegessen|genommen)\b/i
+const ACTION_VERB = /\b(getrunken|gegessen|bestellen|kaufen|anrufen|erledigen|fertig\s+machen|abschlie[sß]en|programmieren|öffnen|zu\s+ende)\b/i
 
-const BOUNDARY = /\s+(?:und|and|sowie|plus|,)\s+/i
+const BOUNDARY = /\s+(?:und\s+dann|und|and|sowie|plus|,)\s+/i
 const SENTENCE = /(?<=[.!?])\s+(?=[A-ZÄÖÜ])/
 
 export function scoreDomainSignals(text: string): DomainSignal {
@@ -57,9 +58,16 @@ function shouldSplitPair(left: string, right: string): boolean {
   const leftTop = topDomain(scoreDomainSignals(left))
   const rightTop = topDomain(scoreDomainSignals(right))
   if (leftTop && rightTop && leftTop !== rightTop) return true
-  const leftVerb = /\b(getrunken|gegessen|bestellen|kaufen|anrufen|erledigen|fertig\s+machen)\b/i.test(left)
-  const rightVerb = /\b(getrunken|gegessen|bestellen|kaufen|anrufen|erledigen|fertig\s+machen)\b/i.test(right)
-  return leftVerb && rightVerb
+  const leftVerb = ACTION_VERB.test(left)
+  const rightVerb = ACTION_VERB.test(right)
+  if (leftVerb && rightVerb) return true
+  // Sequential to-dos joined by "und dann" / "dann" should still split when both sides are concrete.
+  const bothActionable = (leftTop === 'task' || leftVerb) && (rightTop === 'task' || rightVerb)
+  return bothActionable && (leftTop === 'task' || rightTop === 'task' || (wordsAtLeast(left, 3) && wordsAtLeast(right, 3)))
+}
+
+function wordsAtLeast(text: string, minimum: number): boolean {
+  return normalizeText(text).split(/\s+/).filter(Boolean).length >= minimum
 }
 
 function splitConjunctions(text: string): string[] {
