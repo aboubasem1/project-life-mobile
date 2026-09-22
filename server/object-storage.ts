@@ -43,6 +43,11 @@ export function objectStorageConfigured(): boolean {
   return localStorageConfigured() || r2Configured()
 }
 
+/** Prefer Cloudflare R2 when credentials exist; keep local disk as fallback only. */
+export function usesLocalObjectStorage(): boolean {
+  return localStorageConfigured() && !r2Configured()
+}
+
 function r2Configured(): boolean {
   return Boolean(endpoint() && env('R2_ACCESS_KEY_ID') && env('R2_SECRET_ACCESS_KEY') && bucketName())
 }
@@ -160,7 +165,7 @@ export async function createPresignedUpload(input: {
   contentType: string
 }): Promise<{ url: string; expiresIn: number; headers: Record<string, string> }> {
   const expiresIn = 10 * 60
-  if (localStorageConfigured()) {
+  if (usesLocalObjectStorage()) {
     const expiresAt = Math.floor(Date.now() / 1000) + expiresIn
     return {
       url: localSignedUrl({
@@ -192,7 +197,7 @@ export async function createPresignedDownload(input: {
   contentType: string
 }): Promise<{ url: string; expiresIn: number }> {
   const expiresIn = 5 * 60
-  if (localStorageConfigured()) {
+  if (usesLocalObjectStorage()) {
     const expiresAt = Math.floor(Date.now() / 1000) + expiresIn
     return {
       url: localSignedUrl({
@@ -222,7 +227,7 @@ export async function putStoredObject(input: {
   contentType: string
   body: Uint8Array
 }): Promise<void> {
-  if (localStorageConfigured()) {
+  if (usesLocalObjectStorage()) {
     const target = localPath(input.storageKey)
     const temporary = `${target}.${randomUUID()}.tmp`
     await mkdir(dirname(target), { recursive: true })
@@ -243,7 +248,7 @@ export async function headStoredObject(storageKey: string): Promise<{
   sizeBytes: number
   contentType: string
 }> {
-  if (localStorageConfigured()) {
+  if (usesLocalObjectStorage()) {
     const details = await stat(localPath(storageKey))
     let contentType = 'application/octet-stream'
     try {
@@ -271,7 +276,7 @@ export async function probeObjectStorage(): Promise<{
   error?: string
 }> {
   if (!objectStorageConfigured()) return { ok: false, status: 'not_configured' }
-  if (localStorageConfigured()) {
+  if (usesLocalObjectStorage()) {
     try {
       await mkdir(localStorageRoot(), { recursive: true })
       await stat(localStorageRoot())
