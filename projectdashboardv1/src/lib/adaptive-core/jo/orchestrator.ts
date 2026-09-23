@@ -44,53 +44,95 @@ export type JoOrchestratorResult =
   | { route: 'CHANGE'; classification: JoClassification; proposal: SystemChangeProposal }
   | { route: 'CHANGE'; classification: JoClassification; implementationSpec: ImplementationSpec; proposal?: undefined }
 
-const CHANGE_HINT = /\b(entferne|remove|verschieb|move|nur\s+in|only\s+in|ausblenden|hide|zeig|show|mach|make|compact|progressive|konfigur|änder|change|disable|enable)\b/i
+/** Strong system-change verbs — not bare "make/move/change" alone. */
+const CHANGE_VERB = /\b(entferne|remove|verschieb(?:e|en)?|ausblenden|hide|enable|disable|konfigur(?:iere|ieren)?|umstell(?:e|en)?)\b/i
+const CHANGE_STRUCTURE = /\b((nur|only)\s+(in|bei|inside)|gehört\s+(nur\s+)?in|belongs?\s+(only\s+)?in|nach\s+\w+|after\s+\w+)\b/i
+const UI_CONFIG_PHRASE = /\b(compact|dichte|density|disclosure|progressive)\b/i
 const QUERY_HINT = /\b(wieviel|wie\s+viel|was\s+war|why|warum|wann|show\s+me|letzte|last\s+week|statistik)\b/i
 const SUGGEST_HINT = /\b(wie\s+könnten|how\s+could|vorschlag|suggest|besser|easier|einfacher)\b/i
-const EXPERIMENT_HINT = /\b(versuch|try|experiment|für\s+\d+\s*tage|for\s+\d+\s*days|eine\s+woche|for\s+a\s+week)\b/i
-const CAPTURE_HINT = /\b(kg|kcal|protein|getrunken|gegessen|erledigt|done|wasser|steps|schritte)\b/i
-const CODE_HINT = /\b(bau|build|implement|vergleichsansicht|comparison\s+view|neue\s+ansicht|new\s+view|feature)\b/i
+const EXPERIMENT_HINT = /\b(versuch(?:e|en)?|try|experiment|für\s+\d+\s*tage|for\s+\d+\s*days|eine\s+woche|for\s+a\s+week)\b/i
+const CAPTURE_METRIC = /\b(\d+(?:[.,]\d+)?\s*(?:kg|kcal|g|liter|l|min|%|grams?)|getrunken|gegessen|erledigt|protein\s*shake|wasser|steps|schritte)\b/i
+const CAPTURE_ENERGY_LEVEL = /\b(energy|energie)\b.{0,12}\b(low|okay|high|niedrig|gut|hoch)\b|\b(low|okay|high|niedrig|gut|hoch)\b.{0,12}\b(energy|energie)\b/i
+const CAPTURE_WEIGHT_LOG = /\b(weight|gewicht)\b.{0,8}\d|\d.{0,8}\b(kg|weight|gewicht)\b/i
+const CODE_BUILD = /\b(bau(?:e|en)?|build|implement(?:iere|ieren)?|vergleichsansicht|comparison\s+view|neue\s+ansicht|new\s+view)\b/i
+const CONFIG_NOUN = /\b(energy|energie|mood|stimmung|weight|gewicht|now|jetzt|heute|morning|morgen|evening|abend|lab|gate|dichte|density|disclosure|routine|ritual)\b/i
 
 export function classifyJoIntent(text: string): JoClassification {
   const content = text.trim()
   if (!content) {
     return { route: 'CAPTURE', confidence: 0.1, reason: 'EMPTY' }
   }
-  if (EXPERIMENT_HINT.test(content) && CHANGE_HINT.test(content)) {
+
+  // Metric / check-in logs always win over config vocabulary.
+  if (isCaptureLog(content)) {
+    return { route: 'CAPTURE', confidence: 0.92, reason: 'capture_metric' }
+  }
+
+  if (EXPERIMENT_HINT.test(content) && (CHANGE_VERB.test(content) || CHANGE_STRUCTURE.test(content) || CONFIG_NOUN.test(content))) {
     return { route: 'EXPERIMENT', confidence: 0.82, reason: 'experiment_language' }
   }
-  if (SUGGEST_HINT.test(content) && !CHANGE_HINT.test(content)) {
+
+  if (SUGGEST_HINT.test(content) && !CHANGE_VERB.test(content) && !CHANGE_STRUCTURE.test(content)) {
     return { route: 'SUGGEST', confidence: 0.78, reason: 'suggest_language' }
   }
-  if (CODE_HINT.test(content) && !CHANGE_HINT.test(content)) {
-    return { route: 'CHANGE', confidence: 0.8, changeType: 'CODE_CHANGE', reason: 'requires_code' }
+
+  if (isExplicitCodeRequest(content)) {
+    return { route: 'CHANGE', confidence: 0.86, changeType: 'CODE_CHANGE', reason: 'requires_code' }
   }
-  if (CHANGE_HINT.test(content) || (isConfigCapable(content) && !CODE_HINT.test(content))) {
-    const changeType = inferChangeType(content)
-    return { route: 'CHANGE', confidence: 0.9, changeType, reason: 'system_change' }
+
+  if (isSystemChangeRequest(content)) {
+    return {
+      route: 'CHANGE',
+      confidence: 0.9,
+      changeType: inferChangeType(content),
+      reason: 'system_change',
+    }
   }
+
   if (QUERY_HINT.test(content)) {
     return { route: 'QUERY', confidence: 0.75, reason: 'query_language' }
   }
-  if (CAPTURE_HINT.test(content)) {
-    return { route: 'CAPTURE', confidence: 0.88, reason: 'capture_language' }
-  }
-  return { route: 'CAPTURE', confidence: 0.45, reason: 'default_capture' }
+
+  return { route: 'CAPTURE', confidence: 0.55, reason: 'default_capture' }
 }
 
-function isConfigCapable(content: string): boolean {
-  return /\b(energy|energie|mood|stimmung|weight|gewicht|now|jetzt|morning|morgen|evening|abend|lab|gate|dichte|density|disclosure)\b/i.test(content)
+function isCaptureLog(content: string): boolean {
+  if (CAPTURE_METRIC.test(content)) return true
+  if (CAPTURE_ENERGY_LEVEL.test(content)) return true
+  if (CAPTURE_WEIGHT_LOG.test(content)) return true
+  // Short metric-like phrases without reconfiguration language.
+  if (/^(energy|energie)\s+(low|okay|high|niedrig|gut|hoch)$/i.test(content)) return true
+  if (/^(mood|stimmung)\s+/i.test(content) && !CHANGE_VERB.test(content)) return true
+  return false
+}
+
+function isSystemChangeRequest(content: string): boolean {
+  if (!CONFIG_NOUN.test(content) && !UI_CONFIG_PHRASE.test(content)) return false
+  if (CHANGE_VERB.test(content) || CHANGE_STRUCTURE.test(content)) return true
+  // UI config can be phrased as "Make Lab cards more compact…"
+  if (UI_CONFIG_PHRASE.test(content) && /\b(lab|cards?|karten)\b/i.test(content)) return true
+  // "Energy only belongs in Morning and Evening Gate" without explicit remove
+  if (/\b(energy|energie)\b/i.test(content) && /\b(only|nur|belongs?|gehört)\b/i.test(content)
+    && /\b(morning|morgen|evening|abend|gate)\b/i.test(content)) {
+    return true
+  }
+  return false
+}
+
+function isExplicitCodeRequest(content: string): boolean {
+  if (!CODE_BUILD.test(content)) return false
+  // Config adjustments that happen to include "build" stay config when change verbs + nouns match.
+  if (isSystemChangeRequest(content) && !/\b(vergleichsansicht|comparison\s+view|neue\s+ansicht|new\s+view)\b/i.test(content)) {
+    return false
+  }
+  // Require product/feature intent — not "build muscle"
+  return /\b(view|ansicht|feature|screen|vergleich|comparison|komponente|component|seite|page)\b/i.test(content)
+    || /\b(vergleichsansicht|comparison\s+view|neue\s+ansicht|new\s+view)\b/i.test(content)
 }
 
 function inferChangeType(content: string): ChangeType {
-  if (CODE_HINT.test(content)) {
-    return 'CODE_CHANGE'
-  }
-  if (/\b(lab|dichte|density|disclosure|compact|progressive|cards?)\b/i.test(content)
-    && !/\b(energy|energie|weight|gewicht|mood|stimmung|now|jetzt|gate)\b/i.test(content)) {
-    return 'UI_CONFIG_CHANGE'
-  }
-  if (/\b(lab)\b/i.test(content) && /\b(compact|dichte|density|disclosure|progressive)\b/i.test(content)) {
+  if (isExplicitCodeRequest(content)) return 'CODE_CHANGE'
+  if (UI_CONFIG_PHRASE.test(content) && /\b(lab|cards?|karten)\b/i.test(content)) {
     return 'UI_CONFIG_CHANGE'
   }
   return 'CONFIG_CHANGE'
@@ -111,7 +153,8 @@ export function generateChangeSpec(
   let spec: ChangeSpec | null = null
 
   // E2E 1: energy only in gates / remove from NOW
-  if (/\b(energy|energie)\b/i.test(text) && /\b(now|jetzt|heute)\b/i.test(text)
+  if (/\b(energy|energie)\b/i.test(text)
+    && (/\b(now|jetzt|heute)\b/i.test(text) || /\b(only|nur|belongs?|gehört)\b/i.test(text))
     && /\b(remove|entferne|nur|only|gehört|belongs)\b/i.test(text)) {
     const risk = classifyRisk('CONFIG_CHANGE', 'surface.now', ['surfaces/now/excludeEntities'])
     spec = {
@@ -133,7 +176,8 @@ export function generateChangeSpec(
   }
 
   // E2E 2: move weight after breakfast in Morning Gate
-  if (!spec && /\b(weight|gewicht)\b/i.test(text) && /\b(move|verschieb|nach)\b/i.test(text)) {
+  if (!spec && /\b(weight|gewicht)\b/i.test(text) && /\b(move|verschieb|nach|after)\b/i.test(text)
+    && /\b(morning|morgen|gate|breakfast|frühstück|meds?shake|shake)\b/i.test(text)) {
     const order = Array.isArray(settings.morningRitual?.stepOrder)
       ? [...settings.morningRitual!.stepOrder as string[]]
       : []
@@ -199,28 +243,35 @@ export function generateChangeSpec(
   }
 
   if (!spec) {
-    // Unrecognized change that looks like code
-    if (CODE_HINT.test(text)) {
+    if (isExplicitCodeRequest(text)) {
       return buildImplementationSpec(text)
     }
+    // Unmapped system-ish language — do not invent a noop ChangeSpec.
+    // Caller (tryOpenSystemChange) should fall through to CAPTURE.
     const risk = classifyRisk('CONFIG_CHANGE', 'unknown', [])
-    spec = {
-      id: createId('chg'),
-      type: 'CONFIG_CHANGE',
-      target: 'unknown',
-      operations: [{ op: 'set', path: 'noop', value: true }],
-      reason: 'Unrecognized change',
-      risk,
-      request: text,
-      createdAt: nowIso(),
-    }
-    const validation = validateChangeSpec(spec)
     return {
       route: 'CHANGE',
       changeType: 'CONFIG_CHANGE',
-      changeSpec: spec,
-      preview: buildChangePreview(spec),
-      validation: { ok: false, errors: validation.ok ? ['Could not map request to a safe ChangeSpec'] : validation.errors.concat('Could not map request') },
+      changeSpec: {
+        id: createId('chg'),
+        type: 'CONFIG_CHANGE',
+        target: 'unknown',
+        operations: [{ op: 'set', path: 'noop', value: true }],
+        reason: 'Unrecognized change',
+        risk,
+        request: text,
+        createdAt: nowIso(),
+      },
+      preview: buildChangePreview({
+        id: 'unmapped',
+        type: 'CONFIG_CHANGE',
+        target: 'unknown',
+        operations: [{ op: 'set', path: 'noop', value: true }],
+        reason: 'Unrecognized change',
+        risk,
+        createdAt: nowIso(),
+      }),
+      validation: { ok: false, errors: ['UNMAPPED_CHANGE'] },
       risk,
       interpretation: 'Could not safely interpret this system change',
     }
@@ -289,7 +340,7 @@ export function buildImplementationSpec(request: string): ImplementationSpec {
       'build + typecheck',
     ],
     risk: 'HIGH',
-    rollbackStrategy: 'Revert merge / redeploy previous production artifact',
+    rollbackStrategy: 'Revert merge commit or redeploy previous production artifact',
     createdAt: nowIso(),
   }
 }

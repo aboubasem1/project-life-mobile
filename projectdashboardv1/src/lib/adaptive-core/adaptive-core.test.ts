@@ -190,12 +190,38 @@ describe('Jo CHANGE routing', () => {
     }
   })
 
-  it('rejects invalid model output via parse path', () => {
+  it('keeps metric logs as CAPTURE — does not hijack Jo', () => {
+    const samples = [
+      'energy low',
+      'Energie hoch',
+      'Gewicht 72',
+      '72.4 kg',
+      'Proteinshake getrunken',
+      'make 80g protein',
+    ]
+    for (const text of samples) {
+      expect(classifyJoIntent(text).route, text).toBe('CAPTURE')
+      expect(tryOpenSystemChange(text, { adaptive: defaultAdaptiveLifeConfig() }), text).toBeNull()
+    }
+  })
+
+  it('does not force CODE_CHANGE for config requests that mention implement', () => {
+    const classification = classifyJoIntent('Implement denser Lab cards with progressive disclosure')
+    // "implement" alone with Lab UI phrase should stay UI config if system-change shape matches
+    expect(classification.route).toBe('CHANGE')
+    expect(classification.changeType).toBe('UI_CONFIG_CHANGE')
+  })
+
+  it('falls through to capture when change text is unmapped', () => {
     const session = tryOpenSystemChange('asdf qwerty unrelated', {
       adaptive: defaultAdaptiveLifeConfig(),
     })
-    // Unmapped change-looking text without change verbs falls to CAPTURE
-    expect(session === null || session.kind === 'error').toBe(true)
+    expect(session).toBeNull()
+  })
+
+  it('falls through when config noun appears without change intent', () => {
+    expect(classifyJoIntent('morning energy check').route).toBe('CAPTURE')
+    expect(tryOpenSystemChange('lab overview', { adaptive: defaultAdaptiveLifeConfig() })).toBeNull()
   })
 
   it('commits and undoes through system-change pathway', () => {

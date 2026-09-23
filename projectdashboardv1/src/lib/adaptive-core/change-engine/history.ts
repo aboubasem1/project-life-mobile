@@ -49,9 +49,11 @@ export function appendChangeHistory(record: ChangeHistoryRecord): ChangeHistoryR
 
 export function buildChangePreview(spec: ChangeSpec): ChangePreview {
   const lines = humanizeSpec(spec)
+  const changeCount = lines.filter(line => !/unchanged/i.test(line)).length
   return {
     title: 'LifeOS Update',
     summaryLines: lines,
+    changeCount,
     risk: spec.risk,
     changeSpec: spec,
     reversible: spec.type === 'CONFIG_CHANGE' || spec.type === 'UI_CONFIG_CHANGE',
@@ -59,39 +61,35 @@ export function buildChangePreview(spec: ChangeSpec): ChangePreview {
 }
 
 function humanizeSpec(spec: ChangeSpec): string[] {
-  const lines: string[] = []
+  const changes: string[] = []
+  const notes: string[] = []
   for (const operation of spec.operations) {
     if (operation.path.includes('excludeEntities') && (operation.item === 'energy' || operation.value === 'energy' || (Array.isArray(operation.value) && operation.value.includes('energy')))) {
-      lines.push(operation.op === 'remove'
+      changes.push(operation.op === 'remove'
         ? 'Energy again visible in NOW'
         : 'Energy removed from NOW')
       continue
     }
     if (spec.target.includes('morning') && operation.op === 'move') {
-      lines.push(`Morning Gate step moved (${operation.from} → ${operation.to})`)
+      changes.push(`Morning Gate step moved (${operation.from} → ${operation.to})`)
       continue
     }
     if (operation.path.includes('density')) {
-      lines.push(`Lab density → ${String(operation.value)}`)
+      changes.push(`Lab density → ${String(operation.value)}`)
       continue
     }
     if (operation.path.includes('disclosure')) {
-      lines.push(`Lab disclosure → ${String(operation.value)}`)
+      changes.push(`Lab disclosure → ${String(operation.value)}`)
       continue
     }
   }
-  if (lines.length === 0) lines.push(...summarizeOperations(spec))
-  if (spec.target.includes('morning') || spec.affectedEntities?.includes('morning_gate')) {
-    if (!lines.some(line => /Morning Gate unchanged/i.test(line)) && !lines.some(line => /Morning Gate step/i.test(line))) {
-      /* keep */
-    }
-  }
-  // Dependency note for energy exclusion
+  if (changes.length === 0) changes.push(...summarizeOperations(spec))
+  // Dependency notes — not counted as separate mutations in the preview heading.
   if (spec.operations.some(op => op.item === 'energy' || op.value === 'energy' || (Array.isArray(op.value) && op.value.includes('energy')))) {
-    if (!lines.some(line => /Morning Gate/i.test(line))) lines.push('Morning Gate unchanged')
-    if (!lines.some(line => /Evening Gate/i.test(line))) lines.push('Evening Gate unchanged')
+    if (!changes.some(line => /Morning Gate/i.test(line))) notes.push('Morning Gate unchanged')
+    if (!changes.some(line => /Evening Gate/i.test(line))) notes.push('Evening Gate unchanged')
   }
-  return lines.slice(0, 6)
+  return [...changes, ...notes].slice(0, 6)
 }
 
 export function applyApprovedChange(input: {

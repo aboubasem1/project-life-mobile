@@ -54,6 +54,8 @@ export type ChangeHistoryRecord = {
 export type ChangePreview = {
   title: string
   summaryLines: string[]
+  /** Actual mutations — excludes informational “unchanged” notes. */
+  changeCount: number
   risk: RiskLevel
   changeSpec: ChangeSpec
   reversible: boolean

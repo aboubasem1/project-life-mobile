@@ -39,43 +39,36 @@ export function tryOpenSystemChange(
     confidence: result.classification.confidence,
   })
 
+  // Never intercept ordinary capture / query / suggest traffic.
   if (result.route !== 'CHANGE') return null
 
-  emitAdaptiveEvent('change.requested', {
-    payload: { route: 'CHANGE' },
-  })
-
   if ('implementationSpec' in result && result.implementationSpec) {
+    emitAdaptiveEvent('change.requested', { payload: { route: 'CODE_CHANGE' } })
     adaptiveLog('info', 'change', 'CODE_CHANGE ImplementationSpec created', {
       id: result.implementationSpec.id,
     })
     return { kind: 'code', spec: result.implementationSpec }
   }
 
-  if (!('proposal' in result) || !result.proposal) {
-    return { kind: 'error', message: 'Änderung konnte nicht erzeugt werden.' }
-  }
+  if (!('proposal' in result) || !result.proposal) return null
 
   const { proposal } = result
+
+  // Unmapped / invalid ChangeSpecs fall back to Universal Capture — do not block logging.
+  if (!proposal.validation.ok || proposal.validation.errors.includes('UNMAPPED_CHANGE')) {
+    adaptiveLog('info', 'validation', 'ChangeSpec unmapped — falling through to capture', {
+      errors: proposal.validation.errors.length,
+    })
+    return null
+  }
+
+  if (!flags.changePreview) return null
+
+  emitAdaptiveEvent('change.requested', { payload: { route: 'CHANGE' } })
   emitAdaptiveEvent('change.proposed', {
     entityId: proposal.changeSpec.id,
     payload: { risk: proposal.risk, type: proposal.changeType },
   })
-
-  if (!proposal.validation.ok) {
-    adaptiveLog('warn', 'validation', 'ChangeSpec rejected', {
-      errors: proposal.validation.errors.length,
-    })
-    return {
-      kind: 'error',
-      message: proposal.validation.errors[0] || proposal.interpretation,
-    }
-  }
-
-  if (!flags.changePreview) {
-    // Still require explicit apply path — never silent mutate.
-    return { kind: 'error', message: 'Change preview is disabled.' }
-  }
 
   return {
     kind: 'config',
@@ -121,8 +114,5 @@ export function undoSystemChange(input: {
 
 /** True when capture text should be handled as system change instead of data capture. */
 export function looksLikeSystemChange(text: string, settings: MutableLifeSettings): boolean {
-  const flags = resolveAdaptiveFlags(readAdaptiveFromSettings(settings).flags)
-  if (!flags.adaptiveCore || !flags.joSystemChange) return false
-  const result = orchestrateJoRequest({ text, settings })
-  return result.route === 'CHANGE'
+  return tryOpenSystemChange(text, settings) != null
 }

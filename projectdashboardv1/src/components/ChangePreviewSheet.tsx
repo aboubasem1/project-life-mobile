@@ -145,7 +145,7 @@ export function ChangePreviewSheet({
         <header className="change-preview__head">
           <div>
             <span className="eyebrow">LifeOS Update</span>
-            <h2 id={titleId}>{preview.summaryLines.length} {preview.summaryLines.length === 1 ? 'Änderung' : 'Änderungen'}</h2>
+            <h2 id={titleId}>{(preview.changeCount ?? preview.summaryLines.length)} {(preview.changeCount ?? preview.summaryLines.length) === 1 ? 'Änderung' : 'Änderungen'}</h2>
           </div>
           <button type="button" className="icon-button" aria-label="Abbrechen" onClick={onCancel}>
             <X size={18} />
