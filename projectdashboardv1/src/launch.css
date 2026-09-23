@@ -8064,16 +8064,24 @@ button.status-chip.status-chip--good {
 }
 
 .capture-sheet-backdrop {
+  --capture-keyboard-inset: 0px;
   align-items: end;
   padding: 12px;
+  padding-bottom: max(12px, var(--capture-keyboard-inset));
   background: rgba(17, 19, 18, 0.48);
   backdrop-filter: blur(16px);
+  transition: padding-bottom 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.capture-sheet-backdrop.is-keyboard {
+  background: rgba(17, 19, 18, 0.56);
 }
 
 @media (min-width: 720px) {
   .capture-sheet-backdrop {
     align-items: center;
     padding: 24px;
+    padding-bottom: max(24px, var(--capture-keyboard-inset));
   }
 }
 
@@ -8082,7 +8090,7 @@ button.status-chip.status-chip--good {
   max-height: min(92dvh, 640px);
   overflow: hidden;
   display: grid;
-  grid-template-rows: auto minmax(0, auto) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 14px;
   margin: 0;
   padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
@@ -8090,8 +8098,15 @@ button.status-chip.status-chip--good {
   border-radius: 24px 24px 18px 18px;
   background: var(--surface-solid);
   box-shadow: var(--shadow-lg);
-  animation: capture-in 210ms ease;
-  transition: max-height 200ms ease;
+  animation: capture-in 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    max-height 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: max-height, transform;
+}
+
+.capture-sheet.is-keyboard {
+  max-height: min(calc(100dvh - var(--capture-keyboard-inset) - 24px), 560px);
 }
 
 .capture-sheet__body {
@@ -8100,7 +8115,14 @@ button.status-chip.status-chip--good {
   min-height: 0;
   max-height: min(58dvh, 420px);
   overflow: auto;
-  animation: capture-step 200ms ease;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  animation: capture-step 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: max-height 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.capture-sheet.is-keyboard .capture-sheet__body {
+  max-height: min(42dvh, 280px);
 }
 
 @media (min-width: 720px) {
@@ -8113,7 +8135,7 @@ button.status-chip.status-chip--good {
 @keyframes capture-in {
   from {
     opacity: 0;
-    transform: translateY(16px);
+    transform: translateY(18px) scale(0.985);
   }
   to {
     opacity: 1;
@@ -8324,6 +8346,13 @@ button.status-chip.status-chip--good {
   letter-spacing: -0.02em;
 }
 
+.capture-adjust__hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
 .capture-adjust__options {
   display: grid;
   gap: 8px;
@@ -8332,7 +8361,17 @@ button.status-chip.status-chip--good {
 .capture-adjust__stack {
   display: grid;
   gap: 8px;
-  justify-items: start;
+  justify-items: stretch;
+}
+
+.capture-adjust__stack .capture-sheet__ghost {
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 48px;
+  padding-inline: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  color: inherit;
 }
 
 .capture-option {
@@ -8411,7 +8450,9 @@ button.status-chip.status-chip--good {
     animation: none;
   }
 
-  .capture-sheet {
+  .capture-sheet,
+  .capture-sheet__body,
+  .capture-sheet-backdrop {
     transition: none;
   }
 }

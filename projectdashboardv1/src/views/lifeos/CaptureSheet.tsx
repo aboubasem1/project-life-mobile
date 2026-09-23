@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from 'react'
 import { ArrowLeft, Check, Image, Link2, LockKeyhole, Mic, Sparkles, Square, X } from 'lucide-react'
 import { transcribeCaptureAudio } from '../../lib/decision-engine/transcription'
 import { acquireMicrophoneStream } from '../../lib/micPermission'
@@ -25,6 +25,7 @@ type CaptureStep =
   | 'adjust-when'
   | 'adjust-where'
   | 'adjust-details'
+  | 'adjust-more'
   | 'saving'
   | 'saved'
 
@@ -150,6 +151,7 @@ export function CaptureSheet({
   const [raw, setRaw] = useState(initialRaw)
   const [url, setUrl] = useState('')
   const [showLink, setShowLink] = useState(false)
+  const [keyboardInset, setKeyboardInset] = useState(0)
   const [target, setTarget] = useState<CaptureTargetType>(initialClassifyAs ?? 'inbox')
   const [lifeArea, setLifeArea] = useState<LifeAreaKey | undefined>(undefined)
   const [dueOverride, setDueOverride] = useState<string | undefined>(undefined)
@@ -183,6 +185,27 @@ export function CaptureSheet({
   useEffect(() => {
     if (step === 'input') inputRef.current?.focus()
   }, [step])
+
+  useEffect(() => {
+    const viewport = window.visualViewport
+    if (!viewport) return
+    let frame = 0
+    const syncKeyboard = () => {
+      window.cancelAnimationFrame(frame)
+      frame = window.requestAnimationFrame(() => {
+        const inset = Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop))
+        setKeyboardInset(inset > 48 ? inset : 0)
+      })
+    }
+    syncKeyboard()
+    viewport.addEventListener('resize', syncKeyboard)
+    viewport.addEventListener('scroll', syncKeyboard)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      viewport.removeEventListener('resize', syncKeyboard)
+      viewport.removeEventListener('scroll', syncKeyboard)
+    }
+  }, [])
 
   const primaryItem = preview?.items.find(item => kept.includes(item.actionId)) ?? preview?.items[0]
   const extraCount = Math.max(0, (preview?.items.length ?? 0) - 1)
@@ -356,7 +379,7 @@ export function CaptureSheet({
       setStep('adjust-details')
       return
     }
-    if (step === 'adjust-details') {
+    if (step === 'adjust-details' || step === 'adjust-more') {
       void commit({ applyConfirmed: true, classifyAs: target })
       return
     }
@@ -467,6 +490,10 @@ export function CaptureSheet({
       case 'adjust-details':
         setStep('adjust-where')
         return
+      case 'adjust-more':
+        setShowLink(false)
+        setStep('adjust-details')
+        return
       case 'recording':
         finishRecording(false)
         return
@@ -554,6 +581,7 @@ export function CaptureSheet({
     switch (step) {
       case 'suggest':
       case 'adjust-details':
+      case 'adjust-more':
         return 'Speichern'
       case 'adjust-type':
       case 'adjust-when':
@@ -575,16 +603,17 @@ export function CaptureSheet({
 
   return (
     <div
-      className="modal-backdrop capture-sheet-backdrop"
+      className={keyboardInset > 0 ? 'modal-backdrop capture-sheet-backdrop is-keyboard' : 'modal-backdrop capture-sheet-backdrop'}
       role="presentation"
       aria-hidden={inactive || undefined}
       inert={inactive || undefined}
+      style={{ '--capture-keyboard-inset': `${keyboardInset}px` } as CSSProperties}
       onMouseDown={event => {
         if (event.target === event.currentTarget && step !== 'processing' && step !== 'saving') onClose()
       }}
     >
       <form
-        className={`capture-sheet capture-sheet--${step}`}
+        className={`capture-sheet capture-sheet--${step}${keyboardInset > 0 ? ' is-keyboard' : ''}`}
         onSubmit={submit}
         role="dialog"
         aria-modal="true"
@@ -602,9 +631,11 @@ export function CaptureSheet({
             {step === 'recording' && 'Jo hört zu'}
             {step === 'processing' && 'Jo ordnet ein'}
             {step === 'suggest' && 'Vorschlag'}
-            {step.startsWith('adjust') && 'Anpassen'}
+            {(step === 'adjust-type' || step === 'adjust-when' || step === 'adjust-where') && 'Anpassen'}
+            {step === 'adjust-details' && 'Details'}
+            {step === 'adjust-more' && 'Optionen'}
             {step === 'saved' && 'Gespeichert'}
-            {(step === 'input' || step === 'saving') && 'Capture'}
+            {(step === 'input' || step === 'saving') && 'Jo AI'}
           </p>
           <button
             type="button"
@@ -754,21 +785,14 @@ export function CaptureSheet({
           {step === 'adjust-details' && (
             <div className="capture-adjust">
               <p className="capture-adjust__question">Noch Details?</p>
+              <p className="capture-adjust__hint">Speichern reicht meist. Extras nur bei Bedarf.</p>
+            </div>
+          )}
+
+          {step === 'adjust-more' && (
+            <div className="capture-adjust">
+              <p className="capture-adjust__question">Weitere Optionen</p>
               <div className="capture-adjust__stack">
-                {!showLink ? (
-                  <button type="button" className="capture-sheet__ghost" onClick={() => setShowLink(true)}>
-                    <Link2 size={14} /> Link hinzufügen
-                  </button>
-                ) : (
-                  <input
-                    className="capture-sheet__field"
-                    value={url}
-                    onChange={event => setUrl(event.target.value)}
-                    placeholder="https://"
-                    inputMode="url"
-                    autoFocus
-                  />
-                )}
                 <button type="button" className="capture-sheet__ghost" onClick={() => fileRef.current?.click()}>
                   <Image size={14} /> {fileName || 'Foto / Datei'}
                 </button>
@@ -778,9 +802,23 @@ export function CaptureSheet({
                   hidden
                   onChange={event => onFile(event.target.files?.[0])}
                 />
+                {showLink || url.trim() ? (
+                  <input
+                    className="capture-sheet__field"
+                    value={url}
+                    onChange={event => setUrl(event.target.value)}
+                    placeholder="https://"
+                    inputMode="url"
+                    autoFocus={showLink && !url.trim()}
+                  />
+                ) : (
+                  <button type="button" className="capture-sheet__ghost" onClick={() => setShowLink(true)}>
+                    <Link2 size={14} /> Link hinzufügen
+                  </button>
+                )}
                 {onOpenPrivateNotes && (
                   <button type="button" className="capture-sheet__ghost" onClick={() => onOpenPrivateNotes(raw.trim())}>
-                    <LockKeyhole size={14} /> Passcode-geschützt
+                    <LockKeyhole size={14} /> Passcode-Sperre
                   </button>
                 )}
               </div>
@@ -817,9 +855,9 @@ export function CaptureSheet({
               <button
                 type="button"
                 className="capture-sheet__secondary"
-                onClick={() => void commit({ applyConfirmed: true, classifyAs: target })}
+                onClick={() => setStep('adjust-more')}
               >
-                Ohne Extra speichern
+                Weitere Optionen
               </button>
             )}
             {(step === 'input' || step === 'suggest' || step.startsWith('adjust')) && (
