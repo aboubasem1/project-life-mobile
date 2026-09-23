@@ -8415,3 +8415,142 @@ button.status-chip.status-chip--good {
     transition: none;
   }
 }
+
+/* ── Adaptive Core: Change Preview ───────────────────────────────────────── */
+.change-preview-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: end center;
+  padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+  background: rgba(17, 19, 20, 0.42);
+  animation: change-preview-fade 180ms ease-out;
+}
+
+.change-preview {
+  width: min(420px, 100%);
+  border-radius: 22px 22px 18px 18px;
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.18);
+  padding: 18px 18px 16px;
+  animation: change-preview-rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.change-preview.is-applied {
+  border: 1px solid color-mix(in srgb, var(--success) 35%, transparent);
+}
+
+.change-preview__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.change-preview__head h2 {
+  margin: 2px 0 0;
+  font-size: 1.35rem;
+  letter-spacing: -0.02em;
+}
+
+.change-preview__lead {
+  margin: 0 0 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.change-preview__list {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.change-preview__list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-deep) 80%, transparent);
+  font-size: 0.95rem;
+  line-height: 1.35;
+}
+
+.change-preview__risk {
+  margin: 0 0 14px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.change-preview__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.change-preview__debug {
+  margin: 0 0 12px;
+  max-height: 160px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--bg-deep);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+@keyframes change-preview-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes change-preview-rise {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .change-preview-backdrop,
+  .change-preview {
+    animation: none;
+  }
+}
+
+/* ── Adaptive Core: semantic Lab UI ──────────────────────────────────────── */
+.lab-ui--density-compact .kpi-grid,
+.lab-ui--density-compact .lab-status__grid {
+  gap: 8px;
+}
+
+.lab-ui--density-compact .card {
+  padding: 12px 14px;
+}
+
+.lab-ui--density-relaxed .card {
+  padding: 22px 20px;
+}
+
+.lab-ui--disclosure-progressive .lab-page .card:not(.lab-status):not(.weight-spark-card) .field-hint,
+.lab-ui--disclosure-progressive .lab-page .card:not(.lab-status):not(.weight-spark-card) small {
+  display: none;
+}
+
+.lab-ui--disclosure-progressive .lab-page .card.is-open .field-hint,
+.lab-ui--disclosure-progressive .lab-page .card.is-open small,
+.lab-ui--disclosure-progressive .lab-page .card:focus-within .field-hint,
+.lab-ui--disclosure-progressive .lab-page .card:focus-within small {
+  display: block;
+}
+
+.lab-ui--motion-subtle .card {
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.lab-ui--motion-none .card {
+  transition: none;
+}

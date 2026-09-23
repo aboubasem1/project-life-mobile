@@ -249,6 +249,7 @@ export function MorningGate({
   onToggleProtein,
   onCompleteGratitude,
   onPickEnergy,
+  onPickWeight,
   onCompleteTimer,
   onSetPushups,
   onSetKo,
@@ -288,6 +289,7 @@ export function MorningGate({
   onToggleProtein: () => void
   onCompleteGratitude: () => void
   onPickEnergy: (energy: 'low' | 'okay' | 'high') => void
+  onPickWeight?: (kg: number) => void
   onCompleteTimer: (step: 'coldShower' | 'winnerPose' | 'prayer') => void
   onSetPushups: (value: number) => void
   onSetKo: (value: number) => void
@@ -302,6 +304,7 @@ export function MorningGate({
   const [readDone, setReadDone] = useState(false)
   const [showerPhase, setShowerPhase] = useState<'hot' | 'cold'>('hot')
   const [workoutPhase, setWorkoutPhase] = useState<'pushups' | 'ko'>('pushups')
+  const [weightDraft, setWeightDraft] = useState('')
   const allMedsTaken = medications.length === 0 || medications.every(item => item.taken)
   const medsReady = allMedsTaken && proteinShake
   const headRecoveryReady = Boolean(
@@ -321,6 +324,8 @@ export function MorningGate({
     switch (step) {
       case 'medsShake':
         return { icon: <Pill size={26} />, eyebrow: meta.hint, title: 'Medikamente + Shake' }
+      case 'weight':
+        return { icon: <Flame size={26} />, eyebrow: meta.hint, title: 'Gewicht' }
       case 'gratitude':
         return { icon: <Sparkles size={26} />, eyebrow: readDone ? 'Laut gelesen' : 'Laut vorlesen', title: 'Dankbarkeit' }
       case 'coldShower':
@@ -420,6 +425,39 @@ export function MorningGate({
             </button>
           </>
         )
+      case 'weight': {
+        const parsed = Number(String(weightDraft).replace(',', '.'))
+        const valid = Number.isFinite(parsed) && parsed >= 35 && parsed <= 200
+        return (
+          <>
+            <p>{rule}</p>
+            <label className="text-field">
+              <span>kg</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min={35}
+                max={200}
+                step={0.1}
+                value={weightDraft}
+                placeholder="z. B. 72,4"
+                onChange={event => setWeightDraft(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              className="primary-button morning-gate__cta"
+              onClick={() => {
+                if (valid && onPickWeight) onPickWeight(Math.round(parsed * 10) / 10)
+                else onCompleteStep('weight')
+              }}
+            >
+              <Check size={17} />
+              {valid ? 'Gewicht speichern' : 'Später · weiter'}
+            </button>
+          </>
+        )
+      }
       case 'gratitude':
         return (
           <>

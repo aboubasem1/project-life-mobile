@@ -196,11 +196,12 @@ export function isHeadRecoveryDone(entry: Pick<DashboardEntry, 'mood' | 'sleepQu
 
 export function completedRitualSteps(input: {
   progress: MorningRitualProgress
-  entry: Pick<DashboardEntry, 'proteinShake' | 'gratitudeDone' | 'coldShower' | 'winnerModeDone' | 'energyLevel' | 'mood' | 'sleepQuality' | 'sleepDuration' | 'dreamed' | 'pushupsDone'>
+  entry: Pick<DashboardEntry, 'proteinShake' | 'gratitudeDone' | 'coldShower' | 'winnerModeDone' | 'energyLevel' | 'mood' | 'sleepQuality' | 'sleepDuration' | 'dreamed' | 'pushupsDone' | 'weightKg'>
   config: MorningRitualConfig
 }): MorningRitualStepId[] {
   const done = new Set(input.progress.done)
   if (input.entry.proteinShake) done.add('medsShake')
+  if (typeof input.entry.weightKg === 'number' && input.entry.weightKg > 0) done.add('weight')
   if (input.entry.gratitudeDone) done.add('gratitude')
   if (input.entry.coldShower) done.add('coldShower')
   if (input.entry.winnerModeDone) done.add('winnerPose')
