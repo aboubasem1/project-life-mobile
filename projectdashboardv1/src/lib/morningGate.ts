@@ -1,5 +1,6 @@
 export const MORNING_RITUAL_STEP_IDS = [
   'medsShake',
+  'weight',
   'gratitude',
   'coldShower',
   'winnerPose',
@@ -105,6 +106,7 @@ export const DEFAULT_SELFCARE_ITEMS: MorningSelfcareItem[] = [
 
 export const DEFAULT_MORNING_RITUAL_RULES: MorningRitualStepRules = {
   medsShake: 'Erst Medikamente bestätigen, dann den Proteinshake trinken.',
+  weight: 'Kurz wiegen — nur die Zahl, kein Urteil.',
   gratitude: 'Lies den Text laut. Nicht nur überfliegen.',
   coldShower: 'Atmen. Bleib stehen.',
   winnerPose: 'Brust offen, Blick fest.',
@@ -120,6 +122,7 @@ export const DEFAULT_MORNING_RITUAL_RULES: MorningRitualStepRules = {
 
 export const DEFAULT_MORNING_RITUAL_MINUTES: MorningRitualStepMinutes = {
   medsShake: 2,
+  weight: 1,
   gratitude: 2,
   coldShower: 3,
   winnerPose: 3,
@@ -144,7 +147,8 @@ export const DEFAULT_MORNING_RITUAL: MorningRitualConfig = {
   coldRinseSeconds: 20,
   selfcareItems: DEFAULT_SELFCARE_ITEMS,
   stepOrder: [...MORNING_RITUAL_STEP_IDS],
-  hiddenSteps: [],
+  /** Optional steps stay available for Change Engine without cluttering the default gate. */
+  hiddenSteps: ['weight'],
   autoAdvance: true,
   stepRules: { ...DEFAULT_MORNING_RITUAL_RULES },
   stepMinutes: { ...DEFAULT_MORNING_RITUAL_MINUTES },
@@ -172,6 +176,7 @@ export const GATE_STEP_IDS: MorningRitualStepId[] = [
 
 export const FULLSCREEN_STEP_IDS: MorningRitualStepId[] = [
   ...GATE_STEP_IDS,
+  'weight',
   'energy',
   'headRecovery',
   'workout',
@@ -187,6 +192,7 @@ export function isMorningRitualStepId(value: unknown): value is MorningRitualSte
 export function morningRitualPhase(id: MorningRitualStepId): MorningRitualPhase {
   switch (id) {
     case 'medsShake':
+    case 'weight':
     case 'gratitude':
     case 'coldShower':
     case 'winnerPose':
@@ -216,6 +222,8 @@ export function morningRitualMeta(
   switch (id) {
     case 'medsShake':
       return { label: 'Medikamente + Shake', hint: 'Einnahme und Proteinshake' }
+    case 'weight':
+      return { label: 'Gewicht', hint: 'Kurze Morgenwägung' }
     case 'gratitude':
       return { label: 'Dankbarkeit', hint: 'Laut vorlesen, dann weiter' }
     case 'coldShower':
@@ -318,6 +326,7 @@ export function ritualSecondsFor(id: MorningRitualStepId, config: MorningRitualC
     case 'postShower':
       return config.hotShowerSeconds + config.coldRinseSeconds
     case 'medsShake':
+    case 'weight':
     case 'gratitude':
     case 'energy':
     case 'headRecovery':
@@ -364,6 +373,13 @@ export function normalizeMorningRitualConfig(raw: Partial<MorningRitualConfig> |
   const storedGratitudeText = typeof stored.gratitudeText === 'string'
     ? stored.gratitudeText.trim()
     : ''
+  let hiddenSteps = normalizeHiddenSteps(stored.hiddenSteps)
+  const storedOrder = Array.isArray(stored.stepOrder) ? stored.stepOrder : null
+  const knewWeight = Boolean(storedOrder?.includes('weight'))
+  // Optional weight step: keep hidden for legacy configs that never opted in.
+  if (!knewWeight && !hiddenSteps.includes('weight')) {
+    hiddenSteps = [...hiddenSteps, 'weight']
+  }
   return {
     gratitudeText: storedGratitudeText && storedGratitudeText !== LEGACY_DEFAULT_GRATITUDE_TEXT
       ? storedGratitudeText.slice(0, 1200)
@@ -377,7 +393,7 @@ export function normalizeMorningRitualConfig(raw: Partial<MorningRitualConfig> |
     coldRinseSeconds: clampRitualSeconds(stored.coldRinseSeconds, 20, 8, 45),
     selfcareItems: normalizeSelfcareItems(stored.selfcareItems),
     stepOrder: normalizeStepOrder(stored.stepOrder),
-    hiddenSteps: normalizeHiddenSteps(stored.hiddenSteps),
+    hiddenSteps,
     autoAdvance: stored.autoAdvance !== false,
     stepRules: normalizeStepRules(stored.stepRules),
     stepMinutes: normalizeStepMinutes(stored.stepMinutes),
@@ -485,6 +501,7 @@ export function nextMorningRitualStep(input: {
   gratitudeDone: boolean
   energySet: boolean
   headRecoveryDone?: boolean
+  weightSet?: boolean
   pushupsDone: boolean
   coldShowerDone?: boolean
   winnerModeDone?: boolean
@@ -503,6 +520,10 @@ export function nextMorningRitualStep(input: {
         if (input.preview) return id
         if (input.medications.some(item => !item.taken) || !input.proteinShake) return id
         break
+      case 'weight':
+        if (input.preview) return id
+        if (input.weightSet || input.progress.done.includes(id)) break
+        return id
       case 'gratitude':
         if (input.preview) return id
         if (!input.gratitudeDone) return id

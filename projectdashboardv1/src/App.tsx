@@ -190,6 +190,7 @@ import {
   type DecisionBatch,
 } from './lib/decision-engine'
 import { CaptureSheet } from './views/lifeos/CaptureSheet'
+import { ChangePreviewSheet } from './components/ChangePreviewSheet'
 import { CommandPalette } from './views/lifeos/CommandPalette'
 import { DecisionView } from './views/lifeos/DecisionView'
 import { GoalDetailView } from './views/lifeos/GoalDetailView'
@@ -206,6 +207,20 @@ import { EveningGate } from './components/EveningGate'
 import { ProgressHubNav } from './components/ProgressHubNav'
 import { RoutineModeSelector } from './components/RoutineModeSelector'
 import { PrivateNotesSheet } from './components/PrivateNotesSheet'
+import {
+  defaultAdaptiveLifeConfig,
+  labUiClassNames,
+  applyNowDedupePolicy,
+  readAdaptiveFromSettings,
+  type AdaptiveLifeConfig,
+} from './lib/adaptive-core'
+import {
+  commitSystemChange,
+  tryOpenSystemChange,
+  undoSystemChange,
+  type JoChangeSession,
+} from './lib/adaptive-core/jo/system-change'
+import { emitAdaptiveEvent } from './lib/adaptive-core/events/store'
 import {
   assessDailyProgress,
   completedRitualSteps,
@@ -311,6 +326,7 @@ type AppSettings = {
   morningGateEnabled: boolean
   morningRitual: MorningRitualConfig
   eveningGate: EveningGateConfig
+  adaptive: AdaptiveLifeConfig
 }
 
 type DashboardPlusLayout = {
@@ -971,6 +987,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   morningGateEnabled: true,
   morningRitual: normalizeMorningRitualConfig(undefined),
   eveningGate: normalizeEveningGateConfig(undefined),
+  adaptive: defaultAdaptiveLifeConfig(),
 }
 
 function normalizeDashboardPlusLayout(raw: unknown): DashboardPlusLayout {
@@ -1153,6 +1170,7 @@ function loadSettings(): AppSettings {
       eveningGate: normalizeEveningGateConfig(
         (stored as Partial<AppSettings> & { eveningGate?: Partial<EveningGateConfig> }).eveningGate,
       ),
+      adaptive: readAdaptiveFromSettings(stored),
     }
   } catch {
     return DEFAULT_SETTINGS
@@ -1460,6 +1478,17 @@ function App() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [captureOpen, setCaptureOpen] = useState(false)
   const [capturePreset, setCapturePreset] = useState('')
+  const [joChangeSession, setJoChangeSession] = useState<JoChangeSession>(null)
+  const [joChangePhase, setJoChangePhase] = useState<'preview' | 'applied' | 'code' | 'error'>('preview')
+  const [lastAppliedHistoryId, setLastAppliedHistoryId] = useState<string | null>(null)
+  const [adaptiveDevMode] = useState(() => {
+    try {
+      return localStorage.getItem('life-os-adaptive-dev') === '1'
+        || new URLSearchParams(window.location.search).get('adaptiveDev') === '1'
+    } catch {
+      return false
+    }
+  })
   const [routineSelectorOpen, setRoutineSelectorOpen] = useState(false)
   const [eveningGateOpen, setEveningGateOpen] = useState(false)
   const [privateNotesOpen, setPrivateNotesOpen] = useState(false)
@@ -1526,6 +1555,7 @@ function App() {
       gratitudeDone: Boolean(entry.gratitudeDone),
       energySet: Boolean(entry.energyLevel),
       headRecoveryDone: isHeadRecoveryDone(entry),
+      weightSet: typeof entry.weightKg === 'number' && entry.weightKg > 0,
       pushupsDone: Boolean(entry.pushupsDone),
       coldShowerDone: Boolean(entry.coldShower),
       winnerModeDone: Boolean(entry.winnerModeDone),
@@ -1540,6 +1570,7 @@ function App() {
       entry.proteinShake,
       entry.gratitudeDone,
       entry.energyLevel,
+      entry.weightKg,
       entry.mood,
       entry.sleepQuality,
       entry.sleepDuration,
@@ -2755,6 +2786,7 @@ function App() {
               selectedDate={selectedDate}
               scoreGoals={scoreGoals}
               heightCm={settings.heightCm}
+              labClassName={labUiClassNames(settings.adaptive ?? defaultAdaptiveLifeConfig())}
               onSelectDate={date => {
                 setSelectedDate(date)
                 navigateTo('today')
@@ -3251,6 +3283,20 @@ function App() {
             setCapturePreset('')
           }}
           onDecide={async input => {
+            const changeSession = tryOpenSystemChange(input.content, settings)
+            if (changeSession) {
+              setJoChangeSession(changeSession)
+              setJoChangePhase(
+                changeSession.kind === 'code'
+                  ? 'code'
+                  : changeSession.kind === 'error'
+                    ? 'error'
+                    : 'preview',
+              )
+              setCaptureOpen(false)
+              setCapturePreset('')
+              return undefined
+            }
             const batch = await decideCaptureInput({
               source: input.source,
               content: input.content,
@@ -3264,12 +3310,89 @@ function App() {
             recordDecisionAudits(batch.audits)
             return previewFromBatch(batch)
           }}
-          onCapture={handleLifeOsCapture}
+          onCapture={input => {
+            const changeSession = tryOpenSystemChange(input.raw, settings)
+            if (changeSession) {
+              setJoChangeSession(changeSession)
+              setJoChangePhase(
+                changeSession.kind === 'code'
+                  ? 'code'
+                  : changeSession.kind === 'error'
+                    ? 'error'
+                    : 'preview',
+              )
+              setCaptureOpen(false)
+              setCapturePreset('')
+              return
+            }
+            return handleLifeOsCapture(input)
+          }}
           onOpenPrivateNotes={text => {
             openPrivateNotes(text, () => {
               setCaptureOpen(false)
               setCapturePreset('')
             })
+          }}
+        />
+      )}
+
+      {joChangeSession && (
+        <ChangePreviewSheet
+          phase={joChangePhase}
+          preview={joChangeSession.kind === 'config' ? joChangeSession.pending.preview : null}
+          implementationSpec={joChangeSession.kind === 'code' ? joChangeSession.spec : null}
+          error={joChangeSession.kind === 'error' ? joChangeSession.message : undefined}
+          developerMode={adaptiveDevMode}
+          onApply={() => {
+            if (joChangeSession.kind !== 'config') return
+            const result = commitSystemChange({
+              settings,
+              proposal: joChangeSession.pending.proposal,
+            })
+            if (!result.ok) {
+              setJoChangeSession({ kind: 'error', message: result.error })
+              setJoChangePhase('error')
+              return
+            }
+            setSettings(current => ({
+              ...current,
+              ...(result.settings.morningRitual
+                ? { morningRitual: normalizeMorningRitualConfig(result.settings.morningRitual as Partial<MorningRitualConfig>) }
+                : {}),
+              ...(result.settings.eveningGate
+                ? { eveningGate: normalizeEveningGateConfig(result.settings.eveningGate) }
+                : {}),
+              adaptive: readAdaptiveFromSettings(result.settings),
+            }))
+            setLastAppliedHistoryId(result.history.id)
+            setJoChangePhase('applied')
+            showToast('LifeOS aktualisiert')
+          }}
+          onCancel={() => {
+            setJoChangeSession(null)
+            setJoChangePhase('preview')
+          }}
+          onUndo={() => {
+            if (!lastAppliedHistoryId) return
+            const result = undoSystemChange({ settings, historyId: lastAppliedHistoryId })
+            if (!result.ok) {
+              showToast(result.error ?? 'Rückgängig fehlgeschlagen')
+              return
+            }
+            setSettings(current => ({
+              ...current,
+              ...(result.settings.morningRitual
+                ? { morningRitual: normalizeMorningRitualConfig(result.settings.morningRitual as Partial<MorningRitualConfig>) }
+                : {}),
+              ...(result.settings.eveningGate
+                ? { eveningGate: normalizeEveningGateConfig(result.settings.eveningGate) }
+                : {}),
+              adaptive: readAdaptiveFromSettings(result.settings),
+            }))
+            setLastAppliedHistoryId(null)
+            setJoChangeSession(null)
+            setJoChangePhase('preview')
+            showToast('Änderung rückgängig gemacht')
           }}
         />
       )}
@@ -3415,6 +3538,26 @@ function App() {
             updateEntry({ energyLevel: energy }, 'morning_gate')
             setRitualProgress(current => markRitualStepDone(current, 'energy'))
             appendDailyEvent(createRitualStepEvent({ date: today, stepId: 'energy' }))
+            emitAdaptiveEvent('routine_step.completed', { entityId: 'energy', surface: 'morning_gate', date: today })
+            if (gatePreview) setPreviewIndex(value => value + 1)
+          }}
+          onPickWeight={kg => {
+            updateEntry({ weightKg: kg }, 'morning_gate', {
+              toastMessage: `Gewicht gespeichert: ${kg} kg`,
+            })
+            setRitualProgress(current => markRitualStepDone(current, 'weight'))
+            appendDailyEvent(createRitualStepEvent({
+              date: today,
+              stepId: 'weight',
+              status: 'updated',
+              details: { weightKg: kg },
+            }))
+            emitAdaptiveEvent('metric.recorded', {
+              entityId: 'weight',
+              surface: 'morning_gate',
+              date: today,
+              payload: { value: kg },
+            })
             if (gatePreview) setPreviewIndex(value => value + 1)
           }}
           onCompleteTimer={kind => {
@@ -3727,7 +3870,12 @@ function TodayView({
     habitSchedules: settings.habitSchedules,
     focusMinutes: settings.focusMinutes,
     hour: date === today ? new Date().getHours() : 20,
-    hiddenChecks: settings.eveningGate.hiddenChecks,
+    hiddenChecks: [
+      ...settings.eveningGate.hiddenChecks,
+      ...((settings.adaptive ?? defaultAdaptiveLifeConfig()).surfaces.now.excludeEntities.includes('energy')
+        ? ['energy' as const]
+        : []),
+    ],
   })
   const habitGoals = {
     proteinGoal: settings.proteinGoal,
@@ -3776,6 +3924,18 @@ function TodayView({
       doneSteps: entry.eveningGate?.done,
     }),
   ]
+  const adaptive = settings.adaptive ?? defaultAdaptiveLifeConfig()
+  const nowDedupe = applyNowDedupePolicy({
+    surface: adaptive.surfaces.now,
+    gateOwnedKeys: ownedHabitKeys,
+    gateOwnedEntities: [
+      ...(ritualEnabled && !ritualSkipped && ritualSteps.includes('energy') ? ['energy' as const] : []),
+      ...(ritualEnabled && !ritualSkipped && ritualSteps.includes('headRecovery') ? ['mood' as const, 'sleep' as const] : []),
+      ...(ritualEnabled && !ritualSkipped && ritualSteps.includes('weight') ? ['weight' as const] : []),
+    ],
+    habitKeys: allRoutineItems.map(item => item.key),
+  })
+  const excludeHabitKeys = [...new Set([...ownedHabitKeys, ...nowDedupe.excludeHabitKeys])]
   const ritualCount = ritualRemaining({ steps: ritualSteps, doneSteps: ritualDoneSteps })
   const nowItems = selectNowItems({
     anchors,
@@ -3789,7 +3949,7 @@ function TodayView({
     })),
     energy,
     hour,
-    excludeHabitKeys: ownedHabitKeys,
+    excludeHabitKeys,
   })
   const overviewItems = selectOverviewItems({
     anchors,
@@ -3801,7 +3961,7 @@ function TodayView({
       done: item.done,
       minutes: item.minutes,
     })),
-    excludeHabitKeys: ownedHabitKeys,
+    excludeHabitKeys,
   })
   const laterItem = overviewItems.find(item => {
     if (item.done || nowItems.some(now => now.id === item.id)) return false
@@ -4857,6 +5017,7 @@ function ProgressView({
   selectedDate,
   scoreGoals,
   heightCm,
+  labClassName = '',
   onSelectDate,
 }: {
   entries: DashboardEntry[]
@@ -4864,6 +5025,7 @@ function ProgressView({
   selectedDate: string
   scoreGoals: { proteinGoal: number; activeHabits: string[] }
   heightCm: number
+  labClassName?: string
   onSelectDate: (date: string) => void
 }) {
   const [habitDetail, setHabitDetail] = useState<{ key: HabitKey; label: string } | null>(null)
@@ -4931,7 +5093,7 @@ function ProgressView({
   })
 
   return (
-    <div className="view-stack lab-page">
+    <div className={`view-stack lab-page ${labClassName}`.trim()}>
       <section className="page-intro lab-intro">
         <div>
           <span className="eyebrow">Lab</span>
@@ -7088,6 +7250,7 @@ function RitualDurationFields({
         </div>
       )
     case 'medsShake':
+    case 'weight':
     case 'gratitude':
     case 'energy':
     case 'headRecovery':
