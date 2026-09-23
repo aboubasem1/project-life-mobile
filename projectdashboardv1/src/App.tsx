@@ -13,7 +13,6 @@ import {
   AlertCircle,
   ArrowDownRight,
   ArrowUpRight,
-  BarChart3,
   Bell,
   BookOpen,
   Brain,
@@ -41,9 +40,7 @@ import {
   LayoutGrid,
   Mic,
   Leaf,
-  ListTodo,
   Moon,
-  Package,
   Pause,
   Pencil,
   Pill,
@@ -55,12 +52,10 @@ import {
   Settings,
   Share2,
   ShoppingBag,
-  ShoppingCart,
   Smartphone,
   Snowflake,
   Sparkles,
   Sun,
-  Target,
   Timer,
   Trash2,
   User,
@@ -79,7 +74,13 @@ import { buildWeekInsights } from './lib/insights'
 import { deriveLaborOverview, deriveLaborStats, smartLaborHints } from './lib/laborLive'
 import { searchLabor } from './lib/laborSearch'
 import { buildMonthGrid, monthLabel } from './lib/calendarGrid'
-import { hashFromView, hashPathOnly, isProgressHubView, navigateHash, navigateHashWithId, peekAppAction, takeAppActionFromLocation, viewFromHash, entityIdFromHash, buildActionUrl, SHORTCUT_RECIPES, VIEW_LABELS, type AppAction, type AppView } from './lib/routing'
+import { hashFromView, hashPathOnly, isProgressHubView, labDataSectionFromHash, navigateHash, navigateHashWithId, navigateLabDataSection, peekAppAction, takeAppActionFromLocation, viewFromHash, entityIdFromHash, buildActionUrl, SHORTCUT_RECIPES, VIEW_LABELS, type AppAction, type AppView, type LabDataSection } from './lib/routing'
+import {
+  LAB_DATA_AREAS,
+  LAB_DATA_SECTION_IDS,
+  contextLineForSection,
+  type LabDataQuickAction,
+} from './lib/labDataNav'
 import { shareOrDownloadIcs } from './lib/ics'
 import { copyText, shareText } from './lib/share'
 import { releaseScreenWakeLock, requestScreenWakeLock } from './lib/wakeLock'
@@ -205,6 +206,7 @@ import { LifeAreaFilter, LifeAreaMark, LifeAreaSelect } from './views/lifeos/lif
 import { MorningGate } from './components/MorningGate'
 import { EveningGate } from './components/EveningGate'
 import { ProgressHubNav } from './components/ProgressHubNav'
+import { LabDataMobileChrome } from './components/lab/LabDataMobileChrome'
 import { RoutineModeSelector } from './components/RoutineModeSelector'
 import { PrivateNotesSheet } from './components/PrivateNotesSheet'
 import {
@@ -706,19 +708,9 @@ type DashboardPlusState = {
   }
 }
 
-const DASHBOARD_PLUS_TABS = [
-  { id: 'overview', label: 'Übersicht', hint: 'Heute im Kern', icon: LayoutGrid },
-  { id: 'todos', label: 'Todos', hint: 'Fokus und Boards', icon: ListTodo },
-  { id: 'lists', label: 'Listen', hint: 'Packen und Merken', icon: BookOpen },
-  { id: 'stock', label: 'Bestände', hint: 'Supplements', icon: Package },
-  { id: 'medications', label: 'Medis', hint: 'Einnahme', icon: Pill },
-  { id: 'goals', label: 'Ziele', hint: 'Fortschritt', icon: Target },
-  { id: 'shopping', label: 'Kaufliste', hint: 'Offene Artikel', icon: ShoppingCart },
-  { id: 'stats', label: 'Stats', hint: 'Woche', icon: BarChart3 },
-  { id: 'finance', label: 'Finanzen', hint: 'Fixkosten', icon: CreditCard },
-] as const
+const DASHBOARD_PLUS_TABS = LAB_DATA_AREAS
 
-type DashboardPlusSection = (typeof DASHBOARD_PLUS_TABS)[number]['id']
+type DashboardPlusSection = LabDataSection
 
 const SETTINGS_KEY = 'life-os-v1-settings'
 /** Stores the date of the last splash so the intro animation only plays on the first open of a day. */
@@ -960,7 +952,7 @@ function loadDashboardPlusState(): DashboardPlusState {
 
 const DEFAULT_ACTIVE_HABITS = ['breathingDone', 'coldShower', 'proteinShake', 'pushupsDone', 'gratitudeDone']
 
-const DASHBOARD_PLUS_SECTION_IDS = DASHBOARD_PLUS_TABS.map(tab => tab.id)
+const DASHBOARD_PLUS_SECTION_IDS = [...LAB_DATA_SECTION_IDS]
 
 const DEFAULT_DASHBOARD_PLUS_LAYOUT: DashboardPlusLayout = {
   order: [...DASHBOARD_PLUS_SECTION_IDS],
@@ -1478,6 +1470,9 @@ function App() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [captureOpen, setCaptureOpen] = useState(false)
   const [capturePreset, setCapturePreset] = useState('')
+  const [captureClassifyAs, setCaptureClassifyAs] = useState<CaptureTargetType | undefined>(undefined)
+  const [captureMode, setCaptureMode] = useState<'default' | 'shopping' | 'stock' | 'med-log' | 'goal' | 'finance' | 'list'>('default')
+  const [labDataSection, setLabDataSection] = useState<LabDataSection>(() => labDataSectionFromHash())
   const [joChangeSession, setJoChangeSession] = useState<JoChangeSession>(null)
   const [joChangePhase, setJoChangePhase] = useState<'preview' | 'applied' | 'code' | 'error'>('preview')
   const [lastAppliedHistoryId, setLastAppliedHistoryId] = useState<string | null>(null)
@@ -1636,6 +1631,7 @@ function App() {
     const onHash = () => {
       setView(viewFromHash())
       setLifeOsEntityId(entityIdFromHash())
+      setLabDataSection(labDataSectionFromHash())
       consumeAction()
     }
 
@@ -2235,6 +2231,47 @@ function App() {
     if (nextView === 'checkin' && selectedDate > today) setSelectedDate(today)
   }
 
+  const openUniversalCapture = (options?: {
+    raw?: string
+    classifyAs?: CaptureTargetType
+    mode?: typeof captureMode
+  }) => {
+    setCapturePreset(options?.raw ?? '')
+    setCaptureClassifyAs(options?.classifyAs)
+    setCaptureMode(options?.mode ?? 'default')
+    setCaptureOpen(true)
+  }
+
+  const handleLabQuickAction = (action: LabDataQuickAction) => {
+    switch (action) {
+      case 'capture-task':
+        openUniversalCapture({ classifyAs: 'task', mode: 'default', raw: '' })
+        return
+      case 'capture-shopping':
+        openUniversalCapture({ mode: 'shopping' })
+        return
+      case 'capture-stock':
+        openUniversalCapture({ mode: 'stock', classifyAs: 'note' })
+        return
+      case 'capture-med-log':
+        openUniversalCapture({ mode: 'med-log', classifyAs: 'note', raw: 'Eingenommen: ' })
+        return
+      case 'capture-goal':
+        openUniversalCapture({ mode: 'goal', classifyAs: 'goal' })
+        return
+      case 'capture-finance':
+        openUniversalCapture({ mode: 'finance', classifyAs: 'note' })
+        return
+      case 'capture-list':
+        openUniversalCapture({ mode: 'list', classifyAs: 'note' })
+        return
+      default: {
+        const _exhaustive: never = action
+        return _exhaustive
+      }
+    }
+  }
+
   const captureDecisionContext = () => ({
     routineMeals: [{
       ...settings.morningRitual.shakeMeal,
@@ -2250,6 +2287,10 @@ function App() {
     fileName?: string
     fileKind?: 'file' | 'screenshot'
     fileDataUrl?: string
+    fileObjectId?: string
+    fileStorageKey?: string
+    fileContentType?: string
+    fileSize?: number
     classifyAs?: CaptureTargetType
     lifeArea?: LifeAreaKey
     source?: string
@@ -2257,7 +2298,134 @@ function App() {
     transcriptId?: string
     decisionPreview?: ReturnType<typeof previewFromBatch>
     applyConfirmedDecisions?: boolean
+    captureMode?: 'default' | 'shopping' | 'stock' | 'med-log' | 'goal' | 'finance' | 'list'
   }, openInbox = true) => {
+    const mode = input.captureMode ?? 'default'
+    if (mode === 'shopping') {
+      const title = input.raw.trim()
+      if (!title) return
+      const itemId = crypto.randomUUID()
+      setDashboardPlus(current => ({
+        ...current,
+        shopping: {
+          ...current.shopping,
+          items: [
+            ...current.shopping.items,
+            {
+              id: itemId,
+              icon: 'bag',
+              name: title,
+              note: '',
+              price: 0,
+              done: false,
+            },
+          ],
+        },
+      }))
+      setCapturePreset('')
+      setCaptureMode('default')
+      setCaptureClassifyAs(undefined)
+      navigateLabDataSection('shopping')
+      setView('dashboardPlus')
+      showToast('Artikel hinzugefügt', 'Rückgängig', () => {
+        setDashboardPlus(current => ({
+          ...current,
+          shopping: {
+            ...current.shopping,
+            items: current.shopping.items.filter(item => item.id !== itemId),
+          },
+        }))
+      })
+      return
+    }
+    if (mode === 'list') {
+      const title = input.raw.trim() || 'Neue Liste'
+      setDashboardPlus(current => ({
+        ...current,
+        lists: [
+          ...current.lists,
+          {
+            id: crypto.randomUUID(),
+            title,
+            kind: 'custom' as const,
+            items: [],
+          },
+        ],
+      }))
+      setCapturePreset('')
+      setCaptureMode('default')
+      setCaptureClassifyAs(undefined)
+      navigateLabDataSection('lists')
+      setView('dashboardPlus')
+      showToast('Liste angelegt')
+      return
+    }
+    if (mode === 'stock') {
+      const name = input.raw.trim() || 'Neues Produkt'
+      setDashboardPlus(current => ({
+        ...current,
+        supplements: [
+          ...current.supplements,
+          { id: crypto.randomUUID(), name, brand: '', stock: 0, unit: 'g', dailyUse: 0, dailyUnit: 'g' },
+        ],
+      }))
+      setCapturePreset('')
+      setCaptureMode('default')
+      setCaptureClassifyAs(undefined)
+      navigateLabDataSection('stock')
+      setView('dashboardPlus')
+      showToast('Bestand erfasst')
+      return
+    }
+    if (mode === 'goal') {
+      const title = input.raw.trim() || 'Neues Ziel'
+      setDashboardPlus(current => ({
+        ...current,
+        goals: [
+          ...current.goals,
+          {
+            id: crypto.randomUUID(),
+            title,
+            timeframe: 'Monat',
+            percent: 0,
+            dueDate: today,
+            color: 'var(--accent)',
+            lifeArea: input.lifeArea,
+          },
+        ],
+      }))
+      setCapturePreset('')
+      setCaptureMode('default')
+      setCaptureClassifyAs(undefined)
+      navigateLabDataSection('goals')
+      setView('dashboardPlus')
+      showToast('Ziel angelegt')
+      return
+    }
+    if (mode === 'finance') {
+      const name = input.raw.trim() || 'Neuer Eintrag'
+      setDashboardPlus(current => ({
+        ...current,
+        finances: {
+          ...current.finances,
+          openBills: [
+            ...current.finances.openBills,
+            { ...createBillDraft('open', today, current.finances.openBills.length), name },
+          ],
+        },
+      }))
+      setCapturePreset('')
+      setCaptureMode('default')
+      setCaptureClassifyAs(undefined)
+      navigateLabDataSection('finance')
+      setView('dashboardPlus')
+      showToast('Finanzeintrag erfasst')
+      return
+    }
+    if (mode === 'med-log') {
+      input = { ...input, classifyAs: 'note', captureMode: 'default' }
+    }
+
     const capture = createCapture(input)
     const classified = input.classifyAs && input.classifyAs !== 'inbox'
       ? { ...capture, targetType: input.classifyAs, status: 'classified' as const }
@@ -2351,18 +2519,27 @@ function App() {
       }))
     }
     if (openInbox) {
-      setCaptureOpen(false)
-      setCapturePreset('')
-      navigateTo(appliedFromConfirm ? 'today' : 'inbox', appliedFromConfirm ? undefined : classified.id)
-      showToast(appliedFromConfirm ? 'Vorschläge übernommen' : 'In Inbox gelegt')
+      const captureId = nextCapture.id
+      navigateTo(appliedFromConfirm ? 'today' : 'inbox', appliedFromConfirm ? undefined : captureId)
+      if (appliedFromConfirm) {
+        showToast('Gespeichert')
+      } else {
+        showToast('Gespeichert', 'Rückgängig', () => {
+          lifeOs.commit(current => ({
+            ...current,
+            captures: current.captures.filter(item => item.id !== captureId),
+          }))
+          showToast('Capture entfernt')
+        })
+      }
     } else {
       showToast('Als Universal Memo gespeichert.')
     }
   }
 
-  const handleLifeOsCapture = (input: Parameters<typeof commitLifeOsCapture>[0]) => {
+  const handleLifeOsCapture = (input: Parameters<typeof commitLifeOsCapture>[0]) => (
     commitLifeOsCapture(input)
-  }
+  )
 
   const openPrivateNotes = (text = '', onSaved?: () => void) => {
     setPrivateNotePreset(text)
@@ -2482,20 +2659,15 @@ function App() {
           break
         }
         case 'add-task':
-          navigateTo('plan')
+          navigateTo('dashboardPlus')
+          navigateLabDataSection('todos')
           window.setTimeout(() => {
-            const titled = action.title?.trim()
-            if (titled) {
-              saveTask(titled, null)
-              return
-            }
-            setTaskEditor({
-              index: null,
-              value: '',
-              minutes: dayPolicy.focusMinutes,
+            openUniversalCapture({
+              raw: action.title?.trim() ?? '',
+              classifyAs: 'task',
             })
           }, 60)
-          showToast(action.title?.trim() ? 'Kurzbefehl: Aufgabe gespeichert' : 'Kurzbefehl: Aufgabe')
+          showToast(action.title?.trim() ? 'Kurzbefehl: Aufgabe erfassen' : 'Kurzbefehl: Aufgabe')
           break
         case 'log': {
           navigateTo('today')
@@ -2510,7 +2682,7 @@ function App() {
           else if (parsed?.kind === 'steps') patch.steps = parsed.value
           else if (parsed?.kind === 'weight') patch.weightKg = parsed.value
           else if (parsed?.kind === 'task' && parsed.title) {
-            saveTask(parsed.title, null)
+            openUniversalCapture({ raw: parsed.title, classifyAs: 'task' })
           }
           if (action.protein !== undefined) patch.proteinGrams = action.protein
           if (action.calories !== undefined) patch.calories = action.calories
@@ -2537,7 +2709,7 @@ function App() {
             showToast('Capture in Inbox')
           }
           navigateTo('inbox')
-          if (!action.text?.trim()) setCaptureOpen(true)
+          if (!action.text?.trim()) openUniversalCapture()
           break
         }
         case 'focus': {
@@ -2696,11 +2868,7 @@ function App() {
                 value,
                 minutes: anchorMinutes[index] ?? dayPolicy.focusMinutes,
               })}
-              onAddTask={() => setTaskEditor({
-                index: null,
-                value: '',
-                minutes: dayPolicy.focusMinutes,
-              })}
+              onAddTask={() => openUniversalCapture({ classifyAs: 'task' })}
               onOpenFocus={openFocus}
               onExportToCalendar={exportTaskToCalendar}
               onReorderHabits={ids => setSettings(current => ({ ...current, activeHabits: ids }))}
@@ -2748,12 +2916,8 @@ function App() {
               maxAnchors={dayPolicy.maxAnchors}
               energy={entry.energyLevel}
               onDateChange={setSelectedDate}
-              onAddTask={() => setTaskEditor({
-                index: null,
-                value: '',
-                minutes: dayPolicy.focusMinutes,
-              })}
-              onAddSuggestion={text => saveTask(text, null)}
+              onAddTask={() => openUniversalCapture({ classifyAs: 'task' })}
+              onAddSuggestion={text => openUniversalCapture({ raw: text, classifyAs: 'task' })}
               onEditTask={(index, value) => setTaskEditor({
                 index,
                 value,
@@ -2808,6 +2972,12 @@ function App() {
               onOpenProject={id => navigateTo('project', id)}
               onOpenGoal={id => navigateTo('goal', id)}
               showToast={showToast}
+              section={labDataSection}
+              onSectionChange={section => {
+                setLabDataSection(section)
+                navigateLabDataSection(section)
+              }}
+              onQuickAction={handleLabQuickAction}
             />
           )}
           {view === 'inbox' && (
@@ -2815,7 +2985,7 @@ function App() {
               items={lifeOs.inbox}
               projects={dashboardPlus.boards.map(board => ({ id: board.id, label: board.label }))}
               goals={dashboardPlus.goals.map(goal => ({ id: goal.id, title: goal.title }))}
-              onCapture={() => setCaptureOpen(true)}
+              onCapture={() => openUniversalCapture()}
               onOpen={id => setLifeOsEntityId(id)}
               onClassify={lifeOs.classify}
               onConvert={handleConvertCapture}
@@ -2868,15 +3038,8 @@ function App() {
                   ],
                 }))
               }}
-              onAddTask={title => {
-                const id = lifeOsEntityId ?? dashboardPlus.boards[0]?.id
-                if (!id) return
-                setDashboardPlus(current => ({
-                  ...current,
-                  boards: current.boards.map(board => board.id === id
-                    ? { ...board, tasks: [...board.tasks, { id: crypto.randomUUID(), title, tag: '', time: '', done: false, priority: 'p3' }], lastActivityAt: nowIso() }
-                    : board),
-                }))
+              onAddTask={() => {
+                openUniversalCapture({ classifyAs: 'task' })
               }}
               onToggleTask={taskId => {
                 const id = lifeOsEntityId ?? dashboardPlus.boards[0]?.id
@@ -3171,7 +3334,7 @@ function App() {
             type="button"
             className="mobile-nav__item mobile-nav__capture"
             aria-label="Mit Jo AI erfassen"
-            onClick={() => setCaptureOpen(true)}
+            onClick={() => openUniversalCapture()}
           >
             <span className="mobile-nav__capture-icon" aria-hidden="true">
               <Mic size={20} />
@@ -3191,7 +3354,7 @@ function App() {
         </nav>
 
         {view !== 'dashboardPlus' && view !== 'today' && view !== 'checkin' && view !== 'plan' && view !== 'progress' && !showMorningGate && (
-          <button type="button" className="fab" onClick={() => setQuickAddOpen(true)} aria-label="Schnell hinzufügen">
+          <button type="button" className="fab" onClick={() => openUniversalCapture()} aria-label="Schnell hinzufügen">
             <Plus size={22} />
           </button>
         )}
@@ -3238,8 +3401,7 @@ function App() {
           }}
           onOpenCapture={preset => {
             setPaletteOpen(false)
-            setCapturePreset(preset ?? '')
-            setCaptureOpen(true)
+            openUniversalCapture({ raw: preset ?? '' })
           }}
           onOpenHit={hit => {
             setPaletteOpen(false)
@@ -3277,10 +3439,14 @@ function App() {
       {captureOpen && (
         <CaptureSheet
           initialRaw={capturePreset}
+          initialClassifyAs={captureClassifyAs}
+          initialMode={captureMode}
           inactive={privateNotesOpen}
           onClose={() => {
             setCaptureOpen(false)
             setCapturePreset('')
+            setCaptureClassifyAs(undefined)
+            setCaptureMode('default')
           }}
           onDecide={async input => {
             const changeSession = tryOpenSystemChange(input.content, settings)
@@ -3331,6 +3497,8 @@ function App() {
             openPrivateNotes(text, () => {
               setCaptureOpen(false)
               setCapturePreset('')
+              setCaptureClassifyAs(undefined)
+              setCaptureMode('default')
             })
           }}
         />
@@ -5390,6 +5558,9 @@ function DashboardPlusView({
   onOpenProject,
   onOpenGoal,
   showToast,
+  section,
+  onSectionChange,
+  onQuickAction,
 }: {
   dashboard: DashboardPlusState
   onChange: Dispatch<SetStateAction<DashboardPlusState>>
@@ -5403,20 +5574,35 @@ function DashboardPlusView({
   onOpenProject?: (id: string) => void
   onOpenGoal?: (id: string) => void
   showToast: (message: string) => void
+  section: LabDataSection
+  onSectionChange: (section: LabDataSection) => void
+  onQuickAction: (action: LabDataQuickAction) => void
 }) {
-  const [activeSection, setActiveSection] = useState<DashboardPlusSection>('overview')
+  const [headerCollapsed, setHeaderCollapsed] = useState(false)
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const activeSection = section
 
   const tabsToRender = useMemo(() => {
     const visible = layout.order
       .filter(id => !layout.hidden.includes(id))
       .map(id => DASHBOARD_PLUS_TABS.find(tab => tab.id === id))
       .filter((tab): tab is (typeof DASHBOARD_PLUS_TABS)[number] => Boolean(tab))
-    return visible.length > 0 ? visible : DASHBOARD_PLUS_TABS
+    return visible.length > 0 ? visible : [...DASHBOARD_PLUS_TABS]
   }, [layout])
 
   const currentSection = tabsToRender.some(tab => tab.id === activeSection)
     ? activeSection
     : tabsToRender[0].id
+
+  useEffect(() => {
+    if (tabsToRender.some(tab => tab.id === section)) return
+    onSectionChange(tabsToRender[0].id)
+  }, [section, tabsToRender, onSectionChange])
+
+  const setActiveSection = (next: DashboardPlusSection) => {
+    onSectionChange(next)
+  }
   const [activeBoardId, setActiveBoardId] = useState(dashboard.boards[0]?.id ?? 'personal')
   const [activeListId, setActiveListId] = useState(dashboard.lists[0]?.id ?? 'pack')
   const [searchQuery, setSearchQuery] = useState('')
@@ -5473,13 +5659,6 @@ function DashboardPlusView({
     }))
   }
 
-  const addFocusTask = () => {
-    onChange(current => ({
-      ...current,
-      focusTodos: [...current.focusTodos, { id: crypto.randomUUID(), title: 'Neue Aufgabe', tag: '', time: '', done: false, priority: 'p3' }],
-    }))
-  }
-
   const removeFocusTask = (index: number) => {
     onChange(current => ({
       ...current,
@@ -5527,13 +5706,6 @@ function DashboardPlusView({
     }))
   }
 
-  const addSupplement = () => {
-    onChange(current => ({
-      ...current,
-      supplements: [...current.supplements, { id: crypto.randomUUID(), name: 'Neues Produkt', brand: '', stock: 0, unit: 'g', dailyUse: 0, dailyUnit: 'g' }],
-    }))
-  }
-
   const removeSupplement = (index: number) => {
     onChange(current => ({
       ...current,
@@ -5548,13 +5720,6 @@ function DashboardPlusView({
     }))
   }
 
-  const addMedication = () => {
-    onChange(current => ({
-      ...current,
-      medications: [...current.medications, { id: crypto.randomUUID(), name: 'Neues Medikament', dosage: '', time: '', notes: '', effect: '', sideEffects: '', taken: false, color: 'var(--accent)' }],
-    }))
-  }
-
   const removeMedication = (index: number) => {
     onChange(current => ({
       ...current,
@@ -5566,13 +5731,6 @@ function DashboardPlusView({
     onChange(current => ({
       ...current,
       goals: current.goals.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
-    }))
-  }
-
-  const addGoal = () => {
-    onChange(current => ({
-      ...current,
-      goals: [...current.goals, { id: crypto.randomUUID(), title: 'Neues Ziel', timeframe: 'Monat', percent: 0, dueDate: today, color: 'var(--accent)' }],
     }))
   }
 
@@ -5601,17 +5759,6 @@ function DashboardPlusView({
     }))
   }
 
-  const addBoardTask = (boardId: string) => {
-    onChange(current => ({
-      ...current,
-      boards: syncBoardCounts(current.boards.map(board => (
-        board.id === boardId
-          ? { ...board, tasks: [...board.tasks, { id: crypto.randomUUID(), title: 'Neue Board-Aufgabe', tag: '', time: '', done: false, priority: 'p3' }] }
-          : board
-      ))),
-    }))
-  }
-
   const removeBoardTask = (boardId: string, taskIndex: number) => {
     onChange(current => ({
       ...current,
@@ -5629,26 +5776,6 @@ function DashboardPlusView({
       shopping: {
         ...current.shopping,
         items: current.shopping.items.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
-      },
-    }))
-  }
-
-  const addShoppingItem = () => {
-    onChange(current => ({
-      ...current,
-      shopping: {
-        ...current.shopping,
-        items: [
-          ...current.shopping.items,
-          {
-            id: crypto.randomUUID(),
-            icon: 'bag',
-            name: 'Neuer Artikel',
-            note: '',
-            price: 0,
-            done: false,
-          },
-        ],
       },
     }))
   }
@@ -5695,15 +5822,6 @@ function DashboardPlusView({
         items: current.shopping.items.filter((_, itemIndex) => itemIndex !== index),
       },
     }))
-  }
-
-  const addList = (kind: DashboardPlusListKind = 'custom') => {
-    const id = crypto.randomUUID()
-    onChange(current => ({
-      ...current,
-      lists: [...current.lists, { id, title: LIST_KIND_LABELS[kind], kind, items: [] }],
-    }))
-    setActiveListId(id)
   }
 
   const updateList = (listId: string, patch: Partial<Pick<DashboardPlusList, 'title' | 'kind'>>) => {
@@ -5769,32 +5887,6 @@ function DashboardPlusView({
       finances: {
         ...current.finances,
         openBills: current.finances.openBills.map((bill, billIndex) => (billIndex === index ? { ...bill, ...patch } : bill)),
-      },
-    }))
-  }
-
-  const addRecurringBill = () => {
-    onChange(current => ({
-      ...current,
-      finances: {
-        ...current.finances,
-        recurring: [
-          ...current.finances.recurring,
-          createBillDraft('recurring', today, current.finances.recurring.length),
-        ],
-      },
-    }))
-  }
-
-  const addOpenBill = () => {
-    onChange(current => ({
-      ...current,
-      finances: {
-        ...current.finances,
-        openBills: [
-          ...current.finances.openBills,
-          createBillDraft('open', today, current.finances.openBills.length),
-        ],
       },
     }))
   }
@@ -5887,10 +5979,44 @@ function DashboardPlusView({
     </div>
   )
 
+  const sectionContextCounts: Partial<Record<LabDataSection, string | number>> = {
+    todos: `${openFocusTodos} offen`,
+    shopping: `${dashboard.shopping.items.filter(item => !item.done).length} offen`,
+    medications: `${dashboard.medications.filter(item => !isMedicationTakenToday(item, today)).length} offen`,
+    stock: lowStockCount > 0 ? `${lowStockCount} niedrig` : 'ok',
+    goals: `${dashboard.goals.length}`,
+    lists: `${dashboard.lists.length}`,
+    finance: financeSummary.openCount > 0 ? `${financeSummary.openCount} offen` : 'ok',
+    stats: 'Woche',
+    overview: liveOverview.dateLabel,
+  }
+
   return (
-    <div className="view-stack dashboard-plus-view">
+    <div
+      className="view-stack dashboard-plus-view"
+      ref={scrollRef}
+      onScroll={event => {
+        setHeaderCollapsed(event.currentTarget.scrollTop > 28)
+      }}
+    >
+      <LabDataMobileChrome
+        section={currentSection}
+        contextLine={contextLineForSection(currentSection, sectionContextCounts)}
+        onSectionChange={setActiveSection}
+        searchOpen={mobileSearchOpen}
+        onSearchToggle={() => {
+          setMobileSearchOpen(current => {
+            const next = !current
+            if (!next) setSearchQuery('')
+            return next
+          })
+        }}
+        onOpenSettings={onOpenSettings}
+        onQuickAction={onQuickAction}
+        collapsed={headerCollapsed}
+      />
       <div className="labor-shell">
-        <nav className="labor-nav" role="tablist" aria-label="Lab-Daten">
+        <nav className="labor-nav labor-nav--desktop" role="tablist" aria-label="Lab-Daten">
           {tabsToRender.map(tab => {
             const Icon = tab.icon
             const active = currentSection === tab.id
@@ -5915,7 +6041,7 @@ function DashboardPlusView({
         </nav>
 
         <div className="labor-body" role="tabpanel" aria-labelledby={`labor-cat-${currentSection}`}>
-          <div className="labor-toolbar">
+          <div className={mobileSearchOpen ? 'labor-toolbar is-search-open' : 'labor-toolbar'}>
             <label className="labor-search">
               <Search size={16} aria-hidden="true" />
               <input
@@ -6003,7 +6129,7 @@ function DashboardPlusView({
           <SectionTitle
             eyebrow="Todos"
             title="Fokus"
-            action={<button type="button" className="small-button" onClick={addFocusTask}><Plus size={14} /> Aufgabe</button>}
+            action={<button type="button" className="small-button labor-inline-create" onClick={() => onQuickAction('capture-task')}><Plus size={14} /> Aufgabe</button>}
           />
           <LifeAreaFilter value={todoAreaFilter} onChange={setTodoAreaFilter} />
           <label className="life-area-group-toggle">
@@ -6171,7 +6297,7 @@ function DashboardPlusView({
                     )
                   })}
               </div>
-              <button type="button" className="secondary-button secondary-button--full" onClick={() => addBoardTask(activeBoard.id)}>
+              <button type="button" className="secondary-button secondary-button--full labor-inline-create" onClick={() => onQuickAction('capture-task')}>
                 <Plus size={15} /> Aufgabe hinzufügen
               </button>
             </>
@@ -6188,7 +6314,7 @@ function DashboardPlusView({
             eyebrow="Listen"
             title={activeList?.title || 'Listen'}
             action={(
-              <button type="button" className="small-button" onClick={() => addList('custom')}>
+              <button type="button" className="small-button" onClick={() => onQuickAction('capture-list')}>
                 <Plus size={14} /> Liste
               </button>
             )}
@@ -6286,7 +6412,7 @@ function DashboardPlusView({
       {!laborSearching && currentSection === 'stock' && (
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
-          <SectionTitle eyebrow="Supplements" title="Bestände" action={<button type="button" className="small-button" onClick={addSupplement}><Plus size={14} /> Produkt</button>} />
+          <SectionTitle eyebrow="Supplements" title="Bestände" action={<button type="button" className="small-button" onClick={() => onQuickAction('capture-stock')}><Plus size={14} /> Produkt</button>} />
           <div className="dashboard-plus-supplements">
             {dashboard.supplements.map((item, index) => {
               const daysLeft = supplementDaysRemaining(item.stock, item.dailyUse)
@@ -6383,7 +6509,7 @@ function DashboardPlusView({
       {!laborSearching && currentSection === 'medications' && (
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
-          <SectionTitle eyebrow="Gesundheit" title="Medikamente" action={<button type="button" className="small-button" onClick={addMedication}><Plus size={14} /> Medikament</button>} />
+          <SectionTitle eyebrow="Gesundheit" title="Medikamente" action={<button type="button" className="small-button" onClick={() => onQuickAction('capture-med-log')}><Plus size={14} /> Einnahme</button>} />
           <div className="dashboard-plus-supplements">
             {dashboard.medications.map((item, index) => {
               const takenToday = isMedicationTakenToday(item, today)
@@ -6437,7 +6563,7 @@ function DashboardPlusView({
       {!laborSearching && currentSection === 'goals' && (
       <div className="dashboard-plus-grid">
         <section className="card dashboard-plus-card dashboard-plus-card--wide">
-          <SectionTitle eyebrow="Planung" title="Ziele" action={<button type="button" className="small-button" onClick={addGoal}><Plus size={14} /> Ziel</button>} />
+          <SectionTitle eyebrow="Planung" title="Ziele" action={<button type="button" className="small-button" onClick={() => onQuickAction('capture-goal')}><Plus size={14} /> Ziel</button>} />
           <LifeAreaFilter value={goalAreaFilter} onChange={setGoalAreaFilter} />
           <div className="dashboard-plus-supplements">
             {dashboard.goals
@@ -6496,7 +6622,7 @@ function DashboardPlusView({
           <SectionTitle
             eyebrow="Kaufliste"
             title="Offen"
-            action={<button type="button" className="small-button" onClick={addShoppingItem}><Plus size={14} /> Artikel</button>}
+            action={<button type="button" className="small-button" onClick={() => onQuickAction('capture-shopping')}><Plus size={14} /> Artikel</button>}
           />
           <div className="shopping-list dashboard-plus-shopping-list">
             {dashboard.shopping.items.length === 0 && (
@@ -6647,7 +6773,7 @@ function DashboardPlusView({
                   <CreditCard size={14} aria-hidden="true" />
                   <span>Fixkosten</span>
                 </div>
-                <button type="button" className="small-button" onClick={addRecurringBill}>
+                <button type="button" className="small-button" onClick={() => onQuickAction('capture-finance')}>
                   <Plus size={14} /> Fixkosten
                 </button>
               </div>
@@ -6670,7 +6796,7 @@ function DashboardPlusView({
                   <Receipt size={14} aria-hidden="true" />
                   <span>Offene Posten</span>
                 </div>
-                <button type="button" className="small-button" onClick={addOpenBill}>
+                <button type="button" className="small-button" onClick={() => onQuickAction('capture-finance')}>
                   <Plus size={14} /> Rechnung
                 </button>
               </div>
