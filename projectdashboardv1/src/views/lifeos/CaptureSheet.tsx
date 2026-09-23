@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { ArrowLeft, Check, Image, Link2, LockKeyhole, Mic, Sparkles, Square, X } from 'lucide-react'
-import { transcribeCaptureAudio, webSpeechTranscriptionProvider } from '../../lib/decision-engine/transcription'
+import { transcribeCaptureAudio } from '../../lib/decision-engine/transcription'
+import { acquireMicrophoneStream } from '../../lib/micPermission'
 import {
   CAPTURE_TARGET_LABELS,
   LIFE_AREA_LABELS,
@@ -389,7 +390,9 @@ export function CaptureSheet({
       return
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // One getUserMedia path only — do not also start Web Speech Recognition
+      // (Safari/iOS would re-prompt for the microphone on every start).
+      const stream = await acquireMicrophoneStream()
       streamRef.current = stream
       chunksRef.current = []
       const recorder = new MediaRecorder(stream)
@@ -403,12 +406,6 @@ export function CaptureSheet({
       setStep('recording')
       setError('')
       timerRef.current = window.setInterval(() => setSeconds(current => current + 1), 1000)
-      void webSpeechTranscriptionProvider().transcribe({ audioRef: 'live' }).then(result => {
-        const transcript = result.transcript.trim()
-        if (!transcript) return
-        liveTranscriptRef.current = liveTranscriptRef.current || transcript
-        setRaw(current => current || transcript)
-      }).catch(() => undefined)
     } catch {
       setError('Mikrofonzugriff wurde verweigert.')
     }
