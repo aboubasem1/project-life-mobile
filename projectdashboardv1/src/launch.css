@@ -8421,7 +8421,7 @@ button.status-chip.status-chip--good {
 
 @media (max-width: 719px) {
   .capture-sheet__actions {
-    flex-direction: column-reverse;
+    flex-direction: column;
   }
 
   .capture-sheet__secondary,
