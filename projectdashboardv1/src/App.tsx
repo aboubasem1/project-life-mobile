@@ -3354,8 +3354,9 @@ function App() {
               setJoChangePhase('error')
               return
             }
-            setSettings(current => ({
-              ...current,
+            const historyId = result.history.id
+            const nextSettings: AppSettings = {
+              ...settings,
               ...(result.settings.morningRitual
                 ? { morningRitual: normalizeMorningRitualConfig(result.settings.morningRitual as Partial<MorningRitualConfig>) }
                 : {}),
@@ -3363,10 +3364,31 @@ function App() {
                 ? { eveningGate: normalizeEveningGateConfig(result.settings.eveningGate) }
                 : {}),
               adaptive: readAdaptiveFromSettings(result.settings),
-            }))
-            setLastAppliedHistoryId(result.history.id)
+            }
+            setSettings(nextSettings)
+            setLastAppliedHistoryId(historyId)
             setJoChangePhase('applied')
-            showToast('LifeOS aktualisiert')
+            showToast('LifeOS aktualisiert', 'Rückgängig', () => {
+              const undone = undoSystemChange({ settings: nextSettings, historyId })
+              if (!undone.ok) {
+                showToast(undone.error ?? 'Rückgängig fehlgeschlagen')
+                return
+              }
+              setSettings(current => ({
+                ...current,
+                ...(undone.settings.morningRitual
+                  ? { morningRitual: normalizeMorningRitualConfig(undone.settings.morningRitual as Partial<MorningRitualConfig>) }
+                  : {}),
+                ...(undone.settings.eveningGate
+                  ? { eveningGate: normalizeEveningGateConfig(undone.settings.eveningGate) }
+                  : {}),
+                adaptive: readAdaptiveFromSettings(undone.settings),
+              }))
+              setLastAppliedHistoryId(null)
+              setJoChangeSession(null)
+              setJoChangePhase('preview')
+              showToast('Änderung rückgängig gemacht')
+            })
           }}
           onCancel={() => {
             setJoChangeSession(null)

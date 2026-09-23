@@ -34,6 +34,7 @@ export function ChangePreviewSheet({
 }) {
   const titleId = useId()
   const applyRef = useRef<HTMLButtonElement>(null)
+  const dismissOnBackdrop = phase !== 'applied'
 
   useEffect(() => {
     applyRef.current?.focus()
@@ -41,11 +42,12 @@ export function ChangePreviewSheet({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onCancel()
+      // Keep the applied confirmation sticky so Undo is not lost to Escape.
+      if (event.key === 'Escape' && phase !== 'applied') onCancel()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [onCancel])
+  }, [onCancel, phase])
 
   if (phase === 'code' && implementationSpec) {
     return (
@@ -108,17 +110,19 @@ export function ChangePreviewSheet({
 
   if (phase === 'applied' && preview) {
     return (
-      <div className="change-preview-backdrop" role="presentation" onClick={onCancel}>
+      <div
+        className="change-preview-backdrop"
+        role="presentation"
+        onClick={dismissOnBackdrop ? onCancel : undefined}
+      >
         <section className="change-preview is-applied" role="dialog" aria-modal="true" aria-labelledby={titleId} onClick={event => event.stopPropagation()}>
           <header className="change-preview__head">
             <div>
               <span className="eyebrow">LifeOS</span>
               <h2 id={titleId}>Übernommen</h2>
             </div>
-            <button type="button" className="icon-button" aria-label="Schließen" onClick={onCancel}>
-              <X size={18} />
-            </button>
           </header>
+          <p className="change-preview__lead">Änderung ist aktiv. Du kannst sie sofort rückgängig machen.</p>
           <ul className="change-preview__list">
             {preview.summaryLines.map(line => (
               <li key={line}><Check size={14} /> {line}</li>
