@@ -2691,10 +2691,12 @@ button.status-chip.status-chip--good {
 
 .lab-data-sheet {
   width: min(100%, 480px);
-  max-height: min(78dvh, 640px);
+  max-height: min(88dvh, 720px);
   margin: 0 auto;
-  overflow: auto;
-  padding: 10px 14px calc(14px + env(safe-area-inset-bottom));
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  padding: 10px 14px 0;
   border: 1px solid var(--border-strong);
   border-radius: 24px 24px 18px 18px;
   background: color-mix(in srgb, var(--surface-solid) 92%, transparent);
@@ -2723,6 +2725,12 @@ button.status-chip.status-chip--good {
   font-size: 17px;
   font-weight: 650;
   letter-spacing: -0.02em;
+}
+
+.lab-data-sheet__body {
+  overflow: auto;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  -webkit-overflow-scrolling: touch;
 }
 
 .lab-data-sheet__group {
