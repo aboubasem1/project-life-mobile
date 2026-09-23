@@ -103,6 +103,7 @@ const SOURCE_LABELS: Record<DailyEventSource, string> = {
 
 const RITUAL_STEP_LABELS: Record<string, string> = {
   medsShake: 'Medikamente + Shake',
+  weight: 'Gewicht',
   gratitude: 'Dankbarkeit',
   coldShower: 'Cold Shower',
   winnerPose: 'Winner Mode',
