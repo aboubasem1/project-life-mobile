@@ -8089,8 +8089,8 @@ button.status-chip.status-chip--good {
   width: min(100%, 420px);
   max-height: min(92dvh, 640px);
   overflow: hidden;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   gap: 14px;
   margin: 0;
   padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
@@ -8102,7 +8102,6 @@ button.status-chip.status-chip--good {
   transition:
     max-height 280ms cubic-bezier(0.22, 1, 0.36, 1),
     transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: max-height, transform;
 }
 
 .capture-sheet.is-keyboard {
@@ -8112,6 +8111,7 @@ button.status-chip.status-chip--good {
 .capture-sheet__body {
   display: grid;
   gap: 12px;
+  flex: 1 1 auto;
   min-height: 0;
   max-height: min(58dvh, 420px);
   overflow: auto;
@@ -8144,6 +8144,7 @@ button.status-chip.status-chip--good {
 }
 
 .capture-sheet__chrome {
+  flex-shrink: 0;
   display: grid;
   grid-template-columns: 40px 1fr 40px;
   align-items: center;
@@ -8210,6 +8211,7 @@ button.status-chip.status-chip--good {
 }
 
 .capture-sheet__actions {
+  flex-shrink: 0;
   justify-content: stretch;
 }
 
