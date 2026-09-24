@@ -5534,10 +5534,24 @@ button.status-chip.status-chip--good {
   touch-action: manipulation;
 }
 
+.morning-gate__footer {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  margin-top: 18px;
+  width: min(100%, 360px);
+  align-self: center;
+}
+
+.morning-gate__capture {
+  width: 100%;
+  min-height: 48px;
+}
+
 .morning-gate__skip {
   align-self: center;
   min-height: 44px;
-  margin-top: 18px;
+  margin-top: 0;
   padding: 10px 16px;
   color: var(--mg-muted);
   font-size: 13px;
@@ -6281,8 +6295,14 @@ button.status-chip.status-chip--good {
     width: 100%;
   }
 
-  .morning-gate__skip {
+  .morning-gate__footer {
     margin-top: 4px;
+    flex: 0 0 auto;
+    width: 100%;
+  }
+
+  .morning-gate__skip {
+    margin-top: 0;
     flex: 0 0 auto;
   }
 
@@ -8065,6 +8085,7 @@ button.status-chip.status-chip--good {
 
 .capture-sheet-backdrop {
   --capture-keyboard-inset: 0px;
+  z-index: 520;
   align-items: end;
   padding: 12px;
   padding-bottom: max(12px, var(--capture-keyboard-inset));
