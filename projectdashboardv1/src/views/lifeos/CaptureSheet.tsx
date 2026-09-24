@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { ArrowLeft, Check, Image, Link2, LockKeyhole, Mic, Sparkles, Square, X } from 'lucide-react'
 import { transcribeCaptureAudio } from '../../lib/decision-engine/transcription'
 import { acquireMicrophoneStream } from '../../lib/micPermission'
@@ -193,17 +194,23 @@ export function CaptureSheet({
     const syncKeyboard = () => {
       window.cancelAnimationFrame(frame)
       frame = window.requestAnimationFrame(() => {
-        const inset = Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop))
-        setKeyboardInset(inset > 48 ? inset : 0)
+        // iOS Safari shrinks visualViewport and may offset it; keep sheet above the keyboard.
+        const layoutHeight = window.innerHeight
+        const inset = Math.max(0, Math.round(layoutHeight - viewport.height - viewport.offsetTop))
+        setKeyboardInset(inset > 40 ? inset : 0)
       })
     }
     syncKeyboard()
     viewport.addEventListener('resize', syncKeyboard)
     viewport.addEventListener('scroll', syncKeyboard)
+    window.addEventListener('focusin', syncKeyboard)
+    window.addEventListener('focusout', syncKeyboard)
     return () => {
       window.cancelAnimationFrame(frame)
       viewport.removeEventListener('resize', syncKeyboard)
       viewport.removeEventListener('scroll', syncKeyboard)
+      window.removeEventListener('focusin', syncKeyboard)
+      window.removeEventListener('focusout', syncKeyboard)
     }
   }, [])
 
@@ -601,14 +608,14 @@ export function CaptureSheet({
     }
   })()
 
-  return (
+  return createPortal(
     <div
       className={keyboardInset > 0 ? 'modal-backdrop capture-sheet-backdrop is-keyboard' : 'modal-backdrop capture-sheet-backdrop'}
       role="presentation"
       aria-hidden={inactive || undefined}
       inert={inactive || undefined}
       style={{ '--capture-keyboard-inset': `${keyboardInset}px` } as CSSProperties}
-      onMouseDown={event => {
+      onPointerDown={event => {
         if (event.target === event.currentTarget && step !== 'processing' && step !== 'saving') onClose()
       }}
     >
@@ -618,6 +625,7 @@ export function CaptureSheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        onPointerDown={event => event.stopPropagation()}
       >
         <div className="capture-sheet__chrome">
           {canGoBack ? (
@@ -872,6 +880,7 @@ export function CaptureSheet({
           </div>
         )}
       </form>
-    </div>
+    </div>,
+    document.body,
   )
 }
