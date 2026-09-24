@@ -2236,9 +2236,6 @@ function App() {
     classifyAs?: CaptureTargetType
     mode?: typeof captureMode
   }) => {
-    // Morning/Evening overlays sit above the inert app chrome — always allow Jo AI out.
-    if (showMorningGate) setGateBypass(true)
-    if (eveningGateOpen) setEveningGateOpen(false)
     setCapturePreset(options?.raw ?? '')
     setCaptureClassifyAs(options?.classifyAs)
     setCaptureMode(options?.mode ?? 'default')
@@ -3830,7 +3827,6 @@ function App() {
             setGatePreview(false)
             showToast('Morgen-Ritual für heute übersprungen.')
           }}
-          onOpenCapture={() => openUniversalCapture()}
           onOpenSettings={() => setSettingsOpen(true)}
           onClosePreview={gatePreview ? () => setGatePreview(false) : undefined}
         />

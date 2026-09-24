@@ -256,7 +256,6 @@ export function MorningGate({
   onToggleSelfcare,
   onCompleteStep,
   onSkipToday,
-  onOpenCapture,
   onOpenSettings,
   onClosePreview,
 }: {
@@ -297,7 +296,6 @@ export function MorningGate({
   onToggleSelfcare: (id: string) => void
   onCompleteStep: (step: MorningRitualStepId) => void
   onSkipToday: () => void
-  onOpenCapture?: () => void
   onOpenSettings: () => void
   onClosePreview?: () => void
 }) {
@@ -807,16 +805,9 @@ export function MorningGate({
           {stage}
         </section>
 
-        <div className="morning-gate__footer">
-          {onOpenCapture && (
-            <button type="button" className="secondary-button morning-gate__capture" onClick={onOpenCapture}>
-              <Sparkles size={16} /> Jo AI
-            </button>
-          )}
-          <button type="button" className="text-button morning-gate__skip" onClick={onSkipToday}>
-            Ritual heute überspringen
-          </button>
-        </div>
+        <button type="button" className="text-button morning-gate__skip" onClick={onSkipToday}>
+          Ritual heute überspringen
+        </button>
       </div>
     </div>
   )
