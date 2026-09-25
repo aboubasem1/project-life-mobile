@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowLeft, Check, Image, Link2, LockKeyhole, Mic, Sparkles, Square, X } from 'lucide-react'
-import { transcribeCaptureAudio, TranscriptionError, pickRecorderMimeType, startParallelSpeechCollector } from '../../lib/decision-engine/transcription'
+import { transcribeCaptureAudio, transcriptionErrorMessage, pickRecorderMimeType, startParallelSpeechCollector } from '../../lib/decision-engine/transcription'
 import { acquireMicrophoneStream } from '../../lib/micPermission'
 import {
   CAPTURE_TARGET_LABELS,
@@ -491,10 +491,7 @@ export function CaptureSheet({
         setRaw(result.transcript)
         return runDecide(result.transcript, 'voice')
       }).catch((error: unknown) => {
-        const message = error instanceof TranscriptionError
-          ? error.message
-          : 'Kein Text erkannt. Ergänze kurz, worum es ging.'
-        setError(message)
+        setError(transcriptionErrorMessage(error))
         setStep('input')
         // Keep focus on the text field so tippen-fallback is one tap away.
         window.setTimeout(() => inputRef.current?.focus(), 0)
@@ -706,11 +703,6 @@ export function CaptureSheet({
                 rows={3}
                 autoFocus
               />
-              <div className="capture-sheet__row">
-                <button type="button" className="capture-sheet__ghost" onClick={() => void startRecording()}>
-                  <Mic size={16} /> Sprache
-                </button>
-              </div>
             </>
           )}
 
@@ -891,6 +883,15 @@ export function CaptureSheet({
 
         {step !== 'recording' && step !== 'saved' && (
           <div className="capture-sheet__actions">
+            {step === 'input' && (
+              <button
+                type="button"
+                className="capture-sheet__secondary"
+                onClick={() => void startRecording()}
+              >
+                <Mic size={16} /> Sprache
+              </button>
+            )}
             {step === 'suggest' && (
               <button type="button" className="capture-sheet__secondary" onClick={() => setStep('adjust-type')}>
                 Anpassen

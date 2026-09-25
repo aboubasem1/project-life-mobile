@@ -23,6 +23,34 @@ export class TranscriptionError extends Error {
   }
 }
 
+export function isTranscriptionError(error: unknown): error is TranscriptionError {
+  if (error instanceof TranscriptionError) return true
+  if (!error || typeof error !== 'object') return false
+  const candidate = error as { name?: unknown; code?: unknown; message?: unknown }
+  return candidate.name === 'TranscriptionError'
+    && typeof candidate.code === 'string'
+    && typeof candidate.message === 'string'
+}
+
+export function transcriptionErrorMessage(error: unknown): string {
+  if (isTranscriptionError(error)) return error.message
+  if (error instanceof Error && error.message.trim()) return error.message
+  return 'Spracherkennung fehlgeschlagen — tippe kurz, worum es ging.'
+}
+
+async function readApiErrorMessage(response: Response): Promise<string | null> {
+  try {
+    const payload = await response.clone().json()
+    if (payload && typeof payload === 'object' && typeof (payload as { error?: unknown }).error === 'string') {
+      const message = (payload as { error: string }).error.trim()
+      return message || null
+    }
+  } catch {
+    // ignore non-JSON error bodies
+  }
+  return null
+}
+
 function speechRecognitionCtor(): SpeechRecognitionCtor | null {
   const root = window as Window & {
     SpeechRecognition?: SpeechRecognitionCtor
@@ -82,50 +110,84 @@ export function remoteTranscriptionProvider(id = 'remote-whisper'): Transcriptio
   return {
     id,
     async transcribe({ audioRef, mimeType }) {
-      if (!audioRef.startsWith('blob:') && !audioRef.startsWith('data:')) {
-        throw new TranscriptionError('invalid', 'Keine Aufnahme zum Transkribieren.')
-      }
-      const blob = await fetch(audioRef).then(response => response.blob())
-      if (blob.size < 32) {
-        throw new TranscriptionError('empty', 'Aufnahme war zu kurz. Sprich etwas länger und stoppe erneut.')
-      }
-      const audioBase64 = await blobToBase64(blob)
-      const postOnce = async () => fetch('/api/transcribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          audioBase64,
-          mimeType: mimeType || blob.type || 'audio/webm',
-        }),
-      })
-      let response: Response
       try {
-        response = await postOnce()
-        if (response.status === 429) {
-          await new Promise(resolve => setTimeout(resolve, 900))
-          response = await postOnce()
+        if (!audioRef.startsWith('blob:') && !audioRef.startsWith('data:')) {
+          throw new TranscriptionError('invalid', 'Keine Aufnahme zum Transkribieren.')
         }
-      } catch {
-        throw new TranscriptionError('network', 'Transkription offline — tippe den Text kurz ein.')
-      }
-      if (response.status === 429) {
+        let blob: Blob
+        try {
+          blob = await fetch(audioRef).then(response => response.blob())
+        } catch {
+          throw new TranscriptionError('invalid', 'Aufnahme konnte nicht gelesen werden.')
+        }
+        if (blob.size < 32) {
+          throw new TranscriptionError('empty', 'Aufnahme war zu kurz. Sprich etwas länger und stoppe erneut.')
+        }
+        const audioBase64 = await blobToBase64(blob)
+        const postOnce = async () => fetch('/api/transcribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            audioBase64,
+            mimeType: mimeType || blob.type || 'audio/webm',
+          }),
+        })
+        let response: Response
+        try {
+          response = await postOnce()
+          if (response.status === 429) {
+            await new Promise(resolve => setTimeout(resolve, 900))
+            response = await postOnce()
+          }
+        } catch {
+          throw new TranscriptionError('network', 'Transkription offline — tippe den Text kurz ein.')
+        }
+        if (response.status === 429) {
+          throw new TranscriptionError(
+            'busy',
+            (await readApiErrorMessage(response))
+              || 'Spracherkennung ist gerade ausgelastet — kurz warten und nochmal aufnehmen, oder tippen.',
+          )
+        }
+        if (response.status === 503) {
+          throw new TranscriptionError(
+            'unavailable',
+            (await readApiErrorMessage(response))
+              || 'Spracherkennung ist gerade nicht konfiguriert — tippe den Text kurz ein.',
+          )
+        }
+        if (response.status === 422 || response.status === 400) {
+          throw new TranscriptionError(
+            'empty',
+            (await readApiErrorMessage(response))
+              || 'Kein Text erkannt. Sprich deutlicher oder tippe kurz nach.',
+          )
+        }
+        if (!response.ok) {
+          throw new TranscriptionError(
+            'unavailable',
+            (await readApiErrorMessage(response))
+              || 'Transkription nicht verfügbar — tippe den Text kurz ein.',
+          )
+        }
+        let payload: unknown
+        try {
+          payload = await response.json()
+        } catch {
+          throw new TranscriptionError('unavailable', 'Transkription nicht verfügbar — tippe den Text kurz ein.')
+        }
+        const transcript = parseRemoteTranscript(payload)
+        if (!transcript) {
+          throw new TranscriptionError('empty', 'Kein Text erkannt. Sprich deutlicher oder tippe kurz nach.')
+        }
+        return { transcript }
+      } catch (error) {
+        if (isTranscriptionError(error)) throw error
         throw new TranscriptionError(
-          'busy',
-          'Spracherkennung ist gerade ausgelastet — kurz warten und nochmal aufnehmen, oder tippen.',
+          'unavailable',
+          'Spracherkennung fehlgeschlagen — tippe den Text kurz ein.',
         )
       }
-      if (response.status === 503) {
-        throw new TranscriptionError('unavailable', 'Spracherkennung ist gerade nicht konfiguriert.')
-      }
-      if (response.status === 422 || response.status === 400) {
-        throw new TranscriptionError('empty', 'Kein Text erkannt. Sprich deutlicher oder tippe kurz nach.')
-      }
-      if (!response.ok) {
-        throw new TranscriptionError('unavailable', 'Transkription nicht verfügbar — tippe den Text kurz ein.')
-      }
-      const transcript = parseRemoteTranscript(await response.json())
-      if (!transcript) throw new TranscriptionError('empty', 'Kein Text erkannt. Sprich deutlicher oder tippe kurz nach.')
-      return { transcript }
     },
   }
 }
@@ -151,12 +213,16 @@ export async function transcribeCaptureAudio(input: {
       }
       return { transcript, provider: provider.id }
     } catch (error) {
-      const busyOrOffline = error instanceof TranscriptionError
+      const busyOrOffline = isTranscriptionError(error)
         && (error.code === 'busy' || error.code === 'network' || error.code === 'unavailable')
       if (live && busyOrOffline) {
         return { transcript: live, provider: 'webkit-speech-fallback' }
       }
-      throw error
+      if (isTranscriptionError(error)) throw error
+      throw new TranscriptionError(
+        'unavailable',
+        'Spracherkennung fehlgeschlagen — tippe den Text kurz ein.',
+      )
     }
   }
   if (live) return { transcript: live, provider: 'webkit-speech' }

@@ -8216,8 +8216,13 @@ button.status-chip.status-chip--good {
   justify-content: stretch;
 }
 
-.capture-sheet__primary {
-  flex: 1 1 100%;
+.capture-sheet__actions .capture-sheet__secondary {
+  flex: 0 1 auto;
+  min-width: 7.5rem;
+}
+
+.capture-sheet__actions .capture-sheet__primary {
+  flex: 1 1 auto;
   min-height: 50px;
 }
 
