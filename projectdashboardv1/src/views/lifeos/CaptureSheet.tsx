@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowLeft, Check, Image, Link2, LockKeyhole, Mic, Sparkles, Square, X } from 'lucide-react'
-import { transcribeCaptureAudio, TranscriptionError, pickRecorderMimeType } from '../../lib/decision-engine/transcription'
+import { transcribeCaptureAudio, TranscriptionError, pickRecorderMimeType, startParallelSpeechCollector } from '../../lib/decision-engine/transcription'
 import { acquireMicrophoneStream } from '../../lib/micPermission'
 import {
   CAPTURE_TARGET_LABELS,
@@ -173,12 +173,15 @@ export function CaptureSheet({
   const timerRef = useRef<number>(0)
   const streamRef = useRef<MediaStream | null>(null)
   const liveTranscriptRef = useRef('')
+  const speechStopRef = useRef<(() => void) | null>(null)
   const closeTimerRef = useRef<number>(0)
   const captureMode = initialMode
 
   useEffect(() => () => {
     window.clearInterval(timerRef.current)
     window.clearTimeout(closeTimerRef.current)
+    speechStopRef.current?.()
+    speechStopRef.current = null
     streamRef.current?.getTracks().forEach(track => track.stop())
     if (audioRef?.startsWith('blob:')) URL.revokeObjectURL(audioRef)
   }, [audioRef])
@@ -409,6 +412,8 @@ export function CaptureSheet({
   }
 
   const stopTracks = () => {
+    speechStopRef.current?.()
+    speechStopRef.current = null
     streamRef.current?.getTracks().forEach(track => track.stop())
     streamRef.current = null
     window.clearInterval(timerRef.current)
@@ -435,6 +440,11 @@ export function CaptureSheet({
       }
       recorder.start(250)
       liveTranscriptRef.current = ''
+      // Chromium-only parallel collector: Whisper primary, live text as busy fallback.
+      speechStopRef.current?.()
+      speechStopRef.current = startParallelSpeechCollector(text => {
+        liveTranscriptRef.current = text
+      })
       setSeconds(0)
       setStep('recording')
       setError('')
@@ -473,7 +483,8 @@ export function CaptureSheet({
       setAudioRef(nextRef)
       setStep('processing')
       void transcribeCaptureAudio({
-        // Never pass typed draft text as "live" speech — that skipped Whisper.
+        // Whisper first; liveTranscript only used if Whisper is busy/offline.
+        liveTranscript: liveTranscriptRef.current || undefined,
         audioRef: nextRef,
         mimeType: mime,
       }).then(result => {

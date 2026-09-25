@@ -12,7 +12,7 @@ import { buildSystemOneRequest, mapSystemOneAnswers } from './providers/jev.js'
 import { parseProviderDecision } from './schemas.js'
 import { splitIntents } from './split.js'
 import { DECISION_DOMAINS, type DecisionProviderAdapter, type ProviderDecision } from './types.js'
-import { parseRemoteTranscript, transcribeCaptureAudio } from './transcription.js'
+import { parseRemoteTranscript, TranscriptionError, transcribeCaptureAudio } from './transcription.js'
 import { createVoiceMemo, transcribeVoiceMemo, unsupportedTranscriptionProvider } from './voice.js'
 
 const NOW = new Date('2026-09-21T08:00:00.000Z')
@@ -500,7 +500,7 @@ describe('idempotency and task/meal apply', () => {
 })
 
 describe('voice memo pipeline', () => {
-  it('prefers a live transcript over a remote call', async () => {
+  it('uses Whisper first when audio is present, even with a parallel live transcript', async () => {
     let called = 0
     const result = await transcribeCaptureAudio({
       liveTranscript: '  Mass Gainer getrunken  ',
@@ -509,14 +509,28 @@ describe('voice memo pipeline', () => {
         id: 'remote-whisper',
         async transcribe() {
           called += 1
-          return { transcript: 'ignored' }
+          return { transcript: 'Mass Gainer getrunken' }
         },
       },
     })
-    expect(result).toEqual({ transcript: 'Mass Gainer getrunken', provider: 'webkit-speech' })
-    expect(called).toBe(0)
+    expect(result).toEqual({ transcript: 'Mass Gainer getrunken', provider: 'remote-whisper' })
+    expect(called).toBe(1)
     expect(parseRemoteTranscript({ transcript: '  Weider bestellen  ' })).toBe('Weider bestellen')
     expect(parseRemoteTranscript({ ok: true })).toBeNull()
+  })
+
+  it('falls back to parallel live transcript when Whisper is busy', async () => {
+    const result = await transcribeCaptureAudio({
+      liveTranscript: 'Milch kaufen',
+      audioRef: 'blob:1',
+      remote: {
+        id: 'remote-whisper',
+        async transcribe() {
+          throw new TranscriptionError('busy', 'ausgelastet')
+        },
+      },
+    })
+    expect(result).toEqual({ transcript: 'Milch kaufen', provider: 'webkit-speech-fallback' })
   })
 
   it('uses the remote provider when live speech is empty', async () => {

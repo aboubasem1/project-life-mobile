@@ -124,6 +124,23 @@ describe('Jo AI hard demos — speech transcription', () => {
     })).rejects.toMatchObject({ code: 'empty' })
   })
 
+  it('falls back to live speech when Whisper is busy', async () => {
+    const result = await transcribeCaptureAudio({
+      liveTranscript: 'Proteinshake getrunken',
+      audioRef: 'blob:demo',
+      remote: {
+        id: 'remote-whisper',
+        async transcribe() {
+          throw new TranscriptionError('busy', 'ausgelastet')
+        },
+      },
+    })
+    expect(result).toEqual({
+      transcript: 'Proteinshake getrunken',
+      provider: 'webkit-speech-fallback',
+    })
+  })
+
   it('throws on remote provider failure instead of silent null', async () => {
     await expect(transcribeCaptureAudio({
       audioRef: 'blob:demo',

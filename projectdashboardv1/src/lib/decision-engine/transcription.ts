@@ -4,7 +4,9 @@ type SpeechRecognitionCtor = new () => {
   lang: string
   interimResults: boolean
   continuous: boolean
-  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript?: string }>> }) => void) | null
+  onresult: ((event: {
+    results: ArrayLike<ArrayLike<{ transcript?: string }> & { isFinal?: boolean }> & { length: number }
+  }) => void) | null
   onerror: (() => void) | null
   onend: (() => void) | null
   start: () => void
@@ -129,27 +131,36 @@ export function remoteTranscriptionProvider(id = 'remote-whisper'): Transcriptio
 }
 
 export async function transcribeCaptureAudio(input: {
-  /** Only pass a real speech transcript — never typed draft text. */
+  /** Parallel browser transcript — used only if Whisper fails busy/offline. */
   liveTranscript?: string
   audioRef?: string
   mimeType?: string
   remote?: TranscriptionProvider
 }): Promise<{ transcript: string; provider: string }> {
   const live = input.liveTranscript?.trim() ?? ''
+  if (input.audioRef) {
+    const provider = input.remote ?? remoteTranscriptionProvider()
+    try {
+      const result = await provider.transcribe({
+        audioRef: input.audioRef,
+        mimeType: input.mimeType,
+      })
+      const transcript = result.transcript.trim()
+      if (!transcript) {
+        throw new TranscriptionError('empty', 'Kein Text erkannt. Sprich deutlicher oder tippe kurz nach.')
+      }
+      return { transcript, provider: provider.id }
+    } catch (error) {
+      const busyOrOffline = error instanceof TranscriptionError
+        && (error.code === 'busy' || error.code === 'network' || error.code === 'unavailable')
+      if (live && busyOrOffline) {
+        return { transcript: live, provider: 'webkit-speech-fallback' }
+      }
+      throw error
+    }
+  }
   if (live) return { transcript: live, provider: 'webkit-speech' }
-  if (!input.audioRef) {
-    throw new TranscriptionError('invalid', 'Keine Aufnahme zum Transkribieren.')
-  }
-  const provider = input.remote ?? remoteTranscriptionProvider()
-  const result = await provider.transcribe({
-    audioRef: input.audioRef,
-    mimeType: input.mimeType,
-  })
-  const transcript = result.transcript.trim()
-  if (!transcript) {
-    throw new TranscriptionError('empty', 'Kein Text erkannt. Sprich deutlicher oder tippe kurz nach.')
-  }
-  return { transcript, provider: provider.id }
+  throw new TranscriptionError('invalid', 'Keine Aufnahme zum Transkribieren.')
 }
 
 /** Browser speech recognition. No extra dependency. Fails closed. */
@@ -182,5 +193,38 @@ export function webSpeechTranscriptionProvider(id = 'webkit-speech'): Transcript
         }
       })
     },
+  }
+}
+
+/** Silent parallel collector during MediaRecorder — Chromium only (Safari re-prompts). */
+export function startParallelSpeechCollector(onTranscript: (text: string) => void): (() => void) | null {
+  if (typeof navigator === 'undefined') return null
+  const ua = navigator.userAgent || ''
+  const isSafari = /safari/i.test(ua) && !/chrome|chromium|android/i.test(ua)
+  if (isSafari) return null
+  const Ctor = speechRecognitionCtor()
+  if (!Ctor) return null
+  try {
+    const recognition = new Ctor()
+    recognition.lang = 'de-DE'
+    recognition.interimResults = true
+    recognition.continuous = true
+    recognition.onresult = event => {
+      const parts: string[] = []
+      for (let i = 0; i < event.results.length; i += 1) {
+        const alt = event.results[i]?.[0]?.transcript?.trim()
+        if (alt) parts.push(alt)
+      }
+      const text = parts.join(' ').trim()
+      if (text) onTranscript(text)
+    }
+    recognition.onerror = () => { /* keep MediaRecorder path */ }
+    recognition.onend = () => { /* ended with recorder stop */ }
+    recognition.start()
+    return () => {
+      try { recognition.stop() } catch { /* ignore */ }
+    }
+  } catch {
+    return null
   }
 }
