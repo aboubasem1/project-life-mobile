@@ -35,17 +35,30 @@ export function parseRemoteTranscript(payload: unknown): string | null {
   return typeof transcript === 'string' && transcript.trim() ? transcript.trim() : null
 }
 
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = typeof reader.result === 'string' ? reader.result : ''
-      const comma = result.indexOf(',')
-      resolve(comma >= 0 ? result.slice(comma + 1) : result)
-    }
-    reader.onerror = () => reject(new TranscriptionError('invalid', 'Aufnahme konnte nicht gelesen werden.'))
-    reader.readAsDataURL(blob)
-  })
+async function blobToBase64(blob: Blob): Promise<string> {
+  // Prefer FileReader in browsers; fall back to arrayBuffer for Node/tests.
+  if (typeof FileReader !== 'undefined') {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = typeof reader.result === 'string' ? reader.result : ''
+        const comma = result.indexOf(',')
+        resolve(comma >= 0 ? result.slice(comma + 1) : result)
+      }
+      reader.onerror = () => reject(new TranscriptionError('invalid', 'Aufnahme konnte nicht gelesen werden.'))
+      reader.readAsDataURL(blob)
+    })
+  }
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  const NodeBuffer = (globalThis as typeof globalThis & {
+    Buffer?: { from: (input: Uint8Array) => { toString: (encoding: string) => string } }
+  }).Buffer
+  if (NodeBuffer) {
+    return NodeBuffer.from(bytes).toString('base64')
+  }
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary)
 }
 
 /** Prefer a mime type the browser can actually record (Safari → mp4). */
