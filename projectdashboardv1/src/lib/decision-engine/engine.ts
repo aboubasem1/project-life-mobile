@@ -161,14 +161,22 @@ function toDecision(
     actionId: actionKey([
       input.id,
       item.index,
-      decision.intent,
+      decision.suggestedAction || decision.intent,
       decision.domain,
       decision.content,
       decision.entities.mealId,
       decision.entities.title,
     ]),
     decisionId,
-    intent: decision.intent,
+    // Prefer suggestedAction when policy remapped intent to a gate-only value,
+    // so confirm-apply still executes the action the preview showed.
+    intent: (
+      (decision.intent === 'REVIEW' || decision.intent === 'UNKNOWN' || decision.intent === 'REQUEST_INFORMATION')
+      && decision.suggestedAction
+      && decision.suggestedAction !== 'REVIEW'
+      && decision.suggestedAction !== 'UNKNOWN'
+      && decision.suggestedAction !== 'REQUEST_INFORMATION'
+    ) ? decision.suggestedAction : decision.intent,
     domain: decision.domain,
     actionLevel: decision.actionLevel,
     policyResult: decision.policyResult,

@@ -151,8 +151,10 @@ import {
 import { useLifeOs } from './hooks/useLifeOs'
 import {
   LIFE_OS_CHANGE_EVENT,
+  applyConvertResult,
   buildDeterministicInsights,
   completeReview,
+  convertCapture,
   createCapture,
   createConnectorInstance,
   createId,
@@ -182,6 +184,7 @@ import {
 import { applyConvertToDashboard } from './lib/lifeos/dashboardBridge'
 import {
   applyDecisionBatch,
+  batchFromPreview,
   decideCaptureInput,
   defaultRoutineMeals,
   previewFromBatch,
@@ -2436,7 +2439,7 @@ function App() {
       const flags = resolveDecisionFlags()
       const confirmedIds = new Set((input.decisionPreview?.items ?? []).map(item => item.actionId))
       const sourceBatch = lastCaptureBatchRef.current
-      const confirmedBatch = input.applyConfirmedDecisions && sourceBatch && confirmedIds.size > 0
+      let confirmedBatch = input.applyConfirmedDecisions && sourceBatch && confirmedIds.size > 0
         ? {
           ...sourceBatch,
           proposedActions: sourceBatch.proposedActions.filter(action => confirmedIds.has(action.actionId)),
@@ -2446,6 +2449,16 @@ function App() {
           }),
         }
         : null
+      if (confirmedBatch && confirmedBatch.proposedActions.length === 0) confirmedBatch = null
+      // Preview already has the Umsetzungen — rebuild apply payload if the in-memory batch was lost.
+      if (!confirmedBatch && input.applyConfirmedDecisions && input.decisionPreview?.items.length) {
+        confirmedBatch = batchFromPreview(input.decisionPreview, {
+          id: classified.id,
+          source: input.source === 'voice' ? 'voice' : 'quick_add',
+          content: classified.raw,
+          timestamp: classified.createdAt,
+        })
+      }
 
       const batch = confirmedBatch || input.decisionPreview
         ? null
@@ -2485,7 +2498,13 @@ function App() {
           confirmedByUser: Boolean(confirmedBatch),
           today,
         })
-        if (applied.applied.length > 0) {
+        const meaningful = applied.applied.filter(action => (
+          action.intent === 'CREATE_TASK'
+          || action.intent === 'CREATE_NOTE'
+          || action.intent === 'ADD_SHOPPING_ITEM'
+          || action.intent === 'LOG_MEAL'
+        ))
+        if (meaningful.length > 0) {
           appliedFromConfirm = Boolean(confirmedBatch)
           lifeOs.commit(() => applied.lifeOs)
           setDashboardPlus(current => ({
@@ -2505,6 +2524,22 @@ function App() {
           }))
           if (applied.entry) updateEntry(applied.entry, 'quick_add')
           rememberExecutedKeys(applied.executedKeys)
+        } else if (confirmedBatch && classified.targetType !== 'inbox') {
+          // User confirmed Speichern but policy produced no entity — convert by chosen type.
+          const converted = convertCapture(classified)
+          if (converted.task || converted.goal || converted.knowledge || converted.decision) {
+            appliedFromConfirm = true
+            lifeOs.commit(current => applyConvertResult({
+              ...current,
+              captures: [converted.capture, ...current.captures],
+            }, converted))
+            if (converted.task || converted.goal) {
+              setDashboardPlus(current => {
+                const next = applyConvertToDashboard(current, converted, today)
+                return { ...current, ...next }
+              })
+            }
+          }
         }
       }
       if (confirmedBatch) lastCaptureBatchRef.current = null
@@ -3477,19 +3512,22 @@ function App() {
             return previewFromBatch(batch)
           }}
           onCapture={input => {
-            const changeSession = tryOpenSystemChange(input.raw, settings)
-            if (changeSession) {
-              setJoChangeSession(changeSession)
-              setJoChangePhase(
-                changeSession.kind === 'code'
-                  ? 'code'
-                  : changeSession.kind === 'error'
-                    ? 'error'
-                    : 'preview',
-              )
-              setCaptureOpen(false)
-              setCapturePreset('')
-              return
+            // Don't steal a confirmed Capture save into Adaptive Core CHANGE.
+            if (!input.applyConfirmedDecisions && !input.decisionPreview) {
+              const changeSession = tryOpenSystemChange(input.raw, settings)
+              if (changeSession) {
+                setJoChangeSession(changeSession)
+                setJoChangePhase(
+                  changeSession.kind === 'code'
+                    ? 'code'
+                    : changeSession.kind === 'error'
+                      ? 'error'
+                      : 'preview',
+                )
+                setCaptureOpen(false)
+                setCapturePreset('')
+                return
+              }
             }
             return handleLifeOsCapture(input)
           }}
