@@ -451,6 +451,10 @@ export function CaptureSheet({
       setStep('input')
       return
     }
+    if (keep && seconds < 1) {
+      setError('Aufnahme war zu kurz. Sprich etwas länger und stoppe erneut.')
+      return
+    }
     recorder.onstop = () => {
       stopTracks()
       if (!keep) {
@@ -481,6 +485,8 @@ export function CaptureSheet({
           : 'Kein Text erkannt. Ergänze kurz, worum es ging.'
         setError(message)
         setStep('input')
+        // Keep focus on the text field so tippen-fallback is one tap away.
+        window.setTimeout(() => inputRef.current?.focus(), 0)
       })
     }
     try {

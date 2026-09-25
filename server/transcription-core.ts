@@ -78,6 +78,38 @@ async function fetchWithTimeout(
   }
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function providerErrorMessage(status: number, bodyText: string): string {
+  const lower = bodyText.toLowerCase()
+  if (status === 401 || status === 403 || lower.includes('invalid_api_key') || lower.includes('incorrect api key')) {
+    return 'Spracherkennung ist falsch konfiguriert.'
+  }
+  if (status === 429 || lower.includes('insufficient_quota') || lower.includes('rate_limit')) {
+    return 'Transkription ist gerade ausgelastet — in ein paar Sekunden nochmal versuchen oder tippen.'
+  }
+  return 'Transkription fehlgeschlagen.'
+}
+
+async function postWhisper(
+  fetchImpl: typeof fetch,
+  config: ReturnType<typeof transcriptionConfig>,
+  bytes: Buffer,
+  mimeType: string,
+): Promise<Response> {
+  const form = new FormData()
+  form.append('file', new Blob([new Uint8Array(bytes)], { type: mimeType }), filenameFor(mimeType))
+  form.append('model', config.model)
+  form.append('language', config.language)
+  return fetchWithTimeout(fetchImpl, config.apiUrl, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${config.apiKey}` },
+    body: form,
+  }, config.timeoutMs)
+}
+
 export async function transcribeAudioPayload(
   raw: unknown,
   fetchImpl: typeof fetch = fetch,
@@ -88,26 +120,40 @@ export async function transcribeAudioPayload(
   }
   const { audioBase64, mimeType } = parseTranscriptionBody(raw)
   const bytes = decodeAudio(audioBase64)
-  const form = new FormData()
-  form.append('file', new Blob([new Uint8Array(bytes)], { type: mimeType }), filenameFor(mimeType))
-  form.append('model', config.model)
-  form.append('language', config.language)
 
-  let response: Response
-  try {
-    response = await fetchWithTimeout(fetchImpl, config.apiUrl, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${config.apiKey}` },
-      body: form,
-    }, config.timeoutMs)
-  } catch (error) {
-    const timedOut = error instanceof Error && error.name === 'AbortError'
+  let response: Response | null = null
+  let lastNetworkError: unknown = null
+  // Whisper occasionally 429s under burst load — retry a couple times before failing closed.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      response = await postWhisper(fetchImpl, config, bytes, mimeType)
+    } catch (error) {
+      lastNetworkError = error
+      if (attempt < 2) {
+        await sleep(400 * (attempt + 1))
+        continue
+      }
+      const timedOut = error instanceof Error && error.name === 'AbortError'
+      throw new SyncHttpError(504, timedOut ? 'Transkription hat zu lange gedauert.' : 'Transkription fehlgeschlagen.')
+    }
+    if (response.status !== 429) break
+    if (attempt < 2) await sleep(700 * (attempt + 1))
+  }
+  if (!response) {
+    const timedOut = lastNetworkError instanceof Error && lastNetworkError.name === 'AbortError'
     throw new SyncHttpError(504, timedOut ? 'Transkription hat zu lange gedauert.' : 'Transkription fehlgeschlagen.')
   }
 
-  if (response.status === 429) throw new SyncHttpError(429, 'Transkription ist gerade ausgelastet.')
+  if (response.status === 429) {
+    throw new SyncHttpError(429, providerErrorMessage(429, await response.text().catch(() => '')))
+  }
+  if (response.status === 401 || response.status === 403) {
+    throw new SyncHttpError(503, providerErrorMessage(response.status, await response.text().catch(() => '')))
+  }
   if (response.status >= 500) throw new SyncHttpError(502, 'Transkription ist gerade nicht erreichbar.')
-  if (!response.ok) throw new SyncHttpError(502, 'Transkription fehlgeschlagen.')
+  if (!response.ok) {
+    throw new SyncHttpError(502, providerErrorMessage(response.status, await response.text().catch(() => '')))
+  }
 
   const payload = await response.json().catch(() => null)
   const transcript = payload && typeof payload === 'object' && typeof (payload as { text?: unknown }).text === 'string'

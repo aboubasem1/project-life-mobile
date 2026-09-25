@@ -12,7 +12,7 @@ type SpeechRecognitionCtor = new () => {
 }
 
 export class TranscriptionError extends Error {
-  readonly code: 'unavailable' | 'empty' | 'network' | 'invalid'
+  readonly code: 'unavailable' | 'empty' | 'network' | 'invalid' | 'busy'
 
   constructor(code: TranscriptionError['code'], message: string) {
     super(message)
@@ -88,18 +88,29 @@ export function remoteTranscriptionProvider(id = 'remote-whisper'): Transcriptio
         throw new TranscriptionError('empty', 'Aufnahme war zu kurz. Sprich etwas länger und stoppe erneut.')
       }
       const audioBase64 = await blobToBase64(blob)
+      const postOnce = async () => fetch('/api/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          audioBase64,
+          mimeType: mimeType || blob.type || 'audio/webm',
+        }),
+      })
       let response: Response
       try {
-        response = await fetch('/api/transcribe', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            audioBase64,
-            mimeType: mimeType || blob.type || 'audio/webm',
-          }),
-        })
+        response = await postOnce()
+        if (response.status === 429) {
+          await new Promise(resolve => setTimeout(resolve, 900))
+          response = await postOnce()
+        }
       } catch {
         throw new TranscriptionError('network', 'Transkription offline — tippe den Text kurz ein.')
+      }
+      if (response.status === 429) {
+        throw new TranscriptionError(
+          'busy',
+          'Spracherkennung ist gerade ausgelastet — kurz warten und nochmal aufnehmen, oder tippen.',
+        )
       }
       if (response.status === 503) {
         throw new TranscriptionError('unavailable', 'Spracherkennung ist gerade nicht konfiguriert.')
@@ -108,7 +119,7 @@ export function remoteTranscriptionProvider(id = 'remote-whisper'): Transcriptio
         throw new TranscriptionError('empty', 'Kein Text erkannt. Sprich deutlicher oder tippe kurz nach.')
       }
       if (!response.ok) {
-        throw new TranscriptionError('unavailable', 'Transkription nicht verfügbar.')
+        throw new TranscriptionError('unavailable', 'Transkription nicht verfügbar — tippe den Text kurz ein.')
       }
       const transcript = parseRemoteTranscript(await response.json())
       if (!transcript) throw new TranscriptionError('empty', 'Kein Text erkannt. Sprich deutlicher oder tippe kurz nach.')
