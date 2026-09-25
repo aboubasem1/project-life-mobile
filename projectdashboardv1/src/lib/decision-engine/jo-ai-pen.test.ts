@@ -169,6 +169,18 @@ describe('Jo AI pen — transcription hardening', () => {
     }
   }
 
+  it('maps HTTP 429 as busy with a tip-to-type message', async () => {
+    const restore = mockAudioThenApi(429, { error: 'busy' })
+    try {
+      await expect(remoteTranscriptionProvider().transcribe({
+        audioRef: audioDataUrl(),
+        mimeType: 'audio/webm',
+      })).rejects.toMatchObject({ code: 'busy' })
+    } finally {
+      restore()
+    }
+  })
+
   it('maps HTTP 503 from the default remote provider', async () => {
     const restore = mockAudioThenApi(503, { error: 'down' })
     try {

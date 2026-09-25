@@ -48,4 +48,38 @@ describe('server transcription', () => {
       audioBase64: Buffer.alloc(64).toString('base64'),
     }, async () => new Response(JSON.stringify({ text: '   ' }), { status: 200 }))).rejects.toThrow(/Kein Text/)
   })
+
+  it('retries 429 then succeeds', async () => {
+    process.env.OPENAI_API_KEY = 'test-key'
+    let calls = 0
+    const result = await transcribeAudioPayload({
+      audioBase64: Buffer.alloc(64).toString('base64'),
+      mimeType: 'audio/webm',
+    }, async () => {
+      calls += 1
+      if (calls < 3) return new Response(JSON.stringify({ error: { code: 'rate_limit_exceeded' } }), { status: 429 })
+      return new Response(JSON.stringify({ text: 'Milch kaufen' }), { status: 200 })
+    })
+    expect(calls).toBe(3)
+    expect(result.transcript).toBe('Milch kaufen')
+  })
+
+  it('surfaces persistent 429 after retries', async () => {
+    process.env.OPENAI_API_KEY = 'test-key'
+    let calls = 0
+    await expect(transcribeAudioPayload({
+      audioBase64: Buffer.alloc(64).toString('base64'),
+    }, async () => {
+      calls += 1
+      return new Response('rate_limit', { status: 429 })
+    })).rejects.toMatchObject({ status: 429 })
+    expect(calls).toBe(3)
+  })
+
+  it('maps invalid API key to 503', async () => {
+    process.env.OPENAI_API_KEY = 'bad-key'
+    await expect(transcribeAudioPayload({
+      audioBase64: Buffer.alloc(64).toString('base64'),
+    }, async () => new Response(JSON.stringify({ error: { code: 'invalid_api_key' } }), { status: 401 }))).rejects.toMatchObject({ status: 503 })
+  })
 })
