@@ -55,7 +55,14 @@ export function evaluatePolicy(input: PolicyInput): PolicyVerdict {
 
   if (candidate.intent === 'UNKNOWN' || candidate.domain === 'UNKNOWN') {
     reasons.push(candidate.reasonCode && candidate.reasonCode !== 'OK' ? candidate.reasonCode : 'UNKNOWN_INTENT')
-    return verdict('REVIEW', reasons, level, true, 'REVIEW', entities)
+    // Gate execution only — keep a concrete intent/suggestedAction so confirm-apply
+    // can still create the task/note the preview promised (same as low-confidence path).
+    const keepIntent = candidate.intent !== 'UNKNOWN'
+      ? candidate.intent
+      : (candidate.suggestedAction && candidate.suggestedAction !== 'UNKNOWN' && candidate.suggestedAction !== 'REVIEW'
+        ? candidate.suggestedAction
+        : 'CREATE_TASK')
+    return verdict('REVIEW', reasons, level, true, keepIntent, entities)
   }
 
   if (confidenceBand(candidate.confidence) === 'low') {

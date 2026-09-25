@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowLeft, Check, Image, Link2, LockKeyhole, Mic, Sparkles, Square, X } from 'lucide-react'
-import { transcribeCaptureAudio } from '../../lib/decision-engine/transcription'
+import { transcribeCaptureAudio, TranscriptionError, pickRecorderMimeType } from '../../lib/decision-engine/transcription'
 import { acquireMicrophoneStream } from '../../lib/micPermission'
 import {
   CAPTURE_TARGET_LABELS,
@@ -425,12 +425,15 @@ export function CaptureSheet({
       const stream = await acquireMicrophoneStream()
       streamRef.current = stream
       chunksRef.current = []
-      const recorder = new MediaRecorder(stream)
+      const mimeType = pickRecorderMimeType()
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream)
       recorderRef.current = recorder
       recorder.ondataavailable = event => {
         if (event.data.size > 0) chunksRef.current.push(event.data)
       }
-      recorder.start()
+      recorder.start(250)
       liveTranscriptRef.current = ''
       setSeconds(0)
       setStep('recording')
@@ -455,26 +458,35 @@ export function CaptureSheet({
         setStep('input')
         return
       }
-      const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' })
+      const mime = recorder.mimeType || pickRecorderMimeType() || 'audio/webm'
+      const blob = new Blob(chunksRef.current, { type: mime })
+      if (blob.size < 32) {
+        setError('Aufnahme war zu kurz. Sprich etwas länger und stoppe erneut.')
+        setStep('input')
+        return
+      }
       const nextRef = URL.createObjectURL(blob)
       setAudioRef(nextRef)
       setStep('processing')
       void transcribeCaptureAudio({
-        liveTranscript: liveTranscriptRef.current || raw,
+        // Never pass typed draft text as "live" speech — that skipped Whisper.
         audioRef: nextRef,
-        mimeType: blob.type,
+        mimeType: mime,
       }).then(result => {
-        if (!result?.transcript) {
-          setError('Kein Text erkannt. Ergänze kurz, worum es ging.')
-          setStep('input')
-          return
-        }
         setRaw(result.transcript)
         return runDecide(result.transcript, 'voice')
-      }).catch(() => {
-        setError('Kein Text erkannt. Ergänze kurz, worum es ging.')
+      }).catch((error: unknown) => {
+        const message = error instanceof TranscriptionError
+          ? error.message
+          : 'Kein Text erkannt. Ergänze kurz, worum es ging.'
+        setError(message)
         setStep('input')
       })
+    }
+    try {
+      if (recorder.state === 'recording') recorder.requestData()
+    } catch {
+      // Older browsers may not support requestData.
     }
     recorder.stop()
   }

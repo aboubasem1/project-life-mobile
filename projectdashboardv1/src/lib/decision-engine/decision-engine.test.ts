@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { applyMealToEntry } from '../dailyFlow.js'
 import { emptyLifeOsState } from '../lifeos/store.js'
-import { applyDecisionBatch } from './actions.js'
+import { applyDecisionBatch, batchFromPreview, previewFromBatch } from './actions.js'
 import { confidenceBand, configureConfidenceThresholds, resetConfidenceThresholds } from './confidence.js'
 import { decide, runLocalCaptureDecision } from './engine.js'
 import { actionKey, replayGuard } from './idempotency.js'
@@ -533,12 +533,62 @@ describe('voice memo pipeline', () => {
     expect(result).toEqual({ transcript: 'Morgen Tom anrufen', provider: 'remote-whisper' })
   })
 
-  it('returns null when remote transcription fails', async () => {
-    const result = await transcribeCaptureAudio({
+  it('throws when remote transcription fails', async () => {
+    await expect(transcribeCaptureAudio({
       audioRef: 'blob:1',
       remote: unsupportedTranscriptionProvider(),
+    })).rejects.toThrow()
+  })
+
+  it('applies confirmed REVIEW proposals as tasks', () => {
+    const batch = runLocalCaptureDecision({
+      id: 'confirm-1',
+      source: 'quick_add',
+      content: 'Irgendwas Wichtiges morgen',
+      timestamp: NOW.toISOString(),
+    }, {
+      now: NOW,
+      flags: { autoActionsEnabled: false, jevEnabled: false, llmFallbackEnabled: false },
     })
-    expect(result).toBeNull()
+    expect(batch.proposedActions[0]?.policyResult).toBe('REVIEW')
+    const result = applyDecisionBatch({
+      batch,
+      lifeOs: emptyLifeOsState(),
+      dashboard: { focusTodos: [], boards: [], goals: [] },
+      autoActionsEnabled: false,
+      confirmedByUser: true,
+      today: '2026-09-21',
+    })
+    expect(result.applied.some(item => item.intent === 'CREATE_TASK')).toBe(true)
+    expect(result.dashboard.focusTodos.length).toBeGreaterThan(0)
+  })
+
+  it('rebuilds an applyable batch from preview when the live ref is gone', () => {
+    const batch = runLocalCaptureDecision({
+      id: 'preview-1',
+      source: 'quick_add',
+      content: 'Milch kaufen',
+      timestamp: NOW.toISOString(),
+    }, {
+      now: NOW,
+      flags: { autoActionsEnabled: false, jevEnabled: false, llmFallbackEnabled: false },
+    })
+    const preview = previewFromBatch(batch)
+    const rebuilt = batchFromPreview(preview, {
+      id: 'preview-1',
+      source: 'quick_add',
+      content: 'Milch kaufen',
+      timestamp: NOW.toISOString(),
+    })
+    const result = applyDecisionBatch({
+      batch: rebuilt,
+      lifeOs: emptyLifeOsState(),
+      dashboard: { focusTodos: [], boards: [], goals: [] },
+      autoActionsEnabled: false,
+      confirmedByUser: true,
+      today: '2026-09-21',
+    })
+    expect(result.dashboard.focusTodos[0]?.title).toMatch(/Milch/i)
   })
 
   it('keeps an aborted memo pending without derived items', () => {

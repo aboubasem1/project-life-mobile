@@ -11,6 +11,16 @@ type SpeechRecognitionCtor = new () => {
   stop: () => void
 }
 
+export class TranscriptionError extends Error {
+  readonly code: 'unavailable' | 'empty' | 'network' | 'invalid'
+
+  constructor(code: TranscriptionError['code'], message: string) {
+    super(message)
+    this.name = 'TranscriptionError'
+    this.code = code
+  }
+}
+
 function speechRecognitionCtor(): SpeechRecognitionCtor | null {
   const root = window as Window & {
     SpeechRecognition?: SpeechRecognitionCtor
@@ -33,9 +43,23 @@ function blobToBase64(blob: Blob): Promise<string> {
       const comma = result.indexOf(',')
       resolve(comma >= 0 ? result.slice(comma + 1) : result)
     }
-    reader.onerror = () => reject(new Error('Aufnahme konnte nicht gelesen werden.'))
+    reader.onerror = () => reject(new TranscriptionError('invalid', 'Aufnahme konnte nicht gelesen werden.'))
     reader.readAsDataURL(blob)
   })
+}
+
+/** Prefer a mime type the browser can actually record (Safari → mp4). */
+export function pickRecorderMimeType(): string | undefined {
+  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
+    return undefined
+  }
+  const candidates = [
+    'audio/mp4',
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+  ]
+  return candidates.find(type => MediaRecorder.isTypeSupported(type))
 }
 
 /** Server Whisper path. UI never talks to the provider directly. */
@@ -44,46 +68,64 @@ export function remoteTranscriptionProvider(id = 'remote-whisper'): Transcriptio
     id,
     async transcribe({ audioRef, mimeType }) {
       if (!audioRef.startsWith('blob:') && !audioRef.startsWith('data:')) {
-        throw new Error('Keine Aufnahme zum Transkribieren.')
+        throw new TranscriptionError('invalid', 'Keine Aufnahme zum Transkribieren.')
       }
       const blob = await fetch(audioRef).then(response => response.blob())
+      if (blob.size < 32) {
+        throw new TranscriptionError('empty', 'Aufnahme war zu kurz. Sprich etwas länger und stoppe erneut.')
+      }
       const audioBase64 = await blobToBase64(blob)
-      const response = await fetch('/api/transcribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          audioBase64,
-          mimeType: mimeType || blob.type || 'audio/webm',
-        }),
-      })
-      if (!response.ok) throw new Error('Transkription nicht verfügbar.')
+      let response: Response
+      try {
+        response = await fetch('/api/transcribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            audioBase64,
+            mimeType: mimeType || blob.type || 'audio/webm',
+          }),
+        })
+      } catch {
+        throw new TranscriptionError('network', 'Transkription offline — tippe den Text kurz ein.')
+      }
+      if (response.status === 503) {
+        throw new TranscriptionError('unavailable', 'Spracherkennung ist gerade nicht konfiguriert.')
+      }
+      if (response.status === 422 || response.status === 400) {
+        throw new TranscriptionError('empty', 'Kein Text erkannt. Sprich deutlicher oder tippe kurz nach.')
+      }
+      if (!response.ok) {
+        throw new TranscriptionError('unavailable', 'Transkription nicht verfügbar.')
+      }
       const transcript = parseRemoteTranscript(await response.json())
-      if (!transcript) throw new Error('Kein Text erkannt.')
+      if (!transcript) throw new TranscriptionError('empty', 'Kein Text erkannt. Sprich deutlicher oder tippe kurz nach.')
       return { transcript }
     },
   }
 }
 
 export async function transcribeCaptureAudio(input: {
+  /** Only pass a real speech transcript — never typed draft text. */
   liveTranscript?: string
   audioRef?: string
   mimeType?: string
   remote?: TranscriptionProvider
-}): Promise<{ transcript: string; provider: string } | null> {
+}): Promise<{ transcript: string; provider: string }> {
   const live = input.liveTranscript?.trim() ?? ''
   if (live) return { transcript: live, provider: 'webkit-speech' }
-  if (!input.audioRef) return null
-  try {
-    const provider = input.remote ?? remoteTranscriptionProvider()
-    const result = await provider.transcribe({
-      audioRef: input.audioRef,
-      mimeType: input.mimeType,
-    })
-    const transcript = result.transcript.trim()
-    return transcript ? { transcript, provider: provider.id } : null
-  } catch {
-    return null
+  if (!input.audioRef) {
+    throw new TranscriptionError('invalid', 'Keine Aufnahme zum Transkribieren.')
   }
+  const provider = input.remote ?? remoteTranscriptionProvider()
+  const result = await provider.transcribe({
+    audioRef: input.audioRef,
+    mimeType: input.mimeType,
+  })
+  const transcript = result.transcript.trim()
+  if (!transcript) {
+    throw new TranscriptionError('empty', 'Kein Text erkannt. Sprich deutlicher oder tippe kurz nach.')
+  }
+  return { transcript, provider: provider.id }
 }
 
 /** Browser speech recognition. No extra dependency. Fails closed. */

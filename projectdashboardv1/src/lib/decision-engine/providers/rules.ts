@@ -133,11 +133,11 @@ export function classifyWithRules(content: string, context: {
 
   return {
     content: text,
-    domain: 'UNKNOWN',
-    intent: 'UNKNOWN',
-    confidence: hedge ? 0.28 : 0.34,
+    domain: 'TASK',
+    intent: 'CREATE_TASK',
+    confidence: hedge ? 0.28 : 0.42,
     entities: { title: text },
-    suggestedAction: 'REVIEW',
-    reasonCode: hedge ? 'HEDGE_LANGUAGE' : 'UNKNOWN_INTENT',
+    suggestedAction: 'CREATE_TASK',
+    reasonCode: hedge ? 'HEDGE_LANGUAGE' : 'LOW_CONFIDENCE',
   }
 }

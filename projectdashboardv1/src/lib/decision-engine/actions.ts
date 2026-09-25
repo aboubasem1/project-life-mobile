@@ -4,8 +4,16 @@ import { applyConvertToDashboard, type BridgeState } from '../lifeos/dashboardBr
 import { createId } from '../lifeos/store.js'
 import type { DashboardEntry } from '../../types/DashboardEntry.js'
 import type { Capture, KnowledgeItem, LifeOsState } from '../lifeos/types.js'
+import { isDecisionDomain, isDecisionIntent } from './schemas.js'
 import { replayGuard } from './idempotency.js'
-import type { DecisionBatch, ProposedAction, RoutineMealRef } from './types.js'
+import type {
+  DecisionBatch,
+  DecisionIntent,
+  LifeOSInput,
+  ProposedAction,
+  ReasonCode,
+  RoutineMealRef,
+} from './types.js'
 
 export type CaptureDecisionPreviewItem = {
   actionId: string
@@ -87,6 +95,93 @@ export function previewFromBatch(batch: DecisionBatch): CaptureDecisionPreview {
   }
 }
 
+const GATE_INTENTS = new Set(['REVIEW', 'UNKNOWN', 'REQUEST_INFORMATION'])
+
+function executableIntent(intent: string, suggestedAction?: string): DecisionIntent {
+  if (!GATE_INTENTS.has(intent) && isDecisionIntent(intent)) return intent
+  if (suggestedAction && !GATE_INTENTS.has(suggestedAction) && isDecisionIntent(suggestedAction)) {
+    return suggestedAction
+  }
+  return 'CREATE_TASK'
+}
+
+/** Rebuild an applyable batch from the preview the Capture sheet already holds. */
+export function batchFromPreview(
+  preview: CaptureDecisionPreview,
+  lifeInput: { id?: string; source?: LifeOSInput['source']; content: string; timestamp?: string },
+): DecisionBatch {
+  const timestamp = lifeInput.timestamp || preview.processedAt || new Date().toISOString()
+  const input: LifeOSInput = {
+    id: lifeInput.id || preview.batchId,
+    source: lifeInput.source || 'quick_add',
+    content: lifeInput.content,
+    timestamp,
+  }
+  const decisions = preview.items.map((item, index) => {
+    const intent = executableIntent(item.intent, item.suggestedAction)
+    const domain = isDecisionDomain(item.domain) ? item.domain : 'TASK'
+    const actionLevel = item.actionLevel === 'CONFIRM' || item.actionLevel === 'SAFE_AUTO' || item.actionLevel === 'REVERSIBLE_AUTO'
+      ? item.actionLevel
+      : 'REVERSIBLE_AUTO'
+    const policyResult = item.policyResult === 'EXECUTE' || item.policyResult === 'REQUEST_INFORMATION' || item.policyResult === 'REJECT'
+      ? item.policyResult
+      : 'REVIEW'
+    const provider = preview.provider === 'jev' || preview.provider === 'llm' || preview.provider === 'fallback'
+      ? preview.provider
+      : 'rules'
+    return {
+      decisionId: item.actionId,
+      inputId: input.id,
+      itemIndex: index,
+      content: item.content,
+      domain,
+      intent,
+      confidence: item.confidence,
+      confidenceBand: (item.confidence >= 0.8 ? 'high' : item.confidence >= 0.55 ? 'medium' : 'low') as 'high' | 'medium' | 'low',
+      entities: {
+        title: item.content,
+        due: item.due,
+        mealLabel: item.mealLabel,
+        projectLabel: item.projectLabel,
+      },
+      suggestedAction: intent,
+      actionLevel: actionLevel as ProposedAction['actionLevel'],
+      provider: provider as DecisionBatch['provider'],
+      requiresConfirmation: item.requiresConfirmation,
+      reasonCode: 'OK' as const,
+      timestamp,
+      policyResult: policyResult as ProposedAction['policyResult'],
+      policyReasons: [] as ReasonCode[],
+    }
+  })
+  const proposedActions: ProposedAction[] = decisions.map((decision, index) => ({
+    actionId: preview.items[index].actionId,
+    decisionId: decision.decisionId,
+    intent: decision.intent,
+    domain: decision.domain,
+    actionLevel: decision.actionLevel,
+    policyResult: decision.policyResult,
+    content: decision.content,
+    entities: decision.entities,
+    requiresConfirmation: decision.requiresConfirmation,
+    reversible: decision.actionLevel === 'REVERSIBLE_AUTO',
+  }))
+  return {
+    batchId: preview.batchId,
+    input,
+    items: preview.items.map((item, index) => ({
+      index,
+      content: item.content,
+      original: item.content,
+    })),
+    decisions,
+    proposedActions,
+    audits: [],
+    latencyMs: 0,
+    provider: decisions[0]?.provider ?? 'rules',
+  }
+}
+
 function mealFromRef(ref: RoutineMealRef): NutritionMeal {
   return {
     id: ref.id,
@@ -122,13 +217,17 @@ export function applyDecisionBatch(input: ActionApplyInput): ActionApplyResult {
     }
   }
 
+  const decisionById = new Map(input.batch.decisions.map(decision => [decision.decisionId, decision]))
+
   for (const action of input.batch.proposedActions) {
+    const decision = decisionById.get(action.decisionId)
+    const intent = executableIntent(action.intent, decision?.suggestedAction)
     const confirmedReview = input.confirmedByUser
       && action.policyResult === 'REVIEW'
       && action.actionLevel !== 'CONFIRM'
-      && action.intent !== 'REVIEW'
-      && action.intent !== 'UNKNOWN'
-      && action.intent !== 'REQUEST_INFORMATION'
+      && intent !== 'REVIEW'
+      && intent !== 'UNKNOWN'
+      && intent !== 'REQUEST_INFORMATION'
     if ((!input.confirmedByUser && action.policyResult !== 'EXECUTE') || action.actionLevel === 'CONFIRM') {
       if (!confirmedReview) {
         skipped.push({ action, reason: action.policyResult === 'EXECUTE' ? 'LEVEL_CONFIRM' : action.policyResult })
@@ -140,7 +239,7 @@ export function applyDecisionBatch(input: ActionApplyInput): ActionApplyResult {
       continue
     }
 
-    switch (action.intent) {
+    switch (intent) {
       case 'LOG_MEAL': {
         const mealRef = input.routineMeals?.find(item => item.id === action.entities.mealId)
         if (!entry || !mealRef) {
@@ -154,7 +253,7 @@ export function applyDecisionBatch(input: ActionApplyInput): ActionApplyResult {
         }
         entry = { ...entry, ...patch }
         executedKeys.push(action.actionId)
-        applied.push(action)
+        applied.push({ ...action, intent })
         undos.push({ actionId: action.actionId, kind: 'meal' })
         break
       }
@@ -172,7 +271,7 @@ export function applyDecisionBatch(input: ActionApplyInput): ActionApplyResult {
         }, converted)
         dashboard = applyConvertToDashboard(dashboard, converted, input.today)
         executedKeys.push(action.actionId)
-        applied.push(action)
+        applied.push({ ...action, intent })
         undos.push({ actionId: action.actionId, kind: 'task' })
         break
       }
@@ -190,7 +289,7 @@ export function applyDecisionBatch(input: ActionApplyInput): ActionApplyResult {
           captures: [converted.capture, ...lifeOs.captures],
         }, converted)
         executedKeys.push(action.actionId)
-        applied.push(action)
+        applied.push({ ...action, intent })
         undos.push({ actionId: action.actionId, kind: 'note' })
         break
       }
@@ -205,7 +304,7 @@ export function applyDecisionBatch(input: ActionApplyInput): ActionApplyResult {
           icon: 'bag',
         })
         executedKeys.push(action.actionId)
-        applied.push(action)
+        applied.push({ ...action, intent })
         undos.push({ actionId: action.actionId, kind: 'shopping' })
         break
       }
@@ -216,7 +315,7 @@ export function applyDecisionBatch(input: ActionApplyInput): ActionApplyResult {
       case 'FILTER_RADAR':
       case 'COMPLETE_ROUTINE':
         executedKeys.push(action.actionId)
-        applied.push(action)
+        applied.push({ ...action, intent })
         break
       case 'DELETE':
       case 'UPDATE_CALENDAR':
@@ -228,7 +327,7 @@ export function applyDecisionBatch(input: ActionApplyInput): ActionApplyResult {
         skipped.push({ action, reason: 'POLICY_BLOCKED' })
         break
       default: {
-        const _exhaustive: never = action.intent
+        const _exhaustive: never = intent
         skipped.push({ action, reason: 'UNKNOWN_INTENT' })
         void _exhaustive
       }
