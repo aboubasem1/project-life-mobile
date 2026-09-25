@@ -2459,6 +2459,27 @@ function App() {
           timestamp: classified.createdAt,
         })
       }
+      // Keep due/meal overrides from the sheet preview on the live batch.
+      if (confirmedBatch && input.decisionPreview?.items.length) {
+        const overrides = new Map(input.decisionPreview.items.map(item => [item.actionId, item]))
+        confirmedBatch = {
+          ...confirmedBatch,
+          proposedActions: confirmedBatch.proposedActions.map(action => {
+            const item = overrides.get(action.actionId)
+            if (!item) return action
+            return {
+              ...action,
+              entities: {
+                ...action.entities,
+                ...(item.due !== undefined ? { due: item.due } : {}),
+                ...(item.mealId ? { mealId: item.mealId } : {}),
+                ...(item.mealLabel ? { mealLabel: item.mealLabel } : {}),
+                ...(item.content ? { title: item.content } : {}),
+              },
+            }
+          }),
+        }
+      }
 
       const batch = confirmedBatch || input.decisionPreview
         ? null

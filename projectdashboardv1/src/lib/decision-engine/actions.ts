@@ -26,6 +26,7 @@ export type CaptureDecisionPreviewItem = {
   suggestedAction: string
   requiresConfirmation: boolean
   due?: string
+  mealId?: string
   mealLabel?: string
   projectLabel?: string
 }
@@ -88,6 +89,7 @@ export function previewFromBatch(batch: DecisionBatch): CaptureDecisionPreview {
         suggestedAction: decision.suggestedAction || decision.intent,
         requiresConfirmation: decision.requiresConfirmation,
         due: decision.entities.due,
+        mealId: decision.entities.mealId,
         mealLabel: decision.entities.mealLabel,
         projectLabel: decision.entities.projectLabel,
       }
@@ -141,6 +143,7 @@ export function batchFromPreview(
       entities: {
         title: item.content,
         due: item.due,
+        mealId: item.mealId,
         mealLabel: item.mealLabel,
         projectLabel: item.projectLabel,
       },
@@ -242,7 +245,26 @@ export function applyDecisionBatch(input: ActionApplyInput): ActionApplyResult {
     switch (intent) {
       case 'LOG_MEAL': {
         const mealRef = input.routineMeals?.find(item => item.id === action.entities.mealId)
+          || input.routineMeals?.find(item => item.label === action.entities.mealLabel)
         if (!entry || !mealRef) {
+          if (input.confirmedByUser) {
+            // Confirm must still produce a durable note when meal context is missing.
+            const title = action.entities.mealLabel || action.entities.title || action.content
+            const capture = {
+              ...createCapture({ raw: title }),
+              targetType: 'note' as const,
+              status: 'classified' as const,
+            }
+            const converted = convertCapture(capture)
+            lifeOs = applyConvertResult({
+              ...lifeOs,
+              captures: [converted.capture, ...lifeOs.captures],
+            }, converted)
+            executedKeys.push(action.actionId)
+            applied.push({ ...action, intent: 'CREATE_NOTE' })
+            undos.push({ actionId: action.actionId, kind: 'note' })
+            break
+          }
           skipped.push({ action, reason: 'MEAL_NOT_FOUND' })
           continue
         }
