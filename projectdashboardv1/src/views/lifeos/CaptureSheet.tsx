@@ -564,8 +564,16 @@ export function CaptureSheet({
         return 'Finanzeintrag'
       case 'list':
         return 'Liste'
-      case 'default':
-        return CAPTURE_TARGET_LABELS[target] || (primaryItem ? intentLabel(primaryItem) : 'Capture')
+      case 'default': {
+        if (primaryItem) {
+          const base = intentLabel(primaryItem)
+          if (primaryItem.mealLabel && (primaryItem.suggestedAction === 'LOG_MEAL' || primaryItem.intent === 'LOG_MEAL')) {
+            return `${base} · ${primaryItem.mealLabel}`
+          }
+          return base
+        }
+        return CAPTURE_TARGET_LABELS[target] || 'Capture'
+      }
       default: {
         const _exhaustive: never = captureMode
         return _exhaustive
