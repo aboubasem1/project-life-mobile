@@ -315,12 +315,11 @@ try {
 
   // 16) Mic control present on input (speech path entry)
   await openCapture()
-  const mic = await page.locator('button:has-text("Mikrofon"), button[aria-label*="Mikro"], .capture-sheet button:has(svg)').count()
   const micBtn = await page.evaluate(() => {
     const buttons = [...document.querySelectorAll('.capture-sheet button')]
     return buttons.some(btn => /mikro|aufnahme|record|sprache|mic/i.test(`${btn.textContent || ''} ${btn.getAttribute('aria-label') || ''}`))
   })
-  push({ id: 'mic-entry', ok: micBtn || mic > 0, detail: `micBtn=${micBtn} count=${mic}` })
+  push({ id: 'mic-entry', ok: micBtn, detail: `micBtn=${micBtn}` })
 
   // 17) API 503 surfaces as client-mappable (status preserved)
   const api503 = await page.evaluate(async () => {

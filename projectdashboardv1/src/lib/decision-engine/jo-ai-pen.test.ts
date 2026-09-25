@@ -9,10 +9,12 @@ import { defaultRoutineMeals } from './decisions/nutrition.js'
 import { runLocalCaptureDecision } from './engine.js'
 import {
   TranscriptionError,
+  isTranscriptionError,
   parseRemoteTranscript,
   pickRecorderMimeType,
   remoteTranscriptionProvider,
   transcribeCaptureAudio,
+  transcriptionErrorMessage,
 } from './transcription.js'
 
 const NOW = new Date('2026-09-21T08:00:00.000Z')
@@ -182,15 +184,25 @@ describe('Jo AI pen — transcription hardening', () => {
   })
 
   it('maps HTTP 503 from the default remote provider', async () => {
-    const restore = mockAudioThenApi(503, { error: 'down' })
+    const restore = mockAudioThenApi(503, { error: 'Spracherkennung ist falsch konfiguriert.' })
     try {
       await expect(remoteTranscriptionProvider().transcribe({
         audioRef: audioDataUrl(),
         mimeType: 'audio/webm',
-      })).rejects.toMatchObject({ code: 'unavailable' })
+      })).rejects.toMatchObject({
+        code: 'unavailable',
+        message: 'Spracherkennung ist falsch konfiguriert.',
+      })
     } finally {
       restore()
     }
+  })
+
+  it('duck-types TranscriptionError across message helpers', () => {
+    const shaped = { name: 'TranscriptionError', code: 'busy', message: 'ausgelastet — tippen' }
+    expect(isTranscriptionError(shaped)).toBe(true)
+    expect(transcriptionErrorMessage(shaped)).toBe('ausgelastet — tippen')
+    expect(transcriptionErrorMessage(new Error('boom'))).toContain('boom')
   })
 
   it('propagates remote 422 as empty', async () => {
