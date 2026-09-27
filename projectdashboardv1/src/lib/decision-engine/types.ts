@@ -145,6 +145,7 @@ export type DecisionEntities = {
   relatedProject?: string
   transcriptReference?: string
   listName?: string
+  routineId?: string
 }
 
 export type NormalizedItem = {

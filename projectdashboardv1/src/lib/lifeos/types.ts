@@ -28,8 +28,11 @@ export type CaptureDecisionPreviewItem = {
   suggestedAction: string
   requiresConfirmation: boolean
   due?: string
+  mealId?: string
   mealLabel?: string
   projectLabel?: string
+  routineId?: string
+  quantity?: string
 }
 
 export type CaptureDecisionPreview = {

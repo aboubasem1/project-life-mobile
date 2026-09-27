@@ -37,7 +37,7 @@ const INTENT_LABELS: Record<string, string> = {
   CREATE_NOTE: 'Notiz',
   LOG_MEAL: 'Mahlzeit',
   ADD_SHOPPING_ITEM: 'Einkauf',
-  COMPLETE_ROUTINE: 'Routine',
+  COMPLETE_ROUTINE: 'Workout',
   UPDATE_CALENDAR: 'Termin',
   REVIEW: 'Prüfen',
   REQUEST_INFORMATION: 'Nachfragen',
@@ -46,6 +46,11 @@ const INTENT_LABELS: Record<string, string> = {
 }
 
 function intentLabel(item: CaptureDecisionPreviewItem): string {
+  if (item.suggestedAction === 'COMPLETE_ROUTINE' || item.intent === 'COMPLETE_ROUTINE') {
+    if (item.routineId === 'ko') return item.quantity ? `KO · ${item.quantity}` : 'KO'
+    if (item.routineId === 'pushups') return item.quantity ? `Pushups · ${item.quantity}` : 'Pushups'
+    return 'Workout'
+  }
   return INTENT_LABELS[item.suggestedAction] || INTENT_LABELS[item.intent] || CAPTURE_TARGET_LABELS.inbox
 }
 
