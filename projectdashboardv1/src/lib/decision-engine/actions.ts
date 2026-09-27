@@ -29,6 +29,8 @@ export type CaptureDecisionPreviewItem = {
   mealId?: string
   mealLabel?: string
   projectLabel?: string
+  routineId?: string
+  quantity?: string
 }
 
 export type CaptureDecisionPreview = {
@@ -60,6 +62,12 @@ export type ActionApplyInput = {
   today: string
 }
 
+export type RitualApplyPatch = {
+  pushups?: number
+  ko?: number
+  markWorkoutDone?: boolean
+}
+
 export type ActionApplyResult = {
   lifeOs: LifeOsState
   dashboard: BridgeState
@@ -68,7 +76,8 @@ export type ActionApplyResult = {
   executedKeys: string[]
   applied: ProposedAction[]
   skipped: Array<{ action: ProposedAction; reason: string }>
-  undos: Array<{ actionId: string; kind: 'meal' | 'task' | 'note' | 'shopping' }>
+  undos: Array<{ actionId: string; kind: 'meal' | 'task' | 'note' | 'shopping' | 'routine' }>
+  ritualUpdates?: RitualApplyPatch
 }
 
 export function previewFromBatch(batch: DecisionBatch): CaptureDecisionPreview {
@@ -92,6 +101,8 @@ export function previewFromBatch(batch: DecisionBatch): CaptureDecisionPreview {
         mealId: decision.entities.mealId,
         mealLabel: decision.entities.mealLabel,
         projectLabel: decision.entities.projectLabel,
+        routineId: decision.entities.routineId,
+        quantity: decision.entities.quantity,
       }
     }),
   }
@@ -146,6 +157,8 @@ export function batchFromPreview(
         mealId: item.mealId,
         mealLabel: item.mealLabel,
         projectLabel: item.projectLabel,
+        routineId: item.routineId,
+        quantity: item.quantity,
       },
       suggestedAction: intent,
       actionLevel: actionLevel as ProposedAction['actionLevel'],
@@ -206,6 +219,7 @@ export function applyDecisionBatch(input: ActionApplyInput): ActionApplyResult {
   let dashboard = input.dashboard
   let entry = input.entry
   const shoppingAdds: ShoppingDraft[] = []
+  let ritualUpdates: RitualApplyPatch | undefined
 
   if (!input.autoActionsEnabled && !input.confirmedByUser) {
     return {
@@ -217,6 +231,7 @@ export function applyDecisionBatch(input: ActionApplyInput): ActionApplyResult {
       applied,
       skipped: input.batch.proposedActions.map(action => ({ action, reason: 'AUTO_ACTIONS_DISABLED' })),
       undos,
+      ritualUpdates: undefined,
     }
   }
 
@@ -335,10 +350,33 @@ export function applyDecisionBatch(input: ActionApplyInput): ActionApplyResult {
       case 'TAG':
       case 'PRIORITIZE':
       case 'FILTER_RADAR':
-      case 'COMPLETE_ROUTINE':
         executedKeys.push(action.actionId)
         applied.push({ ...action, intent })
         break
+      case 'COMPLETE_ROUTINE': {
+        const routineId = action.entities.routineId || 'workout'
+        const qty = action.entities.quantity ? Number(action.entities.quantity) : undefined
+        const patch: RitualApplyPatch = { ...(ritualUpdates ?? {}) }
+        if (routineId === 'ko') {
+          if (Number.isFinite(qty)) patch.ko = Math.max(patch.ko ?? 0, qty as number)
+          else patch.ko = Math.max(patch.ko ?? 0, 1)
+          patch.markWorkoutDone = true
+        } else if (routineId === 'pushups') {
+          if (Number.isFinite(qty)) patch.pushups = Math.max(patch.pushups ?? 0, qty as number)
+          else patch.pushups = Math.max(patch.pushups ?? 0, 1)
+          patch.markWorkoutDone = true
+        } else {
+          patch.markWorkoutDone = true
+        }
+        if (entry && patch.markWorkoutDone) {
+          entry = { ...entry, pushupsDone: true }
+        }
+        ritualUpdates = patch
+        executedKeys.push(action.actionId)
+        applied.push({ ...action, intent })
+        undos.push({ actionId: action.actionId, kind: 'routine' })
+        break
+      }
       case 'DELETE':
       case 'UPDATE_CALENDAR':
       case 'SEND_MESSAGE':
@@ -356,7 +394,7 @@ export function applyDecisionBatch(input: ActionApplyInput): ActionApplyResult {
     }
   }
 
-  return { lifeOs, dashboard, entry, shoppingAdds, executedKeys, applied, skipped, undos }
+  return { lifeOs, dashboard, entry, shoppingAdds, executedKeys, applied, skipped, undos, ritualUpdates }
 }
 
 export function revertAppliedMeal(entry: DashboardEntry, meal: NutritionMeal): Partial<DashboardEntry> {

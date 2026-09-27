@@ -2474,6 +2474,8 @@ function App() {
                 ...(item.due !== undefined ? { due: item.due } : {}),
                 ...(item.mealId ? { mealId: item.mealId } : {}),
                 ...(item.mealLabel ? { mealLabel: item.mealLabel } : {}),
+                ...(item.routineId ? { routineId: item.routineId } : {}),
+                ...(item.quantity ? { quantity: item.quantity } : {}),
                 ...(item.content ? { title: item.content } : {}),
               },
             }
@@ -2524,6 +2526,7 @@ function App() {
           || action.intent === 'CREATE_NOTE'
           || action.intent === 'ADD_SHOPPING_ITEM'
           || action.intent === 'LOG_MEAL'
+          || action.intent === 'COMPLETE_ROUTINE'
         ))
         if (meaningful.length > 0) {
           appliedFromConfirm = Boolean(confirmedBatch)
@@ -2544,6 +2547,20 @@ function App() {
               : current.shopping,
           }))
           if (applied.entry) updateEntry(applied.entry, 'quick_add')
+          if (applied.ritualUpdates) {
+            setRitualProgress(current => {
+              const next = {
+                ...current,
+                pushups: Math.max(current.pushups, applied.ritualUpdates?.pushups ?? current.pushups),
+                ko: Math.max(current.ko, applied.ritualUpdates?.ko ?? current.ko),
+                done: applied.ritualUpdates?.markWorkoutDone && !current.done.includes('workout')
+                  ? ([...current.done, 'workout'] as typeof current.done)
+                  : current.done,
+              }
+              saveMorningRitualProgress(next)
+              return next
+            })
+          }
           rememberExecutedKeys(applied.executedKeys)
         } else if (confirmedBatch && classified.targetType !== 'inbox') {
           // User confirmed Speichern but policy produced no entity — convert by chosen type.

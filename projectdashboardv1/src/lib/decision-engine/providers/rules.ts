@@ -2,6 +2,7 @@ import { isNoteCapture, noteEntities } from '../decisions/note.js'
 import { matchRoutineMeal, mealEntities, resolveMealContext } from '../decisions/nutrition.js'
 import { shoppingEntities } from '../decisions/shopping.js'
 import { parseDueDate, taskEntities } from '../decisions/task.js'
+import { matchWorkoutRoutine, workoutEntities } from '../decisions/workout.js'
 import { scoreDomainSignals, topDomain } from '../split.js'
 import type { DecisionProviderAdapter, ProviderDecision } from '../types.js'
 
@@ -62,6 +63,19 @@ export function classifyWithRules(content: string, context: {
       confidence: hedge ? 0.58 : 0.96,
       entities: mealEntities(meal),
       suggestedAction: 'LOG_MEAL',
+      reasonCode: hedge ? 'HEDGE_LANGUAGE' : 'OK',
+    }
+  }
+
+  const workout = matchWorkoutRoutine(text)
+  if (workout) {
+    return {
+      content: text,
+      domain: 'ROUTINE',
+      intent: 'COMPLETE_ROUTINE',
+      confidence: hedge ? 0.6 : 0.94,
+      entities: workoutEntities(workout),
+      suggestedAction: 'COMPLETE_ROUTINE',
       reasonCode: hedge ? 'HEDGE_LANGUAGE' : 'OK',
     }
   }
