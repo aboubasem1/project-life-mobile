@@ -82,4 +82,20 @@ describe('server transcription', () => {
       audioBase64: Buffer.alloc(64).toString('base64'),
     }, async () => new Response(JSON.stringify({ error: { code: 'invalid_api_key' } }), { status: 401 }))).rejects.toMatchObject({ status: 503 })
   })
+
+  it('strips wrapping quotes from pasted API keys', () => {
+    process.env.OPENAI_API_KEY = '"sk-test-quoted"'
+    expect(transcriptionConfig().apiKey).toBe('sk-test-quoted')
+    expect(transcriptionConfig().enabled).toBe(true)
+  })
+
+  it('surfaces insufficient_quota distinctly from burst 429', async () => {
+    process.env.OPENAI_API_KEY = 'test-key'
+    await expect(transcribeAudioPayload({
+      audioBase64: Buffer.alloc(64).toString('base64'),
+    }, async () => new Response(JSON.stringify({ error: { code: 'insufficient_quota' } }), { status: 429 }))).rejects.toMatchObject({
+      status: 429,
+      message: expect.stringMatching(/Quota/i),
+    })
+  })
 })

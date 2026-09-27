@@ -17,7 +17,10 @@ export type TranscriptionResult = {
 
 function readEnv(name: string): string | undefined {
   const value = process.env[name]
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+  if (typeof value !== 'string') return undefined
+  // Strip whitespace and accidental wrapping quotes from pasted secrets.
+  const trimmed = value.trim().replace(/^['"]|['"]$/g, '').trim()
+  return trimmed || undefined
 }
 
 function isOff(value: string | undefined): boolean {
@@ -87,7 +90,10 @@ function providerErrorMessage(status: number, bodyText: string): string {
   if (status === 401 || status === 403 || lower.includes('invalid_api_key') || lower.includes('incorrect api key')) {
     return 'Spracherkennung ist falsch konfiguriert.'
   }
-  if (status === 429 || lower.includes('insufficient_quota') || lower.includes('rate_limit')) {
+  if (lower.includes('insufficient_quota')) {
+    return 'OpenAI-Quota ist leer — Billing prüfen oder neuen Key setzen, sonst tippen.'
+  }
+  if (status === 429 || lower.includes('rate_limit')) {
     return 'Transkription ist gerade ausgelastet — in ein paar Sekunden nochmal versuchen oder tippen.'
   }
   return 'Transkription fehlgeschlagen.'
