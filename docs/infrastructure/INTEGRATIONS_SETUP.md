@@ -54,6 +54,29 @@ Deploy defaults `JEV_LLM_FALLBACK_ENABLED=true` so Jev can fall back to the LLM 
 
 Language/model defaults: `de` / `whisper-1`.
 
+**Saving a key is not enough — it must reach the running app:**
+
+1. **OVH (production):** set the secret in GitHub Actions (environment **production**), then push to `main` or re-run **Deploy OVH**. The workflow writes `/opt/lifeos/shared/.env` only on deploy.
+2. **Vercel:** set the same key under Project → Settings → Environment Variables for **Production** (and Preview if you test there), then **Redeploy**. Serverless functions do not pick up new env vars until the next deployment.
+3. Paste the key without quotes or trailing spaces (`sk-...` only).
+
+Quick check after redeploy:
+
+```bash
+# tiny payload → 400 incomplete is OK (proves route is up)
+curl -sS -X POST https://vps-01d88277.vps.ovh.net/api/transcribe \
+  -H 'Content-Type: application/json' \
+  -d '{"audioBase64":"AAAA","mimeType":"audio/webm"}'
+
+# real audio should return {"transcript":"..."} not 401/503/429
+```
+
+| Live error | Meaning |
+|---|---|
+| `Spracherkennung ist falsch konfiguriert` | Key missing/invalid on that host (common on Vercel before redeploy) |
+| `OpenAI-Quota ist leer` / `ausgelastet` | Key accepted but OpenAI billing/rate-limit blocks Whisper |
+| `Transkription ist gerade nicht verfügbar` | No key in process env / `TRANSCRIPTION_ENABLED=false` |
+
 ## Minimal “go live” set
 
 1. `OPENAI_API_KEY` → unlocks Whisper + LLM fallback  
