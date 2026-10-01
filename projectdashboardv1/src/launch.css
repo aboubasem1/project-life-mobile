@@ -8469,12 +8469,20 @@ button.status-chip.status-chip--good {
 .change-preview-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  /* Above mobile-nav (100) — otherwise Übernehmen sits under Lab/Heute and cannot be tapped. */
+  z-index: 540;
   display: grid;
   place-items: end center;
   padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
   background: rgba(17, 19, 20, 0.42);
   animation: change-preview-fade 180ms ease-out;
+}
+
+@media (max-width: 860px) {
+  .change-preview-backdrop {
+    /* Keep action row clear of the fixed mobile tab bar. */
+    padding-bottom: calc(72px + env(safe-area-inset-bottom));
+  }
 }
 
 .change-preview {
