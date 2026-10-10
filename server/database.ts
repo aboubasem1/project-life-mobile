@@ -89,6 +89,83 @@ export async function ensureDatabaseSchema(): Promise<void> {
 
     CREATE INDEX IF NOT EXISTS lifeos_objects_room_created_idx
       ON lifeos_objects (room_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS lifeos_reels (
+      id uuid PRIMARY KEY,
+      room_id text NOT NULL REFERENCES lifeos_sync_rooms(room_id) ON DELETE RESTRICT,
+      object_id uuid NOT NULL REFERENCES lifeos_objects(id) ON DELETE RESTRICT,
+      checksum_sha256 text,
+      status text NOT NULL DEFAULT 'UPLOADED' CHECK (status IN (
+        'UPLOADED', 'PROCESSING', 'EXTRACTED', 'CLASSIFIED', 'FACT_CHECK_PENDING',
+        'REVIEW_READY', 'USER_REVIEWED', 'APPROVED_CANDIDATE', 'REJECTED',
+        'SOURCE_ONLY', 'MORE_EVIDENCE', 'FAILED', 'DUPLICATE', 'SUPERSEDED'
+      )),
+      title text NOT NULL DEFAULT '',
+      summary text NOT NULL DEFAULT '',
+      transcript text NOT NULL DEFAULT '',
+      transcript_provider text,
+      transcript_model text,
+      life_area text,
+      topics jsonb NOT NULL DEFAULT '[]'::jsonb,
+      usefulness_score integer CHECK (usefulness_score BETWEEN 0 AND 100),
+      risk_level text NOT NULL DEFAULT 'medium' CHECK (risk_level IN ('low', 'medium', 'high')),
+      suggested_target text CHECK (suggested_target IS NULL OR suggested_target IN ('knowledge', 'guideline', 'source_only', 'reject')),
+      jev_result jsonb,
+      analysis jsonb,
+      reviewer_note text NOT NULL DEFAULT '',
+      processing_attempts integer NOT NULL DEFAULT 0,
+      error_message text,
+      version integer NOT NULL DEFAULT 1,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      reviewed_at timestamptz,
+      approved_at timestamptz
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS lifeos_reels_object_idx
+      ON lifeos_reels (object_id);
+
+    CREATE INDEX IF NOT EXISTS lifeos_reels_room_status_idx
+      ON lifeos_reels (room_id, status, created_at DESC);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS lifeos_reels_room_checksum_active_idx
+      ON lifeos_reels (room_id, checksum_sha256)
+      WHERE checksum_sha256 IS NOT NULL AND status NOT IN ('DUPLICATE', 'SUPERSEDED');
+
+    CREATE TABLE IF NOT EXISTS lifeos_reel_claims (
+      id uuid PRIMARY KEY,
+      reel_id uuid NOT NULL REFERENCES lifeos_reels(id) ON DELETE CASCADE,
+      position integer NOT NULL,
+      claim_text text NOT NULL,
+      claim_type text NOT NULL DEFAULT 'general',
+      verification_status text NOT NULL DEFAULT 'REVIEW_REQUIRED' CHECK (verification_status IN (
+        'SUPPORTED', 'PARTIALLY_SUPPORTED', 'CONTRADICTED', 'UNVERIFIED', 'REVIEW_REQUIRED'
+      )),
+      confidence numeric(5,4),
+      evidence jsonb NOT NULL DEFAULT '[]'::jsonb,
+      verifier_note text NOT NULL DEFAULT '',
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      UNIQUE (reel_id, position)
+    );
+
+    CREATE INDEX IF NOT EXISTS lifeos_reel_claims_reel_idx
+      ON lifeos_reel_claims (reel_id, position);
+
+    CREATE TABLE IF NOT EXISTS lifeos_reel_audit (
+      id bigserial PRIMARY KEY,
+      reel_id uuid NOT NULL REFERENCES lifeos_reels(id) ON DELETE CASCADE,
+      room_id text NOT NULL,
+      actor text NOT NULL,
+      action text NOT NULL,
+      from_status text,
+      to_status text,
+      details jsonb NOT NULL DEFAULT '{}'::jsonb,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS lifeos_reel_audit_reel_idx
+      ON lifeos_reel_audit (reel_id, created_at DESC);
   `).then(() => undefined).catch(error => {
     schemaPromise = null
     throw error

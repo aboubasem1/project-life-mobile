@@ -44,7 +44,7 @@ Deploy keeps `SYNC_UPSTASH_BRIDGE=true` unless you set the repo variable to `fal
 
 Deploy defaults `JEV_LLM_FALLBACK_ENABLED=true` so Jev can fall back to the LLM on complex items.
 
-## Transcription (Whisper)
+## Transcription
 
 | Secret | Notes |
 |---|---|
@@ -52,7 +52,27 @@ Deploy defaults `JEV_LLM_FALLBACK_ENABLED=true` so Jev can fall back to the LLM 
 | `TRANSCRIPTION_API_URL` | optional Whisper-compatible endpoint |
 | `TRANSCRIPTION_ENABLED` | optional; deploy defaults to `true` |
 
-Language/model defaults: `de` / `whisper-1`.
+Language/model defaults: `de` / `gpt-4o-mini-transcribe`.
+
+## Reel knowledge inbox
+
+The reel importer runs on the OVH API container because it needs FFmpeg and processing time.
+It is intentionally not routed through the 15-second Vercel fallback.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `TYPESAFE_API_KEY` or `JEV_API_KEY` | required for JEV | cheap relevance, target, risk, and Life Area triage |
+| `JEV_ENABLED` | `true` | enables suggestions; never publishes content |
+| `JEV_AUTO_ACTIONS_ENABLED` | `false` | must remain off for the review-first workflow |
+| `REEL_ANALYSIS_MODEL` | `gpt-4o-mini` | title, summary, topics, and atomic claims |
+| `REEL_OCR_ENABLED` | `true` | samples up to six frames when little speech is detected |
+| `REEL_OCR_MODEL` | `gpt-4o-mini` | reads visible text from sampled frames |
+| `REEL_FACTCHECK_ENABLED` | `true` | verifies useful claims with web search; failures fall back to manual review |
+| `REEL_FACTCHECK_MODEL` | `gpt-4.1-mini` | evidence verification model |
+
+The pipeline skips paid web verification for clearly low-value reels. A claim can only be
+marked supported when at least one HTTPS source is returned. High-risk or incomplete claims
+remain review-required. Approval creates an `APPROVED_CANDIDATE`; there is no publish endpoint.
 
 **Saving a key is not enough — it must reach the running app:**
 
