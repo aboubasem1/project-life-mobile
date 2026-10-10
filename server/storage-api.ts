@@ -13,7 +13,7 @@ import {
 import { SyncHttpError, readSyncJson, syncJson } from './sync-core.js'
 import { getRoom } from './sync-store.js'
 
-const MAX_OBJECT_BYTES = 100 * 1024 * 1024
+const MAX_OBJECT_BYTES = 512 * 1024 * 1024
 
 type StoredObjectRow = {
   id: string
@@ -95,7 +95,7 @@ function normalizeSize(value: unknown): number {
     throw new SyncHttpError(400, 'Ungültige Dateigröße.')
   }
   if (size > MAX_OBJECT_BYTES) {
-    throw new SyncHttpError(413, 'Datei ist größer als 100 MB.')
+    throw new SyncHttpError(413, 'Datei ist größer als 512 MB.')
   }
   return size
 }

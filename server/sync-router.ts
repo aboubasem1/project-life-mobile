@@ -16,6 +16,7 @@ import { applyInboundConnectorWebhook, dispatchOutboundWebhook } from './lifeos-
 import { runDecisionRequest } from './decision-core.js'
 import { runTranscriptionRequest } from './transcription-core.js'
 import { handleStorageRequest } from './storage-api.js'
+import { handleReelRequest } from './reel-api.js'
 
 function bearerToken(request: Request): string {
   const header = request.headers.get('authorization') ?? ''
@@ -47,6 +48,10 @@ export async function handleSyncRequest(request: Request): Promise<Response> {
 
     if (pathname.includes('/api/storage/')) {
       return await handleStorageRequest(request)
+    }
+
+    if (pathname.includes('/api/reels')) {
+      return await handleReelRequest(request)
     }
 
     const webhookMatch = pathname.match(/\/api\/integrations\/webhooks\/([^/]+)$/)

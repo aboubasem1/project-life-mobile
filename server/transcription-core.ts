@@ -1,8 +1,9 @@
 import { SyncHttpError, readSyncJson, syncJson } from './sync-core.js'
 
 const MAX_AUDIO_BYTES = 4 * 1024 * 1024
+const MAX_BATCH_AUDIO_BYTES = 25 * 1024 * 1024
 const DEFAULT_URL = 'https://api.openai.com/v1/audio/transcriptions'
-const DEFAULT_MODEL = 'whisper-1'
+const DEFAULT_MODEL = 'gpt-4o-mini-transcribe'
 
 export type TranscriptionRequestBody = {
   audioBase64?: unknown
@@ -36,7 +37,7 @@ export function transcriptionConfig() {
     apiUrl: readEnv('TRANSCRIPTION_API_URL') || DEFAULT_URL,
     model: readEnv('TRANSCRIPTION_MODEL') || DEFAULT_MODEL,
     language: readEnv('TRANSCRIPTION_LANGUAGE') || 'de',
-    timeoutMs: Math.min(28_000, Math.max(4_000, Number(readEnv('TRANSCRIPTION_TIMEOUT_MS')) || 25_000)),
+    timeoutMs: Math.min(300_000, Math.max(4_000, Number(readEnv('TRANSCRIPTION_TIMEOUT_MS')) || 120_000)),
   }
 }
 
@@ -120,12 +121,26 @@ export async function transcribeAudioPayload(
   raw: unknown,
   fetchImpl: typeof fetch = fetch,
 ): Promise<TranscriptionResult> {
+  const { audioBase64, mimeType } = parseTranscriptionBody(raw)
+  const bytes = decodeAudio(audioBase64)
+
+  return transcribeAudioBytes(bytes, mimeType, fetchImpl)
+}
+
+/** Server-side batch transcription for audio extracted from uploaded reels. */
+export async function transcribeAudioBytes(
+  bytes: Buffer,
+  mimeType: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<TranscriptionResult> {
   const config = transcriptionConfig()
   if (!config.enabled || !config.apiKey) {
     throw new SyncHttpError(503, 'Transkription ist gerade nicht verfügbar.')
   }
-  const { audioBase64, mimeType } = parseTranscriptionBody(raw)
-  const bytes = decodeAudio(audioBase64)
+  if (bytes.length < 32) throw new SyncHttpError(400, 'Aufnahme ist unvollständig.')
+  if (bytes.length > MAX_BATCH_AUDIO_BYTES) {
+    throw new SyncHttpError(413, 'Extrahierte Audiodatei ist größer als 25 MB.')
+  }
 
   let response: Response | null = null
   let lastNetworkError: unknown = null

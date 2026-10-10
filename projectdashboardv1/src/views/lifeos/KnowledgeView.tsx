@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, Upload } from 'lucide-react'
 import { KNOWLEDGE_TYPE_LABELS, type KnowledgeItem, type KnowledgeType } from '../../lib/lifeos'
 import { Field, LifeAreaSelect, LifeOsEmpty, LifeOsPage } from './lifeosUi'
+import { ReelImportPanel } from './ReelImportPanel'
 
 export function KnowledgeView({
   items,
@@ -25,13 +26,18 @@ export function KnowledgeView({
   const selected = items.find(item => item.id === selectedId) ?? items[0] ?? null
   const [linkKind, setLinkKind] = useState<'project' | 'goal' | 'decision' | 'knowledge'>('project')
   const [linkId, setLinkId] = useState('')
+  const [showReelImport, setShowReelImport] = useState(false)
 
   return (
     <LifeOsPage
       eyebrow="Learn"
       title="Knowledge"
-      action={<button type="button" className="small-button" onClick={() => onCreate()}><Plus size={14} /> Eintrag</button>}
+      action={<div className="lifeos-inline">
+        <button type="button" className="small-button" onClick={() => setShowReelImport(current => !current)}><Upload size={14} /> Reels</button>
+        <button type="button" className="small-button" onClick={() => onCreate()}><Plus size={14} /> Eintrag</button>
+      </div>}
     >
+      {showReelImport && <ReelImportPanel onClose={() => setShowReelImport(false)} />}
       {items.length === 0 ? (
         <section className="card">
           <LifeOsEmpty title="Noch kein Wissen" text="Gedanken, Artikel, Videos, Bücher — Beziehungen zuerst, Graph später." />

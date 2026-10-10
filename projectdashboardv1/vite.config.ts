@@ -35,7 +35,20 @@ function lifeOsSyncDevPlugin(): Plugin {
         'R2_BUCKET',
         'R2_REGION',
         'R2_REQUIRED',
+        'LOCAL_OBJECT_STORAGE_ROOT',
+        'OBJECT_STORAGE_SIGNING_SECRET',
         'SYNC_UPSTASH_BRIDGE',
+        'JEV_API_KEY',
+        'TYPESAFE_API_KEY',
+        'JEV_API_URL',
+        'JEV_MODEL',
+        'JEV_ENABLED',
+        'JEV_TIMEOUT_MS',
+        'REEL_ANALYSIS_MODEL',
+        'REEL_OCR_ENABLED',
+        'REEL_OCR_MODEL',
+        'REEL_FACTCHECK_ENABLED',
+        'REEL_FACTCHECK_MODEL',
       ]) {
         if (env[key]) process.env[key] = env[key]
       }
@@ -43,7 +56,7 @@ function lifeOsSyncDevPlugin(): Plugin {
       server.middlewares.use((req, res, next) => {
         void (async () => {
           const url = req.url ?? ''
-          if (!url.startsWith('/api/sync') && !url.startsWith('/api/hooks') && !url.startsWith('/api/health') && !url.startsWith('/api/storage') && !url.startsWith('/api/integrations') && !url.startsWith('/api/decision') && !url.startsWith('/api/transcribe')) {
+          if (!url.startsWith('/api/sync') && !url.startsWith('/api/hooks') && !url.startsWith('/api/health') && !url.startsWith('/api/storage') && !url.startsWith('/api/reels') && !url.startsWith('/api/integrations') && !url.startsWith('/api/decision') && !url.startsWith('/api/transcribe')) {
             next()
             return
           }

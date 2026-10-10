@@ -89,6 +89,12 @@ jobs:
       JEV_ENABLED: ${{ vars.JEV_ENABLED }}
       JEV_AUTO_ACTIONS_ENABLED: ${{ vars.JEV_AUTO_ACTIONS_ENABLED }}
       JEV_LLM_FALLBACK_ENABLED: ${{ vars.JEV_LLM_FALLBACK_ENABLED }}
+      JEV_TIMEOUT_MS: ${{ vars.JEV_TIMEOUT_MS }}
+      REEL_ANALYSIS_MODEL: ${{ vars.REEL_ANALYSIS_MODEL }}
+      REEL_OCR_ENABLED: ${{ vars.REEL_OCR_ENABLED }}
+      REEL_OCR_MODEL: ${{ vars.REEL_OCR_MODEL }}
+      REEL_FACTCHECK_ENABLED: ${{ vars.REEL_FACTCHECK_ENABLED }}
+      REEL_FACTCHECK_MODEL: ${{ vars.REEL_FACTCHECK_MODEL }}
       VITE_JEV_ENABLED: ${{ vars.VITE_JEV_ENABLED }}
       VITE_JEV_AUTO_ACTIONS_ENABLED: ${{ vars.VITE_JEV_AUTO_ACTIONS_ENABLED }}
       GITHUB_ADMIN_TOKEN: ${{ secrets.GITHUB_ADMIN_TOKEN }}
@@ -153,8 +159,8 @@ jobs:
           append_optional TRANSCRIPTION_API_URL "$TRANSCRIPTION_API_URL"
           append_optional TRANSCRIPTION_ENABLED "${TRANSCRIPTION_ENABLED:-true}"
           append_optional TRANSCRIPTION_LANGUAGE "${TRANSCRIPTION_LANGUAGE:-de}"
-          append_optional TRANSCRIPTION_MODEL "${TRANSCRIPTION_MODEL:-whisper-1}"
-          append_optional TRANSCRIPTION_TIMEOUT_MS "${TRANSCRIPTION_TIMEOUT_MS:-25000}"
+          append_optional TRANSCRIPTION_MODEL "${TRANSCRIPTION_MODEL:-gpt-4o-mini-transcribe}"
+          append_optional TRANSCRIPTION_TIMEOUT_MS "${TRANSCRIPTION_TIMEOUT_MS:-120000}"
           append_optional JEV_API_KEY "$JEV_API_KEY"
           append_optional TYPESAFE_API_KEY "$TYPESAFE_API_KEY"
           append_optional JEV_API_URL "$JEV_API_URL"
@@ -163,6 +169,12 @@ jobs:
           append_optional JEV_ENABLED "${JEV_ENABLED:-true}"
           append_optional JEV_AUTO_ACTIONS_ENABLED "${JEV_AUTO_ACTIONS_ENABLED:-false}"
           append_optional JEV_LLM_FALLBACK_ENABLED "${JEV_LLM_FALLBACK_ENABLED:-true}"
+          append_optional JEV_TIMEOUT_MS "${JEV_TIMEOUT_MS:-8000}"
+          append_optional REEL_ANALYSIS_MODEL "${REEL_ANALYSIS_MODEL:-gpt-4o-mini}"
+          append_optional REEL_OCR_ENABLED "${REEL_OCR_ENABLED:-true}"
+          append_optional REEL_OCR_MODEL "${REEL_OCR_MODEL:-gpt-4o-mini}"
+          append_optional REEL_FACTCHECK_ENABLED "${REEL_FACTCHECK_ENABLED:-true}"
+          append_optional REEL_FACTCHECK_MODEL "${REEL_FACTCHECK_MODEL:-gpt-4.1-mini}"
           append_optional VITE_JEV_ENABLED "${VITE_JEV_ENABLED:-true}"
           append_optional VITE_JEV_AUTO_ACTIONS_ENABLED "${VITE_JEV_AUTO_ACTIONS_ENABLED:-false}"
           append_optional GITHUB_ADMIN_TOKEN "$GITHUB_ADMIN_TOKEN"

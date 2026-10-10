@@ -1,6 +1,9 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { createWriteStream } from 'node:fs'
+import { copyFile, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import {
   GetObjectCommand,
   HeadBucketCommand,
@@ -267,6 +270,24 @@ export async function headStoredObject(storageKey: string): Promise<{
     sizeBytes: Number(result.ContentLength) || 0,
     contentType: result.ContentType || 'application/octet-stream',
   }
+}
+
+/** Copies a private object to a caller-owned temporary path without buffering the video in memory. */
+export async function materializeStoredObject(storageKey: string, destination: string): Promise<void> {
+  await mkdir(dirname(destination), { recursive: true })
+  if (usesLocalObjectStorage()) {
+    await copyFile(localPath(storageKey), destination)
+    return
+  }
+  const result = await storageClient().send(new GetObjectCommand({
+    Bucket: bucketName(),
+    Key: storageKey,
+  }))
+  if (!result.Body) throw new Error('Gespeicherte Datei hat keinen Inhalt.')
+  await pipeline(
+    Readable.from(result.Body as AsyncIterable<Uint8Array>),
+    createWriteStream(destination, { mode: 0o600 }),
+  )
 }
 
 export async function probeObjectStorage(): Promise<{
