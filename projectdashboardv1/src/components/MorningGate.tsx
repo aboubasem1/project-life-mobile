@@ -316,6 +316,7 @@ export function MorningGate({
   const selfcareItems = config.selfcareItems
   const selfcareReady = selfcareItems.length === 0
     || selfcareItems.every(item => selfcareChecked.includes(item.id))
+  const nextSelfcareItem = selfcareItems.find(item => !selfcareChecked.includes(item.id))
   const track = steps.length > 0
     ? steps
     : [{ id: step, label: meta.label }]
@@ -717,26 +718,23 @@ export function MorningGate({
         return (
           <>
             <p>{rule}</p>
-            <ul className="morning-gate__meds">
-              {selfcareItems.map((item: MorningSelfcareItem) => (
-                <li key={item.id}>
+            <p className="morning-gate__empty">
+              {selfcareItems.length - selfcareItems.filter(item => selfcareChecked.includes(item.id)).length} Schritte offen
+            </p>
+            {nextSelfcareItem ? (
+              <ul className="morning-gate__meds">
+                <li key={nextSelfcareItem.id}>
                   <CheckRow
-                    done={selfcareChecked.includes(item.id)}
-                    label={item.label}
-                    onToggle={() => onToggleSelfcare(item.id)}
+                    done={false}
+                    label={nextSelfcareItem.label}
+                    onToggle={() => onToggleSelfcare(nextSelfcareItem.id)}
                   />
                 </li>
-              ))}
-            </ul>
-            <button
-              type="button"
-              className="primary-button morning-gate__cta"
-              onClick={() => {
-                onCompleteStep('selfcare')
-              }}
-            >
+              </ul>
+            ) : <p>Selfcare abgeschlossen.</p>}
+            <button type="button" className="primary-button morning-gate__cta" onClick={() => onCompleteStep('selfcare')}>
               <Check size={17} />
-              {selfcareReady ? 'Weiter' : 'Alles bestätigt'}
+              {selfcareReady ? 'Weiter' : 'Rest heute überspringen'}
             </button>
           </>
         )
