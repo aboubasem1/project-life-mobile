@@ -29,7 +29,6 @@ import {
   type MorningGateMed,
   type MorningRitualConfig,
   type MorningRitualStepId,
-  type MorningSelfcareItem,
 } from '../lib/morningGate'
 import { releaseScreenWakeLock, requestScreenWakeLock } from '../lib/wakeLock'
 
