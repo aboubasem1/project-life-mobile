@@ -1,6 +1,7 @@
 export const EVENING_GATE_STEP_IDS = [
   'windDown',
   'shower',
+  'skinSmile',
   'breathing',
   'prepare',
   'preRoll',
@@ -18,6 +19,34 @@ export type EveningPreparationItem = {
 
 export type EveningEnergyLevel = 'low' | 'okay' | 'high'
 
+export type EveningCareId = 'cleanse' | 'bha' | 'needly' | 'backBpo' | 'dental' | 'whitening'
+export type EveningCareOptions = { backBpo: boolean; whitening: boolean }
+
+/** Gate-owned routine: no separate Habit/NOW tasks. Date is local YYYY-MM-DD. */
+export function eveningCareSteps(date: string, options: EveningCareOptions): Array<{
+  id: EveningCareId
+  label: string
+  detail: string
+}> {
+  const weekday = /^\d{4}-\d{2}-\d{2}$/.test(date)
+    ? new Date(`${date}T12:00:00`).getDay()
+    : -1
+  return [
+    { id: 'cleanse', label: 'Rituals Cleanser', detail: 'Gesicht mild und mit lauwarmem Wasser reinigen.' },
+    ...(weekday === 1 || weekday === 4
+      ? [{ id: 'bha' as const, label: 'COSRX BHA Blackhead Power Liquid', detail: 'Mo/Do: dünn auf trockene Haut. Bei Reizung pausieren.' }]
+      : []),
+    { id: 'needly', label: 'Needly Crossbarrier Cream', detail: 'Dünn auftragen. Keine zusätzliche Q10-Nachtcreme.' },
+    ...(options.backBpo
+      ? [{ id: 'backBpo' as const, label: 'Rücken · Benzaknen 10 % Gel', detail: 'Nur nach Eignungsabklärung; Leave-on, nicht abwaschen. Hautreizungen und Textilbleichung beachten. Nicht mit Aknefug schichten.' }]
+      : []),
+    { id: 'dental', label: 'Zahnpflege', detail: 'Zahnzwischenräume reinigen und 2 Minuten Fluoridzahnpasta.' },
+    ...(options.whitening
+      ? [{ id: 'whitening' as const, label: 'SmileSecret Phonebleaching', detail: 'Eine Gel-Tube gemäß deiner Anleitung auf obere und untere Schiene verteilen; ans Smartphone anschließen und 16 Minuten anwenden. Nur während einer Kur.' }]
+      : []),
+  ]
+}
+
 export type EveningGateState = {
   startedAt?: string
   completedAt?: string
@@ -27,7 +56,9 @@ export type EveningGateState = {
   breathingRounds: number
   preparationItems: EveningPreparationItem[]
   memoCaptured: boolean
-}
+  careChecked: EveningCareId[]
+  careOptions: EveningCareOptions
+
 
 export const DEFAULT_EVENING_PREPARATION: EveningPreparationItem[] = [
   { id: 'clothes', label: 'Kleidung für morgen', done: false },
@@ -70,6 +101,14 @@ export function createEveningGateState(raw?: Partial<EveningGateState> | null): 
     breathingRounds: Math.max(0, Math.min(3, Math.round(Number(raw?.breathingRounds) || 0))),
     preparationItems: normalizePreparationItems(raw?.preparationItems),
     memoCaptured: raw?.memoCaptured === true,
+    careChecked: Array.isArray(raw?.careChecked)
+      ? [...new Set(raw.careChecked.filter((id): id is EveningCareId =>
+        typeof id === 'string' && ['cleanse', 'bha', 'needly', 'backBpo', 'dental', 'whitening'].includes(id)))]
+      : [],
+    careOptions: {
+      backBpo: raw?.careOptions?.backBpo === true,
+      whitening: raw?.careOptions?.whitening === true,
+    },
   }
 }
 
@@ -110,6 +149,8 @@ export function restartEveningGate(state: EveningGateState): EveningGateState {
     breathingRounds: 0,
     preparationItems: state.preparationItems.map(item => ({ ...item, done: false })),
     memoCaptured: false,
+    careChecked: [],
+    careOptions: { backBpo: false, whitening: false },
   }
 }
 
