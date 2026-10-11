@@ -152,7 +152,7 @@ describe('now selection', () => {
     })
     expect(now).toEqual([])
     expect(owned.sort()).toEqual(['breathingDone', 'journalDone'])
-    expect(eveningRemaining(['windDown', 'shower']).remaining).toBe(5)
+    expect(eveningRemaining(['windDown', 'shower']).remaining).toBe(EVENING_GATE_STEP_IDS.length - 2)
     expect(eveningOwnedHabitKeys({ enabled: true, completed: true, doneSteps: [] })).toEqual([])
   })
 
