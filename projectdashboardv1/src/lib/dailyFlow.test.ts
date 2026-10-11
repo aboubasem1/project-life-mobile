@@ -20,6 +20,7 @@ import {
   syncProteinShakeNutrition,
 } from './dailyFlow'
 import { DEFAULT_MORNING_RITUAL, emptyRitualProgress } from './morningGate'
+import { EVENING_GATE_STEP_IDS } from './eveningGate'
 
 describe('protein shake nutrition', () => {
   it('books the configured meal once and ignores a second apply', () => {
