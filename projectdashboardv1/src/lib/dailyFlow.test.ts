@@ -20,6 +20,7 @@ import {
   syncProteinShakeNutrition,
 } from './dailyFlow'
 import { DEFAULT_MORNING_RITUAL, emptyRitualProgress } from './morningGate'
+import { EVENING_GATE_STEP_IDS } from './eveningGate'
 
 describe('protein shake nutrition', () => {
   it('books the configured meal once and ignores a second apply', () => {
@@ -152,7 +153,7 @@ describe('now selection', () => {
     })
     expect(now).toEqual([])
     expect(owned.sort()).toEqual(['breathingDone', 'journalDone'])
-    expect(eveningRemaining(['windDown', 'shower']).remaining).toBe(5)
+    expect(eveningRemaining(['windDown', 'shower']).remaining).toBe(EVENING_GATE_STEP_IDS.length - 2)
     expect(eveningOwnedHabitKeys({ enabled: true, completed: true, doneSteps: [] })).toEqual([])
   })
 

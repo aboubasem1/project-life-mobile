@@ -3911,6 +3911,7 @@ function App() {
       {eveningGateOpen && (
         <EveningGate
           initialState={entry.eveningGate}
+          date={entry.date}
           inactive={privateNotesOpen}
           onPersist={state => updateEntry({
             eveningGate: state,
