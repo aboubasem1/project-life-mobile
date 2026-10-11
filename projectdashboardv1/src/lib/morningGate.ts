@@ -94,7 +94,7 @@ export const DEFAULT_GRATITUDE_TEXT = [
   'HEUTE! JETZT! ICH!',
 ].join('\n\n')
 
-export const DEFAULT_SELFCARE_ITEMS: MorningSelfcareItem[] = [
+const LEGACY_SELFCARE_ITEMS: MorningSelfcareItem[] = [
   { id: 'teeth', label: 'Zähne geputzt' },
   { id: 'rinse', label: 'Mundspülung' },
   { id: 'face', label: 'Gesicht gereinigt' },
@@ -102,6 +102,15 @@ export const DEFAULT_SELFCARE_ITEMS: MorningSelfcareItem[] = [
   { id: 'lotion', label: 'Bodylotion' },
   { id: 'deo', label: 'Deo' },
   { id: 'perfume', label: 'Parfüm' },
+]
+
+export const DEFAULT_SELFCARE_ITEMS: MorningSelfcareItem[] = [
+  { id: 'teeth', label: 'Zähne · 2 Min. Fluoridzahnpasta' },
+  { id: 'face', label: 'Rituals Cleanser · lauwarmes Wasser' },
+  { id: 'purito', label: 'Purito Galacto Niacin 97 Essence' },
+  { id: 'cream', label: 'Needly Crossbarrier Cream · bei Bedarf' },
+  { id: 'spf', label: 'Beauty of Joseon Relief Sun SPF 50+' },
+  { id: 'deo', label: 'Deo' },
 ]
 
 export const DEFAULT_MORNING_RITUAL_RULES: MorningRitualStepRules = {
@@ -116,7 +125,7 @@ export const DEFAULT_MORNING_RITUAL_RULES: MorningRitualStepRules = {
   todos: 'Schau deine Anker einmal bewusst an.',
   workout: 'Jede Wiederholung bewusst zählen.',
   postShower: 'Erst heiß, anschließend kurz kalt.',
-  selfcare: 'Alle Punkte abhaken, bevor du weitergehst.',
+  selfcare: 'Pflege nacheinander. Sonnenschutz bildet den letzten Schritt im Gesicht.',
   letsGo: 'Du bist durch. Tür zu, raus, arbeiten.',
 }
 
@@ -268,7 +277,9 @@ export function normalizeMorningGateSteps(raw: unknown): MorningRitualStepId[] {
 }
 
 export function normalizeSelfcareItems(raw: unknown): MorningSelfcareItem[] {
-  if (!Array.isArray(raw)) return DEFAULT_SELFCARE_ITEMS.map(item => ({ ...item }))
+  if (!Array.isArray(raw) || JSON.stringify(raw) === JSON.stringify(LEGACY_SELFCARE_ITEMS)) {
+    return DEFAULT_SELFCARE_ITEMS.map(item => ({ ...item }))
+  }
   const items = raw
     .map((item, index) => {
       if (!item || typeof item !== 'object') return null
