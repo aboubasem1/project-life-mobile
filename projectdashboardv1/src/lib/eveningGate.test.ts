@@ -27,7 +27,7 @@ describe('evening gate', () => {
     let state = createEveningGateState()
     state = markEveningGateStepDone(state, 'windDown', new Date('2026-09-20T20:00:00Z'))
     state = markEveningGateStepDone(state, 'shower', new Date('2026-09-20T20:05:00Z'))
-    expect(nextEveningGateStep(state)).toBe('breathing')
+    expect(nextEveningGateStep(state)).toBe('skinSmile')
     expect(state.startedAt).toBe('2026-09-20T20:00:00.000Z')
   })
 
