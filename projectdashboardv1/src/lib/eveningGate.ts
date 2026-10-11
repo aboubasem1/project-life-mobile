@@ -58,7 +58,7 @@ export type EveningGateState = {
   memoCaptured: boolean
   careChecked: EveningCareId[]
   careOptions: EveningCareOptions
-
+}
 
 export const DEFAULT_EVENING_PREPARATION: EveningPreparationItem[] = [
   { id: 'clothes', label: 'Kleidung für morgen', done: false },
