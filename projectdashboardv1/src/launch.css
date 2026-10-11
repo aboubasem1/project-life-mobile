@@ -4306,7 +4306,7 @@ button.status-chip.status-chip--good {
     z-index: 100;
     display: grid;
     height: calc(64px + env(safe-area-inset-bottom));
-    grid-template-columns: 1fr 1.15fr 1fr;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     padding: 6px 10px max(8px, env(safe-area-inset-bottom));
     border: 0;
     border-radius: 0;
@@ -8763,4 +8763,81 @@ button.status-chip.status-chip--good {
 
 .lab-ui--motion-none .card {
   transition: none;
+}
+
+.run-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.run-stack h3,
+.run-stack h4 {
+  margin: 0 0 8px;
+}
+
+.run-stack p,
+.run-list span {
+  color: var(--text-soft);
+}
+
+.run-list {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.run-list li,
+.run-asset,
+.run-reel,
+.run-candidate {
+  display: grid;
+  gap: 8px;
+}
+
+.run-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.run-stack summary {
+  min-height: 44px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.run-stack button:focus-visible,
+.run-stack input:focus-visible,
+.run-stack textarea:focus-visible,
+.run-stack select:focus-visible,
+.run-stack summary:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.run-check {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+}
+
+.run-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.run-stack label.secondary-button {
+  position: relative;
+  width: fit-content;
+}
+
+.run-stack .card p[role='status'] {
+  color: var(--danger);
 }

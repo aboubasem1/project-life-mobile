@@ -24,6 +24,7 @@ import {
   ChevronUp,
   Circle,
   Cloud,
+  Compass,
   Coffee,
   CreditCard,
   Crown,
@@ -195,6 +196,8 @@ import {
 } from './lib/decision-engine'
 import { CaptureSheet } from './views/lifeos/CaptureSheet'
 import { ChangePreviewSheet } from './components/ChangePreviewSheet'
+import { localPriority } from './lib/generationalRun/logic'
+import { GenerationalRunView } from './views/lifeos/GenerationalRunView'
 import { CommandPalette } from './views/lifeos/CommandPalette'
 import { DecisionView } from './views/lifeos/DecisionView'
 import { GoalDetailView } from './views/lifeos/GoalDetailView'
@@ -2850,6 +2853,14 @@ function App() {
             <Inbox size={18} />
             <span>Inbox{lifeOs.inboxCount > 0 ? ` (${lifeOs.inboxCount})` : ''}</span>
           </button>
+          <button
+            type="button"
+            className={view === 'run' ? 'nav-item is-active' : 'nav-item'}
+            onClick={() => navigateTo('run')}
+          >
+            <Compass size={18} />
+            <span>Run</span>
+          </button>
         </nav>
 
         <div className="sidebar-spacer" />
@@ -2975,6 +2986,10 @@ function App() {
                 setRitualProgress(current => markRitualStepDone(current, 'todos'))
                 appendDailyEvent(createRitualStepEvent({ date: today, stepId: 'todos' }))
               }}
+              runHint={{
+                reason: localPriority(lifeOs.state.run).reason,
+                onOpen: () => navigateTo('run'),
+              }}
             />
           )}
 
@@ -3053,6 +3068,23 @@ function App() {
               onQuickAction={handleLabQuickAction}
             />
           )}
+          {view === 'run' && (
+            <GenerationalRunView
+              life={lifeOs.state}
+              commit={lifeOs.commit}
+              commitments={dashboardPlus.medications
+                .filter(item => item.name.trim())
+                .map(item => ({
+                  id: item.id,
+                  label: item.name.trim(),
+                  time: item.time.trim(),
+                  taken: isMedicationTakenToday(item, today),
+                }))}
+              onOpenLabor={() => navigateTo('dashboardPlus')}
+              onOpenCheckin={() => navigateTo('checkin')}
+            />
+          )}
+
           {view === 'inbox' && (
             <InboxView
               items={lifeOs.inbox}
@@ -3405,6 +3437,15 @@ function App() {
           </button>
           <button
             type="button"
+            className={view === 'run' ? 'mobile-nav__item is-active' : 'mobile-nav__item'}
+            aria-current={view === 'run' ? 'page' : undefined}
+            onClick={() => navigateTo('run')}
+          >
+            <Compass size={20} />
+            <span>Run</span>
+          </button>
+          <button
+            type="button"
             className="mobile-nav__item mobile-nav__capture"
             aria-label="Mit Jo AI erfassen"
             onClick={() => openUniversalCapture()}
@@ -3426,7 +3467,7 @@ function App() {
           </button>
         </nav>
 
-        {view !== 'dashboardPlus' && view !== 'today' && view !== 'checkin' && view !== 'plan' && view !== 'progress' && !showMorningGate && (
+        {view !== 'dashboardPlus' && view !== 'today' && view !== 'checkin' && view !== 'plan' && view !== 'progress' && view !== 'run' && !showMorningGate && (
           <button type="button" className="fab" onClick={() => openUniversalCapture()} aria-label="Schnell hinzufügen">
             <Plus size={22} />
           </button>
@@ -4070,6 +4111,7 @@ function TodayView({
   dailyEvents = [],
   onUndoDailyEvent,
   onUndoRitualEvent,
+  runHint,
 }: {
   entry: DashboardEntry
   entries: DashboardEntry[]
@@ -4104,6 +4146,7 @@ function TodayView({
   onUndoRitualEvent?: (event: DailyEvent) => void
   syncLabel?: string
   syncStatus?: string
+  runHint?: { reason: string; onOpen: () => void }
 }) {
   const [timelineOpen, setTimelineOpen] = useState(false)
   const [overviewOpen, setOverviewOpen] = useState(false)
@@ -4137,12 +4180,7 @@ function TodayView({
     habitSchedules: settings.habitSchedules,
     focusMinutes: settings.focusMinutes,
     hour: date === today ? new Date().getHours() : 20,
-    hiddenChecks: [
-      ...settings.eveningGate.hiddenChecks,
-      ...((settings.adaptive ?? defaultAdaptiveLifeConfig()).surfaces.now.excludeEntities.includes('energy')
-        ? ['energy' as const]
-        : []),
-    ],
+    hiddenChecks: settings.eveningGate.hiddenChecks,
   })
   const habitGoals = {
     proteinGoal: settings.proteinGoal,
@@ -4322,6 +4360,14 @@ function TodayView({
           </>
         )}
       </header>
+
+      {!overviewOpen && runHint && (
+        <section className="card" aria-labelledby="run-now">
+          <h3 id="run-now">Generational Run</h3>
+          <p>{runHint.reason}</p>
+          <button type="button" className="primary-button" onClick={runHint.onOpen}>Im Run öffnen</button>
+        </section>
+      )}
 
       {ritualLock === 'todos' && energy && (
         <section className="card morning-todos-card">

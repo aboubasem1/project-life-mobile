@@ -1,5 +1,6 @@
 /** Life OS domain types — local-first, additive, no parallel project/goal systems. */
 
+import type { GenerationalRunState } from '../generationalRun/types.js'
 import type { AreaIntention, LifeAreaKey } from './areas.js'
 
 export const LIFE_OS_STORE_VERSION = 2
@@ -320,6 +321,7 @@ export type LifeOsState = {
   outboundWebhooks: OutboundWebhook[]
   webhookLogs: WebhookLog[]
   areaIntentions: Partial<Record<LifeAreaKey, AreaIntention>>
+  run: GenerationalRunState
 }
 
 export type ProjectLike = {

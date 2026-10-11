@@ -31,7 +31,14 @@ export function mergeLifeOsSnapshots(local: unknown, remote: unknown): unknown {
       ...(isRecord(local.areaIntentions) ? local.areaIntentions : {}),
       ...(isRecord(remote.areaIntentions) ? remote.areaIntentions : {}),
     },
+    run: pickNewerRecord(local.run, remote.run),
   }
+}
+
+function pickNewerRecord(local: unknown, remote: unknown): unknown {
+  if (!isRecord(remote)) return isRecord(local) ? local : undefined
+  if (!isRecord(local)) return remote
+  return later(remote, local) ? remote : local
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

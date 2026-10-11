@@ -24,6 +24,7 @@ export type AppView =
   | 'signals'
   | 'insights'
   | 'integrations'
+  | 'run'
 
 export type AppActionKind = 'focus' | 'checkin' | 'note' | 'plan' | 'add-task' | 'today' | 'log' | 'capture'
 
@@ -72,6 +73,8 @@ const HASH_TO_VIEW: Record<string, AppView> = {
   '/signale': 'signals',
   '/insights': 'insights',
   '/integrations': 'integrations',
+  '/run': 'run',
+  '/generational-run': 'run',
 }
 
 const VIEW_TO_HASH: Record<AppView, string> = {
@@ -89,6 +92,7 @@ const VIEW_TO_HASH: Record<AppView, string> = {
   signals: '#/signals',
   insights: '#/insights',
   integrations: '#/integrations',
+  run: '#/run',
 }
 
 const ACTION_TO_VIEW: Record<AppActionKind, AppView> = {
@@ -117,6 +121,7 @@ export const VIEW_LABELS: Record<AppView, string> = {
   signals: 'Signale',
   insights: 'Insights',
   integrations: 'Integrationen',
+  run: 'Generational Run',
 }
 
 export function entityIdFromHash(hash = window.location.hash): string | undefined {

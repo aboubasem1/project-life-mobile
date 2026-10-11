@@ -21,6 +21,7 @@ const COMMANDS: Command[] = [
   { id: 'insights', title: 'Insights', hint: 'Nur belegte Muster', view: 'insights' },
   { id: 'integrations', title: 'Integrationen', hint: 'Connectoren', view: 'integrations' },
   { id: 'labor', title: 'Lab / Daten', hint: 'Projekte, Ziele und Bestände', view: 'dashboardPlus' },
+  { id: 'run', title: 'Generational Run', hint: 'Heute, Experimente, Review', view: 'run' },
 ]
 
 export function CommandPalette({

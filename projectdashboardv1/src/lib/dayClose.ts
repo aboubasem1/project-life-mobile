@@ -5,7 +5,7 @@ import { getDayPolicy } from './dayPolicy'
 
 export type DayCloseAction = 'checkin' | 'plan' | 'today'
 
-export const EVENING_CLOSE_CHECK_IDS = ['energy', 'anchors', 'habits', 'checkin', 'evening'] as const
+export const EVENING_CLOSE_CHECK_IDS = ['anchors', 'habits', 'checkin', 'evening'] as const
 export type EveningCloseCheckId = (typeof EVENING_CLOSE_CHECK_IDS)[number]
 
 export type EveningGateConfig = {
@@ -15,7 +15,6 @@ export type EveningGateConfig = {
 }
 
 export const EVENING_CLOSE_CHECK_META: Record<EveningCloseCheckId, { label: string; hint: string }> = {
-  energy: { label: 'Energie', hint: 'Energie für den Tag gesetzt' },
   anchors: { label: 'Anker', hint: 'Offene Tagesanker' },
   habits: { label: 'Habits', hint: 'Fällige Hauptgewohnheiten' },
   checkin: { label: 'Check-in', hint: 'Stimmung oder Schlaf' },
@@ -112,12 +111,6 @@ export function assessDayCompleteness(input: CompletenessInput): DayCompleteness
 
   const hidden = new Set(input.hiddenChecks ?? [])
   const checks: Array<{ id: EveningCloseCheckId; ok: boolean; gap?: DayGap }> = []
-
-  if (!hidden.has('energy')) checks.push({
-    id: 'energy',
-    ok: Boolean(entry.energyLevel),
-    gap: { id: 'energy', label: 'Energie setzen', action: 'today' },
-  })
 
   const anchors = entry.anchors ?? []
   const anchorsDone = entry.anchorsDone ?? []

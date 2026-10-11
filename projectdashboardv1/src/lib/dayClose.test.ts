@@ -17,8 +17,9 @@ describe('day close', () => {
     })
     expect(emptyStatus.percent).toBeLessThan(60)
     expect(emptyStatus.gaps.map(gap => gap.id)).toEqual(
-      expect.arrayContaining(['energy', 'habits', 'checkin', 'evening']),
+      expect.arrayContaining(['habits', 'checkin', 'evening']),
     )
+    expect(emptyStatus.gaps.map(gap => gap.id)).not.toContain('energy')
     expect(emptyStatus.readyToClose).toBe(false)
 
     const filled = {

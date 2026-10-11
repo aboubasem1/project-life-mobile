@@ -1,3 +1,4 @@
+import { normalizeGenerationalRun } from '../generationalRun/logic.js'
 import {
   normalizeAreaIntentions,
   parseLifeArea,
@@ -97,6 +98,7 @@ export function emptyLifeOsState(): LifeOsState {
     outboundWebhooks: [],
     webhookLogs: [],
     areaIntentions: {},
+    run: normalizeGenerationalRun(undefined),
   }
 }
 
@@ -468,6 +470,7 @@ export function normalizeLifeOsState(raw: unknown): LifeOsState {
     outboundWebhooks: list(item.outboundWebhooks, normalizeOutboundWebhook),
     webhookLogs: list(item.webhookLogs, normalizeWebhookLog).slice(-MAX_WEBHOOK_LOGS),
     areaIntentions: normalizeAreaIntentions(item.areaIntentions),
+    run: normalizeGenerationalRun(item.run),
   }
 }
 
@@ -523,6 +526,7 @@ export function mergeLifeOsState(localRaw: unknown, remoteRaw: unknown): LifeOsS
     outboundWebhooks: mergeByUpdatedAt(local.outboundWebhooks, remote.outboundWebhooks),
     webhookLogs: mergeByCreatedAt(local.webhookLogs, remote.webhookLogs).slice(-MAX_WEBHOOK_LOGS),
     areaIntentions: { ...local.areaIntentions, ...remote.areaIntentions },
+    run: remote.run.updatedAt >= local.run.updatedAt ? remote.run : local.run,
   })
 }
 
