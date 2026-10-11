@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import {
   Check,
   ClipboardCheck,
@@ -7,6 +7,7 @@ import {
   LockKeyhole,
   Moon,
   NotebookPen,
+  Sparkles,
   Plus,
   RotateCcw,
   MonitorOff,
@@ -16,6 +17,7 @@ import {
 } from 'lucide-react'
 import {
   EVENING_GATE_STEP_IDS,
+  eveningCareSteps,
   createEveningGateState,
   finishEveningGate,
   markEveningGateStepDone,
@@ -29,6 +31,7 @@ import {
 const STEP_LABELS: Record<EveningGateStepId, string> = {
   windDown: 'Runterkommen',
   shower: 'Duschen',
+  skinSmile: 'Skin & Smile',
   breathing: 'Atmung',
   prepare: 'Vorbereitung',
   preRoll: 'Vordrehen',
@@ -65,6 +68,7 @@ function GateCard({
 
 export function EveningGate({
   initialState,
+  date,
   onPersist,
   onCaptureMemo,
   onOpenPrivateNotes,
@@ -73,6 +77,7 @@ export function EveningGate({
   inactive = false,
 }: {
   initialState?: EveningGateState
+  date: string
   onPersist: (state: EveningGateState) => void
   onCaptureMemo: (text: string) => void
   onOpenPrivateNotes: (text: string, onSaved: () => void) => void
@@ -83,8 +88,24 @@ export function EveningGate({
   const [draft, setDraft] = useState(() => createEveningGateState(initialState))
   const [memoText, setMemoText] = useState('')
   const [preparationLabel, setPreparationLabel] = useState('')
+  const [whiteningSeconds, setWhiteningSeconds] = useState(16 * 60)
+  const [whiteningRunning, setWhiteningRunning] = useState(false)
   const step = nextEveningGateStep(draft)
   const stepIndex = step ? EVENING_GATE_STEP_IDS.indexOf(step) : EVENING_GATE_STEP_IDS.length - 1
+  const carePlan = eveningCareSteps(date, draft.careOptions)
+  const nextCare = carePlan.find(item => !draft.careChecked.includes(item.id))
+
+  useEffect(() => {
+    if (!whiteningRunning || step !== 'skinSmile' || !draft.careOptions.whitening) return
+    const id = window.setInterval(() => {
+      setWhiteningSeconds(seconds => Math.max(0, seconds - 1))
+    }, 1000)
+    return () => window.clearInterval(id)
+  }, [whiteningRunning, step, draft.careOptions.whitening])
+
+  useEffect(() => {
+    if (whiteningSeconds === 0) setWhiteningRunning(false)
+  }, [whiteningSeconds])
 
   const saveDraft = (next: EveningGateState) => {
     const withStart = next.startedAt ? next : { ...next, startedAt: new Date().toISOString() }
@@ -130,6 +151,12 @@ export function EveningGate({
       ...draft,
       preparationItems: draft.preparationItems.filter(item => item.id !== id),
     })
+  }
+
+  const toggleCareOption = (option: 'backBpo' | 'whitening') => {
+    const enabled = !draft.careOptions[option]
+    if (option === 'whitening' && !enabled) setWhiteningRunning(false)
+    saveDraft({ ...draft, careOptions: { ...draft.careOptions, [option]: enabled } })
   }
 
   const completed = Boolean(draft.completedAt)
@@ -196,6 +223,70 @@ export function EveningGate({
             <p>Einmal frisch machen und den Tag körperlich abschließen.</p>
             <button type="button" className="primary-button morning-gate__cta" onClick={() => completeStep(draft, 'shower')}>
               <Check size={17} /> Geduscht · weiter
+            </button>
+          </GateCard>
+        )
+        break
+      case 'skinSmile':
+        card = (
+          <GateCard icon={<Sparkles size={26} />} eyebrow="Geführte Pflege" title="Skin & Smile">
+            <p>Ein Schritt nach dem anderen. COSRX BHA erscheint nur montags und donnerstags.</p>
+            <div className="evening-gate__energy">
+              <label className="morning-gate__med">
+                <input
+                  type="checkbox"
+                  checked={draft.careOptions.backBpo}
+                  onChange={() => toggleCareOption('backBpo')}
+                />
+                <span><strong>Rücken heute behandeln</strong><small>Benzaknen 10 % nur nach Eignungsabklärung</small></span>
+              </label>
+              <label className="morning-gate__med">
+                <input
+                  type="checkbox"
+                  checked={draft.careOptions.whitening}
+                  onChange={() => toggleCareOption('whitening')}
+                />
+                <span><strong>Phonebleaching heute</strong><small>Nur während einer Whitening-Kur</small></span>
+              </label>
+            </div>
+            {nextCare ? (
+              <>
+                <p className="eyebrow">
+                  {carePlan.filter(item => draft.careChecked.includes(item.id)).length + 1} von {carePlan.length}
+                </p>
+                <div className="morning-gate__med">
+                  <span><strong>{nextCare.label}</strong><small>{nextCare.detail}</small></span>
+                </div>
+                {nextCare.id === 'whitening' && (
+                  <div className="evening-gate__rounds" aria-live="polite">
+                    <strong>{String(Math.floor(whiteningSeconds / 60)).padStart(2, '0')}:{String(whiteningSeconds % 60).padStart(2, '0')}</strong>
+                    <button type="button" className="secondary-button" onClick={() => {
+                      if (whiteningSeconds === 0) setWhiteningSeconds(16 * 60)
+                      setWhiteningRunning(active => !active)
+                    }}>
+                      {whiteningRunning ? 'Pausieren' : 'Timer starten'}
+                    </button>
+                    <p>Bei Empfindlichkeit abbrechen und nicht unbegrenzt täglich anwenden.</p>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="primary-button morning-gate__cta"
+                  onClick={() => saveDraft({
+                    ...draft,
+                    careChecked: [...new Set([...draft.careChecked, nextCare.id])],
+                  })}
+                >
+                  <Check size={17} /> Erledigt · weiter
+                </button>
+              </>
+            ) : (
+              <button type="button" className="primary-button morning-gate__cta" onClick={() => completeStep(draft, 'skinSmile')}>
+                <Check size={17} /> Pflege abschließen
+              </button>
+            )}
+            <button type="button" className="text-button evening-gate__without" onClick={() => completeStep(draft, 'skinSmile')}>
+              Pflege heute überspringen
             </button>
           </GateCard>
         )
@@ -363,8 +454,8 @@ export function EveningGate({
       <div className="morning-gate__shell">
         <header className="morning-gate__top">
           <div>
-            <span className="morning-gate__kicker">Evening Gate {completed ? '7/7' : `${stepIndex + 1}/7`}</span>
-            <p>{completed ? 'Tag bewusst abgeschlossen' : `Schritt ${stepIndex + 1} von 7 · ${step ? STEP_LABELS[step] : ''}`}</p>
+            <span className="morning-gate__kicker">Evening Gate {completed ? `${EVENING_GATE_STEP_IDS.length}/${EVENING_GATE_STEP_IDS.length}` : `${stepIndex + 1}/${EVENING_GATE_STEP_IDS.length}`}</span>
+            <p>{completed ? 'Tag bewusst abgeschlossen' : `Schritt ${stepIndex + 1} von ${EVENING_GATE_STEP_IDS.length} · ${step ? STEP_LABELS[step] : ''}`}</p>
           </div>
           <div className="morning-gate__top-actions">
             <button type="button" className="icon-button" onClick={onClose} aria-label="Abendroutine schließen">
