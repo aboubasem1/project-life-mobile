@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_GRATITUDE_TEXT,
+  DEFAULT_SELFCARE_ITEMS,
   FULLSCREEN_STEP_IDS,
   mergeMorningRitualProgress,
   morningRitualPhase,
@@ -77,5 +78,29 @@ describe('energy ritual step', () => {
     expect(FULLSCREEN_STEP_IDS).toContain('headRecovery')
     expect(morningRitualPhase('headRecovery')).toBe('gate')
     expect(morningRitualPhase('todos')).toBe('heute')
+  })
+})
+
+describe('Skin & Smile morning selfcare', () => {
+  it('includes the correct existing products and sunscreen', () => {
+    const ids = DEFAULT_SELFCARE_ITEMS.map(item => item.id)
+    expect(ids).toContain('purito')
+    expect(ids).toContain('spf')
+    expect(DEFAULT_SELFCARE_ITEMS.find(item => item.id === 'cream')?.label).toContain('Needly')
+  })
+
+  it('migrates untouched legacy selfcare while preserving custom lists', () => {
+    const legacy = [
+      { id: 'teeth', label: 'Zähne geputzt' },
+      { id: 'rinse', label: 'Mundspülung' },
+      { id: 'face', label: 'Gesicht gereinigt' },
+      { id: 'cream', label: 'Creme drauf' },
+      { id: 'lotion', label: 'Bodylotion' },
+      { id: 'deo', label: 'Deo' },
+      { id: 'perfume', label: 'Parfüm' },
+    ]
+    expect(normalizeMorningRitualConfig({ selfcareItems: legacy }).selfcareItems.some(item => item.id === 'spf')).toBe(true)
+    expect(normalizeMorningRitualConfig({ selfcareItems: [{ id: 'own', label: 'Individuell' }] }).selfcareItems)
+      .toEqual([{ id: 'own', label: 'Individuell' }])
   })
 })
