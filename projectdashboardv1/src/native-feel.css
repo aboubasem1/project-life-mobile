@@ -44,3 +44,34 @@
   button, [role='button'], .primary-button, .secondary-button { transition: none !important; }
   button:active, [role='button']:active, .primary-button:active, .secondary-button:active { transform: none !important; }
 }
+
+/* Sprint B: native-feeling feedback, scoped to existing interactive elements. */
+@media (hover: none) and (pointer: coarse) {
+  input[type='checkbox'], input[type='radio'] { accent-color: var(--accent-strong); }
+  input[type='checkbox']:not(:disabled), input[type='radio']:not(:disabled) {
+    transition: transform var(--life-motion-fast) var(--life-motion-ease);
+  }
+  input[type='checkbox']:not(:disabled):active, input[type='radio']:not(:disabled):active {
+    transform: scale(.88);
+  }
+  summary { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+  details > summary:active { opacity: .72; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  details[open] > :not(summary) {
+    animation: life-native-reveal 200ms var(--life-motion-ease) both;
+  }
+  [role='progressbar'] > div {
+    transition: width 350ms var(--life-motion-ease);
+  }
+}
+@keyframes life-native-reveal {
+  from { opacity: .65; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  details[open] > :not(summary) { animation: none !important; }
+  [role='progressbar'] > div { transition: none !important; }
+  input[type='checkbox'], input[type='radio'] { transition: none !important; }
+  input[type='checkbox']:active, input[type='radio']:active { transform: none !important; }
+}
