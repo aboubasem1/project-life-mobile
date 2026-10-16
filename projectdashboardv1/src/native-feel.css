@@ -1,0 +1,46 @@
+/* LifeOS Native Feel — additive motion tokens; existing brand styles remain authoritative. */
+:root {
+  --life-motion-press: 110ms;
+  --life-motion-fast: 180ms;
+  --life-motion-enter: 240ms;
+  --life-motion-ease: cubic-bezier(.22, 1, .36, 1);
+}
+@media (hover: none) and (pointer: coarse) {
+  button:not(:disabled),
+  .primary-button:not(:disabled),
+  .secondary-button:not(:disabled),
+  [role='button']:not([aria-disabled='true']) {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transition-property: transform, background-color, border-color, box-shadow, opacity;
+    transition-duration: var(--life-motion-fast);
+    transition-timing-function: var(--life-motion-ease);
+  }
+  button:not(:disabled):active,
+  .primary-button:not(:disabled):active,
+  .secondary-button:not(:disabled):active,
+  [role='button']:not([aria-disabled='true']):active {
+    transform: scale(.975);
+    transition-duration: var(--life-motion-press);
+  }
+  input, textarea, select { font-size: max(16px, 1em); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .run-stack > .card,
+  .run-stack > section,
+  .run-stack > details {
+    animation: life-native-enter var(--life-motion-enter) var(--life-motion-ease) both;
+  }
+  progress::-webkit-progress-value { transition: width 300ms var(--life-motion-ease); }
+}
+@keyframes life-native-enter {
+  from { opacity: .82; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .run-stack > .card,
+  .run-stack > section,
+  .run-stack > details { animation: none !important; }
+  button, [role='button'], .primary-button, .secondary-button { transition: none !important; }
+  button:active, [role='button']:active, .primary-button:active, .secondary-button:active { transform: none !important; }
+}
