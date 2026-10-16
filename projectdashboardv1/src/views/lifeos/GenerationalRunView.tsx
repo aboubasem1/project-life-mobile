@@ -83,6 +83,7 @@ import type {
 } from '../../lib/generationalRun/types'
 import { nowIso, type KnowledgeItem, type LifeOsState } from '../../lib/lifeos'
 import { Field, LifeOsPage } from './lifeosUi'
+import { BodyEvolutionCard } from '../../components/BodyEvolutionCard'
 
 type SpeechResult = { results: ArrayLike<ArrayLike<{ transcript?: string }>> }
 type SpeechRecognitionInstance = {
@@ -225,6 +226,7 @@ export function GenerationalRunView({
   return (
     <LifeOsPage eyebrow="Arbeitsbereich" title="Generational Run">
       <div className="run-stack">
+        <BodyEvolutionCard records={run.healthPlan.weightPoints.map(point => ({ date: point.date, kg: point.value }))} />
         <section className="card" aria-labelledby="run-priority">
           <h3 id="run-priority">Nächste Priorität</h3>
           <p>{priority.reason}</p>
