@@ -1,3 +1,4 @@
+import './native-feel.css'
 import { Component, StrictMode, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
