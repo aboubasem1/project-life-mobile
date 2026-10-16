@@ -226,7 +226,7 @@ export function GenerationalRunView({
   return (
     <LifeOsPage eyebrow="Arbeitsbereich" title="Generational Run">
       <div className="run-stack">
-        <BodyEvolutionCard records={run.health.weightPoints.map(point => ({ date: point.date, kg: point.value }))} />
+        <BodyEvolutionCard records={run.healthPlan.weightPoints.map(point => ({ date: point.date, kg: point.value }))} />
         <section className="card" aria-labelledby="run-priority">
           <h3 id="run-priority">Nächste Priorität</h3>
           <p>{priority.reason}</p>
