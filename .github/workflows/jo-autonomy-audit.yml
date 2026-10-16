@@ -1,0 +1,38 @@
+name: JO Autonomy Read-Only Audit
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 2 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jo-autonomy-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install root dependencies
+        run: npm ci
+      - name: Install app dependencies
+        run: npm --prefix projectdashboardv1 ci
+      - name: Typecheck
+        run: npm --prefix projectdashboardv1 run typecheck
+      - name: Tests
+        run: npm --prefix projectdashboardv1 test
+      - name: Build
+        run: npm --prefix projectdashboardv1 run build
+      - name: Server build
+        run: npm --prefix projectdashboardv1 run build:server
