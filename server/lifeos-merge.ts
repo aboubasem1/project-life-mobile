@@ -32,6 +32,7 @@ export function mergeLifeOsSnapshots(local: unknown, remote: unknown): unknown {
       ...(isRecord(remote.areaIntentions) ? remote.areaIntentions : {}),
     },
     run: pickNewerRecord(local.run, remote.run),
+    knowledgeReviews: pick('knowledgeReviews'),
   }
 }
 
@@ -48,9 +49,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function mergeById(local: unknown[], remote: unknown[]): unknown[] {
   const map = new Map<string, unknown>()
   for (const item of [...local, ...remote]) {
-    if (!isRecord(item) || typeof item.id !== 'string') continue
-    const current = map.get(item.id)
-    if (!current || later(item, current)) map.set(item.id, item)
+    if (!isRecord(item)) continue
+    const id = typeof item.id === 'string'
+      ? item.id
+      : typeof item.knowledgeId === 'string'
+        ? item.knowledgeId
+        : null
+    if (!id) continue
+    const current = map.get(id)
+    if (!current || later(item, current)) map.set(id, item)
   }
   return [...map.values()]
 }

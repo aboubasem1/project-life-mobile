@@ -1,8 +1,18 @@
 import { useMemo, useState } from 'react'
 import { Plus, Upload } from 'lucide-react'
-import { KNOWLEDGE_TYPE_LABELS, rankKnowledge, suggestRelations, type KnowledgeItem, type KnowledgeType, type Relation } from '../../lib/lifeos'
+import {
+  KNOWLEDGE_TYPE_LABELS,
+  rankKnowledge,
+  suggestRelations,
+  type KnowledgeItem,
+  type KnowledgeReview,
+  type KnowledgeType,
+  type Relation,
+} from '../../lib/lifeos'
 import { Field, LifeAreaSelect, LifeOsEmpty, LifeOsPage } from './lifeosUi'
 import { ReelImportPanel } from './ReelImportPanel'
+import { KnowledgeGraphPanel } from './KnowledgeGraphPanel'
+import { ActiveRecallPanel } from './ActiveRecallPanel'
 import type { KnowledgePublishDraft } from '../../lib/reels'
 
 const ROLE_LABELS: Record<string, string> = {
@@ -23,6 +33,7 @@ const EVIDENCE_LABELS: Record<string, string> = {
 export function KnowledgeView({
   items,
   relations,
+  reviews,
   goals,
   projects,
   decisions,
@@ -34,9 +45,12 @@ export function KnowledgeView({
   onDelete,
   onLink,
   onPublished,
+  onReviewsChange,
+  onOpenEntity,
 }: {
   items: KnowledgeItem[]
   relations: Relation[]
+  reviews: KnowledgeReview[]
   goals: Array<{ id: string; title: string }>
   projects: Array<{ id: string; title: string }>
   decisions: Array<{ id: string; title: string }>
@@ -48,6 +62,8 @@ export function KnowledgeView({
   onDelete: (id: string) => void
   onLink: (id: string, target: { kind: 'project' | 'goal' | 'decision' | 'knowledge'; targetId: string; role?: string }) => void
   onPublished: (drafts: KnowledgePublishDraft[]) => number
+  onReviewsChange: (next: KnowledgeReview[]) => void
+  onOpenEntity: (kind: 'knowledge' | 'goal' | 'project' | 'decision', id: string) => void
 }) {
   const [query, setQuery] = useState('')
   const [linkKind, setLinkKind] = useState<'project' | 'goal' | 'decision' | 'knowledge'>('project')
@@ -115,6 +131,22 @@ export function KnowledgeView({
                   {related.map(item => <li key={`${item.kind}-${item.id}`}>{item.kind}: {item.title}</li>)}
                 </ul>
               )}
+              <details>
+                <summary>Graph</summary>
+                <KnowledgeGraphPanel
+                  focusId={selected.id}
+                  relations={relations}
+                  knowledge={items.map(item => ({ id: item.id, title: item.title }))}
+                  goals={goals}
+                  projects={projects}
+                  decisions={decisions}
+                  onOpen={onOpenEntity}
+                />
+              </details>
+              <details>
+                <summary>Lernen</summary>
+                <ActiveRecallPanel item={selected} reviews={reviews} onChangeReviews={onReviewsChange} />
+              </details>
               <details>
                 <summary>Details</summary>
                 <div className="reel-review-detail">

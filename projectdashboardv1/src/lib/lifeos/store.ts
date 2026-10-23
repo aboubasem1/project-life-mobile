@@ -17,6 +17,7 @@ import {
   type DomainEvent,
   type Insight,
   type KnowledgeItem,
+  type KnowledgeReview,
   type KnowledgeType,
   type LifeOsState,
   type OutboundWebhook,
@@ -99,6 +100,7 @@ export function emptyLifeOsState(): LifeOsState {
     webhookLogs: [],
     areaIntentions: {},
     run: normalizeGenerationalRun(undefined),
+    knowledgeReviews: [],
   }
 }
 
@@ -217,6 +219,27 @@ function normalizeDecisionPreview(raw: unknown): Capture['decisionPreview'] {
     provider,
     items,
     processedAt: isoOrNow(item.processedAt),
+  }
+}
+
+export function normalizeKnowledgeReview(raw: unknown): KnowledgeReview | null {
+  if (!raw || typeof raw !== 'object') return null
+  const item = raw as Partial<KnowledgeReview>
+  const knowledgeId = asString(item.knowledgeId).trim()
+  if (!knowledgeId) return null
+  const lastResult = item.lastResult === 'again' || item.lastResult === 'hard' || item.lastResult === 'good'
+    ? item.lastResult
+    : undefined
+  return {
+    knowledgeId,
+    enabled: item.enabled === true,
+    ease: Math.max(1.3, asNumber(item.ease) ?? 2.3),
+    intervalDays: Math.max(0, Math.floor(asNumber(item.intervalDays) ?? 0)),
+    dueAt: isoOrNow(item.dueAt),
+    streak: Math.max(0, Math.floor(asNumber(item.streak) ?? 0)),
+    repetitions: Math.max(0, Math.floor(asNumber(item.repetitions) ?? 0)),
+    lastResult,
+    updatedAt: isoOrNow(item.updatedAt),
   }
 }
 
@@ -493,6 +516,7 @@ export function normalizeLifeOsState(raw: unknown): LifeOsState {
     webhookLogs: list(item.webhookLogs, normalizeWebhookLog).slice(-MAX_WEBHOOK_LOGS),
     areaIntentions: normalizeAreaIntentions(item.areaIntentions),
     run: normalizeGenerationalRun(item.run),
+    knowledgeReviews: list(item.knowledgeReviews, normalizeKnowledgeReview),
   }
 }
 
@@ -549,7 +573,18 @@ export function mergeLifeOsState(localRaw: unknown, remoteRaw: unknown): LifeOsS
     webhookLogs: mergeByCreatedAt(local.webhookLogs, remote.webhookLogs).slice(-MAX_WEBHOOK_LOGS),
     areaIntentions: { ...local.areaIntentions, ...remote.areaIntentions },
     run: remote.run.updatedAt >= local.run.updatedAt ? remote.run : local.run,
+    knowledgeReviews: mergeKnowledgeReviews(local.knowledgeReviews, remote.knowledgeReviews),
   })
+}
+
+function mergeKnowledgeReviews(local: KnowledgeReview[], remote: KnowledgeReview[]): KnowledgeReview[] {
+  const map = new Map<string, KnowledgeReview>()
+  for (const item of local) map.set(item.knowledgeId, item)
+  for (const item of remote) {
+    const current = map.get(item.knowledgeId)
+    if (!current || item.updatedAt >= current.updatedAt) map.set(item.knowledgeId, item)
+  }
+  return [...map.values()]
 }
 
 export const LIFE_OS_CHANGE_EVENT = 'life-os-life-changed'

@@ -3249,6 +3249,7 @@ function App() {
             <KnowledgeView
               items={lifeOs.state.knowledge}
               relations={lifeOs.state.relations}
+              reviews={lifeOs.state.knowledgeReviews}
               goals={dashboardPlus.goals.map(goal => ({ id: goal.id, title: goal.title }))}
               projects={dashboardPlus.boards.map(board => ({ id: board.id, title: board.label }))}
               decisions={lifeOs.state.decisions.map(decision => ({ id: decision.id, title: decision.title }))}
@@ -3297,6 +3298,13 @@ function App() {
                   toId: target.targetId,
                   role: target.role,
                 }))
+              }}
+              onReviewsChange={next => lifeOs.commit(current => ({ ...current, knowledgeReviews: next }))}
+              onOpenEntity={(kind, id) => {
+                if (kind === 'knowledge') navigateTo('knowledge', id)
+                else if (kind === 'goal') navigateTo('goal', id)
+                else if (kind === 'project') navigateTo('dashboardPlus', id)
+                else navigateTo('decisions', id)
               }}
             />
           )}

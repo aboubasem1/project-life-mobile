@@ -20,6 +20,8 @@ The full transcript stays on the reel record. Knowledge items keep a short summa
 
 Search runs on the device over titles, summaries, topics and text, in German and English. A sync push also refreshes a PostgreSQL full-text index for that room only. Vector search stays off unless pgvector and embeddings are both enabled; until then similar wording is matched by token overlap. Relation suggestions are accepted explicitly and do not replace a life area you set yourself.
 
+Inside a Knowledge item, **Graph** shows nearby relations only (not the whole vault). **Lernen** is opt-in spaced recall for that item and never creates NOW or Gate tasks.
+
 ## Why JEV helps
 
 JEV handles the high-volume, bounded decisions that are cheap to express as choices:

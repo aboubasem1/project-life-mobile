@@ -7051,6 +7051,53 @@ button.status-chip.status-chip--good {
   gap: 16px;
 }
 
+.knowledge-graph {
+  display: grid;
+  gap: 10px;
+}
+
+.knowledge-graph__canvas {
+  width: 100%;
+  max-width: 360px;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 92%, var(--accent) 8%);
+}
+
+.knowledge-graph__edge {
+  stroke: color-mix(in srgb, var(--text-muted) 55%, transparent);
+  stroke-width: 1.5;
+}
+
+.knowledge-graph__edge.is-active {
+  stroke: var(--accent);
+  stroke-width: 2.25;
+}
+
+.knowledge-graph__node {
+  fill: color-mix(in srgb, var(--surface) 70%, var(--text-muted) 30%);
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+
+.knowledge-graph__node.is-knowledge { fill: color-mix(in srgb, var(--accent) 35%, var(--surface)); }
+.knowledge-graph__node.is-goal { fill: color-mix(in srgb, #36b88c 28%, var(--surface)); }
+.knowledge-graph__node.is-project { fill: color-mix(in srgb, #d99a2b 24%, var(--surface)); }
+.knowledge-graph__node.is-decision { fill: color-mix(in srgb, #6a8cff 26%, var(--surface)); }
+.knowledge-graph__node.is-active { stroke: var(--accent); stroke-width: 2.5; }
+
+.knowledge-graph__label {
+  fill: var(--text);
+  font-size: 8px;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .knowledge-graph__edge,
+  .knowledge-graph__node { transition: none; }
+}
+
 /* Reel knowledge inbox: upload, machine triage, then explicit human approval. */
 .reel-import {
   display: grid;

@@ -312,6 +312,18 @@ export type NormalizedObject =
   | { kind: 'activity'; data: Partial<ActivityRecord> & { title: string; date: string } }
   | { kind: 'knowledge'; data: Partial<KnowledgeItem> & { title: string } }
 
+export type KnowledgeReview = {
+  knowledgeId: string
+  enabled: boolean
+  ease: number
+  intervalDays: number
+  dueAt: string
+  streak: number
+  repetitions: number
+  lastResult?: 'again' | 'hard' | 'good'
+  updatedAt: string
+}
+
 export type LifeOsState = {
   version: number
   captures: Capture[]
@@ -328,6 +340,7 @@ export type LifeOsState = {
   webhookLogs: WebhookLog[]
   areaIntentions: Partial<Record<LifeAreaKey, AreaIntention>>
   run: GenerationalRunState
+  knowledgeReviews: KnowledgeReview[]
 }
 
 export type ProjectLike = {
