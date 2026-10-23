@@ -11,6 +11,7 @@ import { mergeBodyMeasurements, mergeHealthIngestState, normalizeBodyMeasurement
 import { applyEventFieldsToEntry, mergeDailyEvents, projectRitualDoneFromEvents } from '../projectdashboardv1/src/lib/dailyEvents.js'
 import { mergeDayJournal, mergeQuickNoteStates, parseQuickNote } from './inbound-note.js'
 import { mergeLifeOsSnapshots } from './lifeos-merge.js'
+import { reindexRoomKnowledge } from './knowledge-index.js'
 import { mergePrivateVaultEnvelopes } from '../projectdashboardv1/src/lib/privateVault.js'
 
 const PAIR_TTL_MS = 30 * 60 * 1000
@@ -285,6 +286,9 @@ export async function pushSyncSnapshot(input: {
   }
   room.updatedAt = updatedAt
   await saveRoom(room)
+  await reindexRoomKnowledge(input.roomId, room.snapshot?.lifeOs).catch(() => {
+    console.info(JSON.stringify({ scope: 'knowledge-index', event: 'reindex_failed', roomId: input.roomId }))
+  })
   return { revision: nextRevision, updatedAt }
 }
 

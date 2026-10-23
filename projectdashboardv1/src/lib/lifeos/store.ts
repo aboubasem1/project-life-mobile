@@ -120,6 +120,22 @@ function asNumber(value: unknown): number | undefined {
   return undefined
 }
 
+function limitedStrings(value: unknown, max: number): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const items = value.map(item => String(item).trim()).filter(Boolean).slice(0, max)
+  return items.length ? items : undefined
+}
+
+function knowledgeEvidence(value: unknown): KnowledgeItem['evidenceStatus'] {
+  return value === 'verified' || value === 'mixed' || value === 'unverified' || value === 'source_only' ? value : undefined
+}
+
+function boundedUnit(value: unknown): number | undefined {
+  const number = asNumber(value)
+  if (number == null) return undefined
+  return Math.min(1, Math.max(0, number))
+}
+
 function pick<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value)
     ? value as T
@@ -222,6 +238,12 @@ export function normalizeKnowledge(raw: unknown): KnowledgeItem | null {
     tags: Array.isArray(item.tags) ? item.tags.map(String).filter(Boolean) : [],
     lifeArea: parseLifeArea(item.lifeArea),
     needKeys: parseNeedKeys(item.needKeys),
+    ideas: limitedStrings(item.ideas, 8),
+    takeaways: limitedStrings(item.takeaways, 8),
+    evidenceStatus: knowledgeEvidence(item.evidenceStatus),
+    confidence: boundedUnit(item.confidence),
+    sourceReelId: asOptionalString(item.sourceReelId),
+    areaLocked: item.areaLocked === true ? true : undefined,
     createdAt: isoOrNow(item.createdAt),
     updatedAt: isoOrNow(item.updatedAt),
   }

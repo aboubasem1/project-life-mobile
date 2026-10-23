@@ -93,6 +93,12 @@ export type KnowledgeItem = {
   tags: string[]
   lifeArea?: LifeAreaKey
   needKeys?: string[]
+  ideas?: string[]
+  takeaways?: string[]
+  evidenceStatus?: 'verified' | 'mixed' | 'unverified' | 'source_only'
+  confidence?: number
+  sourceReelId?: string
+  areaLocked?: boolean
   createdAt: string
   updatedAt: string
 }

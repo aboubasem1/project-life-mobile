@@ -207,6 +207,20 @@ export async function ensureDatabaseSchema(): Promise<void> {
 
     CREATE INDEX IF NOT EXISTS lifeos_reel_jobs_room_created_idx
       ON lifeos_reel_jobs (room_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS lifeos_knowledge_documents (
+      room_id text NOT NULL REFERENCES lifeos_sync_rooms(room_id) ON DELETE CASCADE,
+      knowledge_id text NOT NULL,
+      title text NOT NULL,
+      body text NOT NULL,
+      topics jsonb NOT NULL DEFAULT '[]'::jsonb,
+      source_updated_at text NOT NULL,
+      search_vector tsvector NOT NULL,
+      PRIMARY KEY (room_id, knowledge_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS lifeos_knowledge_documents_search_idx
+      ON lifeos_knowledge_documents USING gin (search_vector);
   `).then(() => undefined).catch(error => {
     schemaPromise = null
     throw error

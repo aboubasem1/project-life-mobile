@@ -11,12 +11,13 @@ import {
   syncError,
   syncJson,
 } from './sync-core.js'
-import { type SyncSnapshot } from './sync-store.js'
+import { type SyncSnapshot, getRoom } from './sync-store.js'
 import { applyInboundConnectorWebhook, dispatchOutboundWebhook } from './lifeos-webhook-core.js'
 import { runDecisionRequest } from './decision-core.js'
 import { runTranscriptionRequest } from './transcription-core.js'
 import { handleStorageRequest } from './storage-api.js'
 import { handleReelRequest } from './reel-api.js'
+import { searchRoomKnowledge } from './knowledge-index.js'
 
 function bearerToken(request: Request): string {
   const header = request.headers.get('authorization') ?? ''
@@ -52,6 +53,15 @@ export async function handleSyncRequest(request: Request): Promise<Response> {
 
     if (pathname.includes('/api/reels')) {
       return await handleReelRequest(request)
+    }
+    if (pathname.endsWith('/api/knowledge/search') && request.method === 'GET') {
+      const roomId = request.headers.get('x-life-os-room')?.trim() ?? ''
+      const token = bearerToken(request) || request.headers.get('x-life-os-token')?.trim() || ''
+      if (!roomId || !token) return syncJson({ error: 'Raum und Token sind nötig.' }, 401)
+      const room = await getRoom(roomId)
+      if (!room) return syncJson({ error: 'Sync-Raum nicht gefunden.' }, 404)
+      if (!room.deviceTokens.includes(token)) return syncJson({ error: 'Gerät nicht mit diesem Sync verbunden.' }, 403)
+      return syncJson({ ok: true, ...(await searchRoomKnowledge(roomId, url.searchParams.get('q') ?? '')) })
     }
 
     const webhookMatch = pathname.match(/\/api\/integrations\/webhooks\/([^/]+)$/)

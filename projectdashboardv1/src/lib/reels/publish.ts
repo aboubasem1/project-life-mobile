@@ -1,4 +1,4 @@
-import { parseLifeArea, type DomainEvent, type KnowledgeItem, type LifeOsState } from '../lifeos'
+import { parseLifeArea, suggestLifeArea, normalizeTopic, type DomainEvent, type KnowledgeItem, type LifeOsState } from '../lifeos'
 import type { KnowledgePublishDraft, ReelCandidate } from './types'
 
 const REVIEWABLE = new Set([
@@ -56,6 +56,8 @@ export function applyPublishedKnowledge(
     }
     const createdAt = iso(draft.createdAt) ?? iso(draft.updatedAt) ?? new Date().toISOString()
     const updatedAt = iso(draft.updatedAt) ?? createdAt
+    const topics = (Array.isArray(draft.topics) ? draft.topics.map(String).filter(Boolean).slice(0, 20) : []).map(topic => normalizeTopic(topic)).filter(Boolean)
+    const evidenceStatus = draft.evidenceLabel
     const item: KnowledgeItem = {
       id,
       title: title.slice(0, 160),
@@ -63,9 +65,17 @@ export function applyPublishedKnowledge(
       summary: (draft.summary || title).slice(0, 500),
       source: (draft.source || 'Instagram Reel').slice(0, 180),
       type: 'video',
-      topics: Array.isArray(draft.topics) ? draft.topics.map(String).filter(Boolean).slice(0, 20) : [],
+      topics,
       tags: [...new Set([...(Array.isArray(draft.tags) ? draft.tags.map(String) : []), reelTag, 'import:reel'])].slice(0, 30),
-      lifeArea: parseLifeArea(draft.lifeArea),
+      lifeArea: parseLifeArea(draft.lifeArea) ?? suggestLifeArea(topics, draft.summary),
+      ideas: (draft.summary || '').split(/[.!?]\s+/).map(part => part.trim()).filter(Boolean).slice(0, 3),
+      takeaways: (draft.content || '').split('\n').flatMap(line => {
+        const text = line.replace(/^- /, '').trim()
+        return text.startsWith('(') ? [text.slice(0, 180)] : []
+      }).slice(0, 4),
+      evidenceStatus,
+      confidence: evidenceStatus === 'verified' ? 0.8 : evidenceStatus === 'source_only' ? 0.3 : 0.45,
+      sourceReelId: reelId,
       createdAt,
       updatedAt,
     }

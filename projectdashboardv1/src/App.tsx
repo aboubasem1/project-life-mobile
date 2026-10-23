@@ -167,6 +167,7 @@ import {
   periodForReviewType,
   relatedIds,
   refreshDecisionStatus,
+  upsertRelation,
   groupByResolvedArea,
   lifeAreaTransitionEvents,
   matchesAreaFilter,
@@ -3244,6 +3245,10 @@ function App() {
           {view === 'knowledge' && (
             <KnowledgeView
               items={lifeOs.state.knowledge}
+              relations={lifeOs.state.relations}
+              goals={dashboardPlus.goals.map(goal => ({ id: goal.id, title: goal.title }))}
+              projects={dashboardPlus.boards.map(board => ({ id: board.id, title: board.label }))}
+              decisions={lifeOs.state.decisions.map(decision => ({ id: decision.id, title: decision.title }))}
               selectedId={lifeOsEntityId}
               related={(lifeOsEntityId ? relatedIds(lifeOs.state, 'knowledge', lifeOsEntityId, 'project') : []).map(id => ({
                 id,
@@ -3282,16 +3287,12 @@ function App() {
                 return created
               }}
               onLink={(id, target) => {
-                lifeOs.commit(current => ({
-                  ...current,
-                  relations: [...current.relations, {
-                    id: createId(),
-                    fromKind: 'knowledge',
-                    fromId: id,
-                    toKind: target.kind,
-                    toId: target.targetId,
-                    createdAt: nowIso(),
-                  }],
+                lifeOs.commit(current => upsertRelation(current, {
+                  fromKind: 'knowledge',
+                  fromId: id,
+                  toKind: target.kind,
+                  toId: target.targetId,
+                  role: target.role,
                 }))
               }}
             />

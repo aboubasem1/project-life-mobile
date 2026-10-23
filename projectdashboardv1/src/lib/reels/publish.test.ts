@@ -54,7 +54,7 @@ describe('published reel knowledge', () => {
     const first = applyPublishedKnowledge(emptyLifeOsState(), [draft])
     const second = applyPublishedKnowledge(first.state, [draft, { ...draft, title: 'Andere Fassung', updatedAt: '2026-10-23T12:00:00.000Z' }])
     expect(first.createdIds).toEqual(['knowledge-1'])
-    expect(first.state.knowledge).toHaveLength(1)
+    expect(first.state.knowledge[0]).toMatchObject({ title: 'Trainingsstart', sourceReelId: 'reel-1', evidenceStatus: 'unverified' })
     expect(first.state.events.map(event => event.id)).toContain('knowledge.created:knowledge-1')
     expect(second.createdIds).toEqual([])
     expect(second.state.knowledge[0]?.title).toBe('Trainingsstart')

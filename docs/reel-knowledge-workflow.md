@@ -18,6 +18,8 @@ LifeOS now has a review-first Reel inbox inside **Knowledge → Reels**.
 
 The full transcript stays on the reel record. Knowledge items keep a short summary, labeled claims, and the tag `reel:<id>`.
 
+Search runs on the device over titles, summaries, topics and text, in German and English. A sync push also refreshes a PostgreSQL full-text index for that room only. Vector search stays off unless pgvector and embeddings are both enabled; until then similar wording is matched by token overlap. Relation suggestions are accepted explicitly and do not replace a life area you set yourself.
+
 ## Why JEV helps
 
 JEV handles the high-volume, bounded decisions that are cheap to express as choices:
