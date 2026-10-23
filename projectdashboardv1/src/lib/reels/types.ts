@@ -1,7 +1,7 @@
 export type ReelStatus =
   | 'UPLOADED' | 'PROCESSING' | 'EXTRACTED' | 'CLASSIFIED' | 'FACT_CHECK_PENDING'
   | 'REVIEW_READY' | 'USER_REVIEWED' | 'APPROVED_CANDIDATE' | 'REJECTED'
-  | 'SOURCE_ONLY' | 'MORE_EVIDENCE' | 'FAILED' | 'DUPLICATE' | 'SUPERSEDED'
+  | 'SOURCE_ONLY' | 'MORE_EVIDENCE' | 'FAILED' | 'DUPLICATE' | 'SUPERSEDED' | 'PUBLISHED'
 
 export type ReelClaim = {
   id: string
@@ -41,6 +41,30 @@ export type ReelCandidate = {
   claims: ReelClaim[]
   createdAt: string
   updatedAt: string
+  knowledgeItemId?: string | null
+  publishedAt?: string | null
+  jobStatus?: 'queued' | 'running' | 'retry' | 'succeeded' | 'dead' | null
+  jobAttempts?: number
+  jobLastError?: string | null
+  jobRunAfter?: string | null
+  backgroundProcessing?: boolean
+}
+
+export type KnowledgePublishDraft = {
+  id: string
+  reelId: string
+  title: string
+  content: string
+  summary: string
+  source: string
+  type: 'video'
+  topics: string[]
+  tags: string[]
+  lifeArea: string
+  createdAt: string
+  updatedAt: string
+  evidenceLabel: 'verified' | 'mixed' | 'unverified' | 'source_only'
+  riskLevel: 'low' | 'medium' | 'high'
 }
 
 export type ReelReviewAction = 'approve_candidate' | 'reject' | 'source_only' | 'more_evidence' | 'reviewed'

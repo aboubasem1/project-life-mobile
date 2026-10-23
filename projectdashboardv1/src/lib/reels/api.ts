@@ -1,5 +1,5 @@
 import { loadSyncCredentials } from '../deviceSync'
-import type { ReelCandidate, ReelReviewAction } from './types'
+import type { KnowledgePublishDraft, ReelCandidate, ReelReviewAction } from './types'
 
 function authHeaders(): Record<string, string> {
   const credentials = loadSyncCredentials()
@@ -59,7 +59,11 @@ function putFile(url: string, headers: Record<string, string>, file: File, onPro
   })
 }
 
-export async function uploadAndRegisterReel(file: File, onProgress: (percent: number) => void): Promise<ReelCandidate> {
+export async function uploadAndRegisterReel(
+  file: File,
+  onProgress: (percent: number) => void,
+  lifeAreas: string[] = [],
+): Promise<{ reel: ReelCandidate; queued: boolean; duplicate: boolean }> {
   const checksumSha256 = await sha256(file)
   const presigned = await apiJson<{
     objectId: string
@@ -87,18 +91,18 @@ export async function uploadAndRegisterReel(file: File, onProgress: (percent: nu
       sizeBytes: file.size,
     }),
   })
-  const registered = await apiJson<{ reel: ReelCandidate }>('/api/reels/register', {
+  const registered = await apiJson<{ reel: ReelCandidate; queued?: boolean; duplicate?: boolean }>('/api/reels/register', {
     method: 'POST',
-    body: JSON.stringify({ objectId: presigned.objectId, checksumSha256 }),
+    body: JSON.stringify({ objectId: presigned.objectId, checksumSha256, lifeAreas }),
   })
-  return registered.reel
+  return { reel: registered.reel, queued: Boolean(registered.queued), duplicate: Boolean(registered.duplicate) }
 }
 
 export async function processReel(reelId: string, lifeAreas: string[]): Promise<ReelCandidate> {
   const result = await apiJson<{ reel: ReelCandidate }>(`/api/reels/${reelId}/process`, {
     method: 'POST',
     body: JSON.stringify({ lifeAreas }),
-  }, 6 * 60_000)
+  })
   return result.reel
 }
 
@@ -131,4 +135,27 @@ export async function reviewReel(input: {
     }),
   })
   return result.reel
+}
+
+export async function publishReel(reel: ReelCandidate, sourceOnly = false): Promise<{ reel: ReelCandidate; knowledge: KnowledgePublishDraft }> {
+  return apiJson(`/api/reels/${reel.id}/publish`, {
+    method: 'POST',
+    body: JSON.stringify({ version: reel.version, sourceOnly }),
+  })
+}
+
+export async function batchReels(input: {
+  action: 'approve_publish' | 'reject' | 'source_only'
+  reels: ReelCandidate[]
+  includeMediumRisk?: boolean
+}): Promise<{ results: Array<{ id: string; ok: boolean; error?: string; reel?: ReelCandidate; knowledge?: KnowledgePublishDraft }> }> {
+  return apiJson('/api/reels/batch', {
+    method: 'POST',
+    body: JSON.stringify({
+      action: input.action,
+      ids: input.reels.map(reel => reel.id),
+      versions: Object.fromEntries(input.reels.map(reel => [reel.id, reel.version])),
+      includeMediumRisk: Boolean(input.includeMediumRisk),
+    }),
+  })
 }

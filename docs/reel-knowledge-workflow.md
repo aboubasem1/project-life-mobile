@@ -4,17 +4,19 @@
 
 LifeOS now has a review-first Reel inbox inside **Knowledge → Reels**.
 
-1. Select up to 50 videos from the Mac file picker.
-2. The browser uploads two at a time directly to the private object store.
-3. The API extracts small mono audio with FFmpeg and transcribes it. If little or no speech is
-   detected, it samples up to six frames and reads visible on-screen text.
+1. Select up to 50 videos from Photos, Files, or the Mac picker. Large files use a smaller round so the phone can finish the transfer.
+2. The browser uploads directly to the private object store. Keep LifeOS open until the transfer reaches 100%.
+3. Registration creates a PostgreSQL job. The API worker transcribes and reviews the video after the upload, even if the phone is locked.
 4. A low-cost model extracts title, summary, topics and atomic claims.
 5. TypeSafe JEV suggests relevance, risk, Life Area and whether the item fits Knowledge,
    a guideline, source-only, or rejection.
 6. Useful claims receive a web evidence check. Provider failures fail closed to
    `REVIEW_REQUIRED`; they never become “true” by default.
 7. The user reviews the transcript, claims, sources, category and notes.
-8. Approval creates only an `APPROVED_CANDIDATE`. Final publishing is deliberately absent.
+8. Low-risk candidates can be approved in a batch. High-risk items stay on the single-item review.
+9. Publishing writes a stable Knowledge draft. The device stores it in the existing LifeOS Knowledge collection and syncs it. The same reel cannot create a second item, and a later publish does not overwrite edits.
+
+The full transcript stays on the reel record. Knowledge items keep a short summary, labeled claims, and the tag `reel:<id>`.
 
 ## Why JEV helps
 
@@ -32,8 +34,9 @@ unavailable, the item is retained as source-only and shown for manual review.
 
 - SHA-256 catches exact duplicates up to 128 MB without an extra dependency. Larger files still
   upload but skip client-side hashing to avoid excessive browser memory.
-- Upload errors remain visible and can be selected again. Failed server processing can be retried.
-- Every registration, processing result and review transition is written to the audit table.
+- Upload errors remain visible and can be selected again. Failed server jobs can be retried; permanent media errors are not retried forever.
+- A crashed worker releases its lock after 25 minutes. Listing reels does not fail a job that is still running.
+- Every registration, processing result, review and publish transition is written to the audit table.
 - Optimistic versions prevent two tabs from silently overwriting the same review.
 - Original videos stay private. The server processes one object in a temporary directory and
   deletes the temporary copy afterwards.
@@ -46,5 +49,8 @@ unavailable, the item is retained as source-only and shown for manual review.
 - `OPENAI_API_KEY` (transcription, extraction, optional evidence search)
 - `TYPESAFE_API_KEY` or `JEV_API_KEY` (JEV triage)
 
-Keep `JEV_AUTO_ACTIONS_ENABLED=false`. See
-[`docs/infrastructure/INTEGRATIONS_SETUP.md`](infrastructure/INTEGRATIONS_SETUP.md) for variables.
+Keep `JEV_AUTO_ACTIONS_ENABLED=false`. The API process starts the reel worker. Useful limits: `REEL_WORKER_CONCURRENCY` (default 1, max 2), `REEL_JOB_MAX_ATTEMPTS` (default 4), `REEL_DAILY_JOB_LIMIT` (default 400), `REEL_WORKER_ENABLED=false` to pause it.
+
+Cost for 300 reels is not a fixed invoice. Each reel spends one transcription call for its audio duration (`gpt-4o-mini-transcribe` unless `TRANSCRIPTION_MODEL` is set), one extraction call (`gpt-4o-mini` unless overridden), optional frame reading, and a fact-check call only when usefulness is at least 40. Multiply the current OpenAI prices for those models by measured minutes and call counts. A retry reuses a saved transcript and completed analysis instead of calling those steps again.
+
+See [`docs/infrastructure/INTEGRATIONS_SETUP.md`](infrastructure/INTEGRATIONS_SETUP.md) for variables.

@@ -1,4 +1,4 @@
-import { Pool, type PoolConfig, type QueryResult, type QueryResultRow } from 'pg'
+import { Pool, type PoolClient, type PoolConfig, type QueryResult, type QueryResultRow } from 'pg'
 
 let pool: Pool | null = null
 let schemaPromise: Promise<void> | null = null
@@ -166,6 +166,47 @@ export async function ensureDatabaseSchema(): Promise<void> {
 
     CREATE INDEX IF NOT EXISTS lifeos_reel_audit_reel_idx
       ON lifeos_reel_audit (reel_id, created_at DESC);
+
+    ALTER TABLE lifeos_reels ADD COLUMN IF NOT EXISTS knowledge_item_id text;
+    ALTER TABLE lifeos_reels ADD COLUMN IF NOT EXISTS published_at timestamptz;
+    ALTER TABLE lifeos_reels ADD COLUMN IF NOT EXISTS publish_snapshot jsonb;
+
+    ALTER TABLE lifeos_reels DROP CONSTRAINT IF EXISTS lifeos_reels_status_check;
+    ALTER TABLE lifeos_reels ADD CONSTRAINT lifeos_reels_status_check CHECK (status IN (
+      'UPLOADED', 'PROCESSING', 'EXTRACTED', 'CLASSIFIED', 'FACT_CHECK_PENDING',
+      'REVIEW_READY', 'USER_REVIEWED', 'APPROVED_CANDIDATE', 'REJECTED',
+      'SOURCE_ONLY', 'MORE_EVIDENCE', 'FAILED', 'DUPLICATE', 'SUPERSEDED', 'PUBLISHED'
+    ));
+
+    CREATE UNIQUE INDEX IF NOT EXISTS lifeos_reels_room_knowledge_idx
+      ON lifeos_reels (room_id, knowledge_item_id)
+      WHERE knowledge_item_id IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS lifeos_reel_jobs (
+      id uuid PRIMARY KEY,
+      reel_id uuid NOT NULL REFERENCES lifeos_reels(id) ON DELETE CASCADE,
+      room_id text NOT NULL,
+      status text NOT NULL CHECK (status IN ('queued', 'running', 'retry', 'succeeded', 'dead')),
+      attempts integer NOT NULL DEFAULT 0,
+      max_attempts integer NOT NULL DEFAULT 4,
+      run_after timestamptz NOT NULL DEFAULT now(),
+      locked_at timestamptz,
+      locked_by text,
+      last_error text,
+      life_areas jsonb NOT NULL DEFAULT '[]'::jsonb,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS lifeos_reel_jobs_claim_idx
+      ON lifeos_reel_jobs (run_after, created_at)
+      WHERE status IN ('queued', 'retry', 'running');
+
+    CREATE INDEX IF NOT EXISTS lifeos_reel_jobs_reel_idx
+      ON lifeos_reel_jobs (reel_id, created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS lifeos_reel_jobs_room_created_idx
+      ON lifeos_reel_jobs (room_id, created_at DESC);
   `).then(() => undefined).catch(error => {
     schemaPromise = null
     throw error
@@ -180,6 +221,28 @@ export async function databaseQuery<T extends QueryResultRow = QueryResultRow>(
 ): Promise<QueryResult<T>> {
   await ensureDatabaseSchema()
   return databasePool().query<T>(text, values)
+}
+
+export type SqlQuery = <T extends QueryResultRow = QueryResultRow>(
+  text: string,
+  values?: unknown[],
+) => Promise<QueryResult<T>>
+
+export async function databaseTransaction<T>(fn: (query: SqlQuery, client: PoolClient) => Promise<T>): Promise<T> {
+  await ensureDatabaseSchema()
+  const client = await databasePool().connect()
+  const query: SqlQuery = (text, values = []) => client.query(text, values)
+  try {
+    await client.query('BEGIN')
+    const result = await fn(query, client)
+    await client.query('COMMIT')
+    return result
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined)
+    throw error
+  } finally {
+    client.release()
+  }
 }
 
 export async function probeDatabase(): Promise<{

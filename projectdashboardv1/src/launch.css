@@ -7091,6 +7091,52 @@ button.status-chip.status-chip--good {
   font-size: .83rem;
 }
 
+.reel-import__steps span.is-current { border-color: var(--accent); }
+
+.reel-import__notice {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.reel-import__filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.reel-import__filters .small-button.is-active { border-color: var(--accent); }
+.reel-touch { min-height: 44px; }
+.reel-medium-toggle { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.reel-review-item { min-height: 44px; }
+.reel-review-open {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+.reel-review-open strong,
+.reel-review-open small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reel-review-open small { color: var(--text-muted); }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reel-import__steps span,
+  .reel-upload-row,
+  .reel-review-item { transition: none; }
+}
+
 .reel-import__steps b {
   display: inline-grid;
   place-items: center;

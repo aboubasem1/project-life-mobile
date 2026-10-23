@@ -205,6 +205,7 @@ import { InboxView } from './views/lifeos/InboxView'
 import { InsightsView } from './views/lifeos/InsightsView'
 import { IntegrationsView } from './views/lifeos/IntegrationsView'
 import { KnowledgeView } from './views/lifeos/KnowledgeView'
+import { applyPublishedKnowledge } from './lib/reels'
 import { ProjectDetailView } from './views/lifeos/ProjectDetailView'
 import { ReviewView } from './views/lifeos/ReviewView'
 import { SignalsView } from './views/lifeos/SignalsView'
@@ -3271,6 +3272,15 @@ function App() {
                 }))
               }}
               onDelete={id => lifeOs.commit(current => ({ ...current, knowledge: current.knowledge.filter(item => item.id !== id) }))}
+              onPublished={drafts => {
+                let created = 0
+                lifeOs.commit(current => {
+                  const applied = applyPublishedKnowledge(current, drafts)
+                  created = applied.createdIds.length
+                  return applied.state
+                })
+                return created
+              }}
               onLink={(id, target) => {
                 lifeOs.commit(current => ({
                   ...current,

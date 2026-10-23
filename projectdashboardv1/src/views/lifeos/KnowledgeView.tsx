@@ -3,6 +3,7 @@ import { Plus, Upload } from 'lucide-react'
 import { KNOWLEDGE_TYPE_LABELS, type KnowledgeItem, type KnowledgeType } from '../../lib/lifeos'
 import { Field, LifeAreaSelect, LifeOsEmpty, LifeOsPage } from './lifeosUi'
 import { ReelImportPanel } from './ReelImportPanel'
+import type { KnowledgePublishDraft } from '../../lib/reels'
 
 export function KnowledgeView({
   items,
@@ -13,6 +14,7 @@ export function KnowledgeView({
   onChange,
   onDelete,
   onLink,
+  onPublished,
 }: {
   items: KnowledgeItem[]
   selectedId?: string
@@ -22,6 +24,7 @@ export function KnowledgeView({
   onChange: (id: string, patch: Partial<KnowledgeItem>) => void
   onDelete: (id: string) => void
   onLink: (id: string, target: { kind: 'project' | 'goal' | 'decision' | 'knowledge'; targetId: string }) => void
+  onPublished: (drafts: KnowledgePublishDraft[]) => number
 }) {
   const selected = items.find(item => item.id === selectedId) ?? items[0] ?? null
   const [linkKind, setLinkKind] = useState<'project' | 'goal' | 'decision' | 'knowledge'>('project')
@@ -33,11 +36,11 @@ export function KnowledgeView({
       eyebrow="Learn"
       title="Knowledge"
       action={<div className="lifeos-inline">
-        <button type="button" className="small-button" onClick={() => setShowReelImport(current => !current)}><Upload size={14} /> Reels</button>
+        <button type="button" className="small-button" onClick={() => setShowReelImport(current => !current)}><Upload size={14} /> Reels importieren</button>
         <button type="button" className="small-button" onClick={() => onCreate()}><Plus size={14} /> Eintrag</button>
       </div>}
     >
-      {showReelImport && <ReelImportPanel onClose={() => setShowReelImport(false)} />}
+      {showReelImport && <ReelImportPanel onClose={() => setShowReelImport(false)} onPublished={onPublished} />}
       {items.length === 0 ? (
         <section className="card">
           <LifeOsEmpty title="Noch kein Wissen" text="Gedanken, Artikel, Videos, Bücher — Beziehungen zuerst, Graph später." />
