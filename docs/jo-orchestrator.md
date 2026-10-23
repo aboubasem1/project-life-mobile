@@ -7,7 +7,7 @@ Jo distinguishes:
 | Route | Meaning | Status |
 |---|---|---|
 | CAPTURE | Log data | IMPLEMENTED (existing decision engine) |
-| QUERY | Ask about history | PARTIAL (classified; answers still via existing surfaces) |
+| QUERY | Ask about history / Knowledge | IMPLEMENTED (retrieval over LifeOS Knowledge with source refs) |
 | CHANGE | System change intent | IMPLEMENTED |
 | SUGGEST | Ask for improvement ideas | PARTIAL (classified + adaptation suggestions) |
 | EXPERIMENT | Temporary variant | IMPLEMENTED (engine; Jo can open experiment hypothesis) |

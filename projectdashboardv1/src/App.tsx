@@ -230,6 +230,8 @@ import {
   undoSystemChange,
   type JoChangeSession,
 } from './lib/adaptive-core/jo/system-change'
+import { tryAnswerKnowledgeQuery, type KnowledgeQueryAnswer } from './lib/adaptive-core/jo/knowledge-query'
+import { KnowledgeAnswerSheet } from './components/KnowledgeAnswerSheet'
 import { emitAdaptiveEvent } from './lib/adaptive-core/events/store'
 import {
   assessDailyProgress,
@@ -1483,6 +1485,7 @@ function App() {
   const [labDataSection, setLabDataSection] = useState<LabDataSection>(() => labDataSectionFromHash())
   const [joChangeSession, setJoChangeSession] = useState<JoChangeSession>(null)
   const [joChangePhase, setJoChangePhase] = useState<'preview' | 'applied' | 'code' | 'error'>('preview')
+  const [joKnowledgeAnswer, setJoKnowledgeAnswer] = useState<{ question: string; answer: KnowledgeQueryAnswer } | null>(null)
   const [lastAppliedHistoryId, setLastAppliedHistoryId] = useState<string | null>(null)
   const [adaptiveDevMode] = useState(() => {
     try {
@@ -3588,6 +3591,29 @@ function App() {
               setCapturePreset('')
               return undefined
             }
+            const knowledgeSession = tryAnswerKnowledgeQuery({
+              text: input.content,
+              knowledge: lifeOs.state.knowledge.map(item => ({
+                id: item.id,
+                title: item.title,
+                summary: item.summary,
+                content: item.content,
+                topics: item.topics,
+                tags: item.tags,
+                source: item.source,
+                lifeArea: item.lifeArea,
+                areaLocked: item.areaLocked,
+                updatedAt: item.updatedAt,
+                evidenceStatus: item.evidenceStatus,
+              })),
+              goals: dashboardPlus.goals.map(goal => ({ id: goal.id, title: goal.title })),
+            })
+            if (knowledgeSession) {
+              setJoKnowledgeAnswer({ question: input.content, answer: knowledgeSession.answer })
+              setCaptureOpen(false)
+              setCapturePreset('')
+              return undefined
+            }
             const batch = await decideCaptureInput({
               source: input.source,
               content: input.content,
@@ -3614,6 +3640,29 @@ function App() {
                       ? 'error'
                       : 'preview',
                 )
+                setCaptureOpen(false)
+                setCapturePreset('')
+                return
+              }
+              const knowledgeSession = tryAnswerKnowledgeQuery({
+                text: input.raw,
+                knowledge: lifeOs.state.knowledge.map(item => ({
+                  id: item.id,
+                  title: item.title,
+                  summary: item.summary,
+                  content: item.content,
+                  topics: item.topics,
+                  tags: item.tags,
+                  source: item.source,
+                  lifeArea: item.lifeArea,
+                  areaLocked: item.areaLocked,
+                  updatedAt: item.updatedAt,
+                  evidenceStatus: item.evidenceStatus,
+                })),
+                goals: dashboardPlus.goals.map(goal => ({ id: goal.id, title: goal.title })),
+              })
+              if (knowledgeSession) {
+                setJoKnowledgeAnswer({ question: input.raw, answer: knowledgeSession.answer })
                 setCaptureOpen(false)
                 setCapturePreset('')
                 return
@@ -3711,6 +3760,18 @@ function App() {
             setJoChangeSession(null)
             setJoChangePhase('preview')
             showToast('Änderung rückgängig gemacht')
+          }}
+        />
+      )}
+
+      {joKnowledgeAnswer && (
+        <KnowledgeAnswerSheet
+          question={joKnowledgeAnswer.question}
+          answer={joKnowledgeAnswer.answer}
+          onClose={() => setJoKnowledgeAnswer(null)}
+          onOpenSource={id => {
+            setJoKnowledgeAnswer(null)
+            navigateTo('knowledge', id)
           }}
         />
       )}
