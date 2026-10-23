@@ -66,9 +66,13 @@ export async function uploadLifeOsFile(
   const controller = new AbortController()
   const timer = window.setTimeout(() => controller.abort(), 90_000)
   try {
+    const absolute = new URL(presigned.uploadUrl, window.location.origin)
+    const headers = absolute.origin === window.location.origin
+      ? { ...presigned.uploadHeaders, ...authHeaders() }
+      : { ...presigned.uploadHeaders }
     const response = await fetch(presigned.uploadUrl, {
       method: 'PUT',
-      headers: presigned.uploadHeaders,
+      headers,
       body: file,
       signal: controller.signal,
     })

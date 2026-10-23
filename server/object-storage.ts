@@ -228,13 +228,18 @@ export async function createPresignedDownload(input: {
 export async function putStoredObject(input: {
   storageKey: string
   contentType: string
-  body: Uint8Array
+  body: Uint8Array | Readable
+  contentLength?: number
 }): Promise<void> {
   if (usesLocalObjectStorage()) {
     const target = localPath(input.storageKey)
     const temporary = `${target}.${randomUUID()}.tmp`
     await mkdir(dirname(target), { recursive: true })
-    await writeFile(temporary, input.body, { mode: 0o600 })
+    if (input.body instanceof Uint8Array) {
+      await writeFile(temporary, input.body, { mode: 0o600 })
+    } else {
+      await pipeline(input.body, createWriteStream(temporary, { mode: 0o600 }))
+    }
     await rename(temporary, target)
     await writeFile(localMetadataPath(input.storageKey), JSON.stringify({ contentType: input.contentType }), { mode: 0o600 })
     return
@@ -244,6 +249,7 @@ export async function putStoredObject(input: {
     Key: input.storageKey,
     ContentType: input.contentType,
     Body: input.body,
+    ...(typeof input.contentLength === 'number' ? { ContentLength: input.contentLength } : {}),
   }))
 }
 

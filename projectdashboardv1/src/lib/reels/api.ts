@@ -41,11 +41,23 @@ async function sha256(file: File): Promise<string | null> {
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
 }
 
+function sameOriginUploadHeaders(url: string, headers: Record<string, string>): Record<string, string> {
+  try {
+    const absolute = new URL(url, window.location.origin)
+    if (absolute.origin === window.location.origin) return { ...headers, ...authHeaders() }
+  } catch {
+    // Fall through to the provided headers (e.g. signed R2 / local URLs).
+  }
+  return headers
+}
+
 function putFile(url: string, headers: Record<string, string>, file: File, onProgress: (percent: number) => void): Promise<void> {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest()
     request.open('PUT', url)
-    for (const [name, value] of Object.entries(headers)) request.setRequestHeader(name, value)
+    for (const [name, value] of Object.entries(sameOriginUploadHeaders(url, headers))) {
+      request.setRequestHeader(name, value)
+    }
     request.timeout = 10 * 60_000
     request.upload.onprogress = event => {
       if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100))

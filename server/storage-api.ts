@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { Readable } from 'node:stream'
 import { databaseConfigured, databaseQuery } from './database.js'
 import {
   createObjectKey,
@@ -9,6 +10,8 @@ import {
   normalizeContentType,
   objectStorageConfigured,
   parseObjectCategory,
+  putStoredObject,
+  usesLocalObjectStorage,
 } from './object-storage.js'
 import { SyncHttpError, readSyncJson, syncJson } from './sync-core.js'
 import { getRoom } from './sync-store.js'
@@ -136,6 +139,21 @@ async function presignUpload(request: Request): Promise<Response> {
     `, [objectId, roomId, category, storageKey, fileName, contentType, sizeBytes, checksumSha256])
   }
 
+  // R2 presigned PUTs fail in Safari/iPhone without bucket CORS. Prefer a same-origin
+  // authenticated proxy so the browser never talks to Cloudflare directly.
+  if (!usesLocalObjectStorage()) {
+    const origin = new URL(request.url).origin
+    return syncJson({
+      ok: true,
+      objectId,
+      storageKey,
+      uploadUrl: `${origin}/api/storage/proxy-upload?objectId=${encodeURIComponent(objectId)}`,
+      uploadHeaders: { 'Content-Type': contentType },
+      expiresIn: 10 * 60,
+      uploadVia: 'proxy',
+    })
+  }
+
   const signed = await createPresignedUpload({ storageKey, contentType })
   return syncJson({
     ok: true,
@@ -144,7 +162,47 @@ async function presignUpload(request: Request): Promise<Response> {
     uploadUrl: signed.url,
     uploadHeaders: signed.headers,
     expiresIn: signed.expiresIn,
+    uploadVia: 'direct',
   })
+}
+
+async function proxyUpload(request: Request): Promise<Response> {
+  requireStorage()
+  if (usesLocalObjectStorage()) {
+    throw new SyncHttpError(400, 'Proxy-Upload ist nur für R2 nötig.')
+  }
+  if (!databaseConfigured()) {
+    throw new SyncHttpError(503, 'Dateispeicher-Datenbank fehlt.')
+  }
+  const roomId = await authorizeRoom(request)
+  const objectId = normalizeObjectId(new URL(request.url).searchParams.get('objectId'))
+  const result = await databaseQuery<StoredObjectRow>(`
+    SELECT * FROM lifeos_objects WHERE id = $1 AND room_id = $2 LIMIT 1
+  `, [objectId, roomId])
+  const object = result.rows[0]
+  if (!object) throw new SyncHttpError(404, 'Upload-Ziel nicht gefunden.')
+  if (object.status === 'ready') return new Response(null, { status: 204 })
+  assertStorageKeyForRoom(object.storage_key, roomId)
+
+  const expectedSize = Number(object.size_bytes)
+  const contentLengthHeader = request.headers.get('content-length')
+  if (contentLengthHeader) {
+    const contentLength = Number(contentLengthHeader)
+    if (!Number.isSafeInteger(contentLength) || contentLength !== expectedSize) {
+      throw new SyncHttpError(409, 'Hochgeladene Dateigröße stimmt nicht überein.')
+    }
+  }
+  if (!request.body) throw new SyncHttpError(400, 'Upload-Inhalt fehlt.')
+
+  const contentType = normalizeContentType(request.headers.get('content-type') || object.content_type)
+  const body = Readable.fromWeb(request.body as import('node:stream/web').ReadableStream)
+  await putStoredObject({
+    storageKey: object.storage_key,
+    contentType,
+    body,
+    contentLength: expectedSize,
+  })
+  return new Response(null, { status: 204 })
 }
 
 async function completeUpload(request: Request): Promise<Response> {
@@ -268,6 +326,9 @@ export async function handleStorageRequest(request: Request): Promise<Response> 
     const url = new URL(request.url)
     const pathname = url.pathname.replace(/\/$/, '')
     if (pathname.endsWith('/api/storage/local')) return await handleSignedLocalObject(request)
+    if (pathname.endsWith('/api/storage/proxy-upload') && request.method === 'PUT') {
+      return await proxyUpload(request)
+    }
     const operation = url.searchParams.get('operation') ?? pathname.split('/').pop() ?? ''
 
     if (operation === 'presign-upload' && request.method === 'POST') {
