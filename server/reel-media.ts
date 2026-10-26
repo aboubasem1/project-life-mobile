@@ -7,12 +7,13 @@ function runFfmpeg(inputPath: string, outputPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn('ffmpeg', [
       '-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
+      '-protocol_whitelist', 'file,pipe', '-format_whitelist', 'mov,matroska,webm',
       '-i', inputPath,
       '-vn', '-ac', '1', '-ar', '16000', '-b:a', '32k',
       outputPath,
-    ], { stdio: ['ignore', 'ignore', 'pipe'] })
+    ], { stdio: ['ignore', 'ignore', 'pipe'], timeout: 120_000, killSignal: 'SIGKILL' })
     let errorText = ''
-    child.stderr.on('data', chunk => { errorText += String(chunk).slice(0, 2000) })
+    child.stderr.on('data', chunk => { errorText = (errorText + String(chunk)).slice(0, 2000) })
     child.on('error', error => reject(error))
     child.on('close', code => code === 0 ? resolve() : reject(new Error(errorText || `ffmpeg exit ${code}`)))
   })
@@ -37,10 +38,12 @@ export async function extractReelFrames(inputPath: string, outputDirectory: stri
     await new Promise<void>((resolve, reject) => {
       const child = spawn('ffmpeg', [
         '-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
-        '-i', inputPath,
-        '-vf', 'fps=1/8,scale=720:-2', '-frames:v', '6', '-q:v', '5',
+        '-protocol_whitelist', 'file,pipe', '-format_whitelist', 'mov,matroska,webm',
+      '-i', inputPath,
+        '-vf', 'fps=1/8:start_time=0:round=up,scale=720:-2', '-frames:v', '6', '-q:v', '5',
         outputPattern,
-      ], { stdio: ['ignore', 'ignore', 'pipe'] })
+      ], { stdio: ['ignore', 'ignore', 'pipe'], timeout: 120_000, killSignal: 'SIGKILL' })
+      child.stderr.resume()
       child.on('error', reject)
       child.on('close', code => code === 0 ? resolve() : reject(new Error(`ffmpeg exit ${code}`)))
     })

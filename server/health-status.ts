@@ -1,3 +1,5 @@
+import { workerAvailable } from './reel-jobs.js'
+import { databaseConfigured } from './database.js'
 import { objectStorageConfigured, probeObjectStorage } from './object-storage.js'
 import { probeSyncStorage } from './sync-store.js'
 
@@ -13,6 +15,7 @@ export async function buildHealthStatus(): Promise<{
   database: { status: 'ok' | 'not_configured' | 'error' }
   objectStorage: { status: 'ok' | 'not_configured' | 'error' }
   time: string
+  reelWorker: { available: boolean }
 }> {
   const [sync, objects] = await Promise.all([
     probeSyncStorage(),
@@ -31,5 +34,6 @@ export async function buildHealthStatus(): Promise<{
       : { status: 'not_configured' },
     objectStorage: { status: objects.status },
     time: new Date().toISOString(),
+    reelWorker: { available: databaseConfigured() ? await workerAvailable().catch(() => false) : false },
   }
 }

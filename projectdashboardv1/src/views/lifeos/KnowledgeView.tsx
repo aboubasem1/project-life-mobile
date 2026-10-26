@@ -1,3 +1,4 @@
+import { ReelSourceDetails } from './ReelSourceDetails'
 import { useState } from 'react'
 import { Plus, Upload } from 'lucide-react'
 import { KNOWLEDGE_TYPE_LABELS, type KnowledgeItem, type KnowledgeType } from '../../lib/lifeos'
@@ -33,7 +34,7 @@ export function KnowledgeView({
       eyebrow="Learn"
       title="Knowledge"
       action={<div className="lifeos-inline">
-        <button type="button" className="small-button" onClick={() => setShowReelImport(current => !current)}><Upload size={14} /> Reels</button>
+        <button type="button" className="small-button" onClick={() => setShowReelImport(current => !current)}><Upload size={14} /> Reels importieren</button>
         <button type="button" className="small-button" onClick={() => onCreate()}><Plus size={14} /> Eintrag</button>
       </div>}
     >
@@ -59,6 +60,10 @@ export function KnowledgeView({
           </section>
           {selected && (
             <section className="card">
+              {selected.reelSource && <>
+                <p>{selected.reelSource.evidence === 'supported' ? 'Quellenaussagen mit Belegen' : 'Quellenaussagen – nicht vollständig verifiziert'}</p>
+                <ReelSourceDetails key={selected.reelSource.reelId} reelId={selected.reelSource.reelId} />
+              </>}
               <Field label="Titel">
                 <input value={selected.title} onChange={event => onChange(selected.id, { title: event.target.value })} />
               </Field>

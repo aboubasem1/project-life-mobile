@@ -1,4 +1,9 @@
-import { randomUUID } from 'node:crypto'
+import { LIFE_AREAS } from '../projectdashboardv1/src/lib/lifeos/areas.js'
+import { publishReel } from './reel-publication.js'
+import type { PoolClient } from 'pg'
+import { enqueueReel, workerAvailable } from './reel-jobs.js'
+import { randomUUID, createHash } from 'node:crypto'
+import { createReadStream } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -45,6 +50,9 @@ type ReelRow = {
   original_name?: string
   content_type?: string
   size_bytes?: number | string
+  published_id?: string
+  job_state?: string
+  job_available_at?: Date | string
   claims?: unknown
 }
 
@@ -103,6 +111,9 @@ function reelJson(row: ReelRow): Record<string, unknown> {
   const analysis = row.analysis && typeof row.analysis === 'object' ? row.analysis as Record<string, unknown> : {}
   return {
     id: row.id,
+    publishedId: row.published_id,
+    jobState: row.job_state,
+    jobAvailableAt: row.job_available_at ? new Date(row.job_available_at).toISOString() : undefined,
     objectId: row.object_id,
     checksumSha256: row.checksum_sha256,
     status: row.status,
@@ -147,9 +158,11 @@ async function audit(input: {
   `, [input.reelId, input.roomId, input.action, input.from ?? null, input.to ?? null, JSON.stringify(input.details ?? {})])
 }
 
-async function findReel(roomId: string, reelId: string): Promise<ReelRow> {
-  const result = await databaseQuery<ReelRow>(`
-    SELECT r.*, o.original_name, o.content_type, o.size_bytes,
+async function findReel(roomId: string, reelId: string, query = databaseQuery): Promise<ReelRow> {
+  const result = await query<ReelRow>(`
+    SELECT r.*, (SELECT knowledge_id FROM lifeos_reel_publications p WHERE p.reel_id=r.id) AS published_id,
+      (SELECT state FROM lifeos_reel_jobs j WHERE j.reel_id=r.id) AS job_state,
+      (SELECT available_at FROM lifeos_reel_jobs j WHERE j.reel_id=r.id) AS job_available_at, o.original_name, o.content_type, o.size_bytes,
       COALESCE((
         SELECT jsonb_agg(jsonb_build_object(
           'id', c.id,
@@ -174,17 +187,21 @@ async function findReel(roomId: string, reelId: string): Promise<ReelRow> {
 }
 
 async function registerReel(request: Request, roomId: string): Promise<Response> {
-  const body = await readSyncJson<{ objectId?: unknown; checksumSha256?: unknown }>(request)
+  const body = await readSyncJson<{ objectId?: unknown; checksumSha256?: unknown; lifeAreas?: unknown }>(request)
   const objectId = uuid(body.objectId, 'Datei-ID')
-  const objectResult = await databaseQuery<{ checksum_sha256: string | null; status: string }>(`
-    SELECT checksum_sha256, status FROM lifeos_objects WHERE id = $1 AND room_id = $2 LIMIT 1
+  const objectResult = await databaseQuery<{ checksum_sha256: string | null; status: string; content_type: string; size_bytes: number }>(`
+    SELECT checksum_sha256, status, content_type, size_bytes FROM lifeos_objects WHERE id = $1 AND room_id = $2 LIMIT 1
   `, [objectId, roomId])
   const object = objectResult.rows[0]
   if (!object || object.status !== 'ready') throw new SyncHttpError(409, 'Upload ist noch nicht vollständig.')
+  if (!object.content_type.startsWith('video/') || Number(object.size_bytes) <= 0 || Number(object.size_bytes) > 512 * 1024 * 1024) throw new SyncHttpError(415, 'Bitte eine unterstützte Videodatei bis 512 MB wählen.')
   const checksum = optionalChecksum(body.checksumSha256) || object.checksum_sha256
 
   const existingObject = await databaseQuery<ReelRow>('SELECT * FROM lifeos_reels WHERE object_id = $1 AND room_id = $2 LIMIT 1', [objectId, roomId])
-  if (existingObject.rows[0]) return syncJson({ ok: true, duplicate: false, reel: reelJson(await findReel(roomId, existingObject.rows[0].id)) })
+  if (existingObject.rows[0]) {
+    await enqueueReel(existingObject.rows[0].id, roomId, stringList(body.lifeAreas, 50))
+    return syncJson({ ok: true, duplicate: false, reel: reelJson(await findReel(roomId, existingObject.rows[0].id)) })
+  }
 
   let duplicateOf: ReelRow | undefined
   if (checksum) {
@@ -198,26 +215,28 @@ async function registerReel(request: Request, roomId: string): Promise<Response>
 
   const reelId = randomUUID()
   const status: ReelStatus = duplicateOf ? 'DUPLICATE' : 'UPLOADED'
-  await databaseQuery(`
-    INSERT INTO lifeos_reels (id, room_id, object_id, checksum_sha256, status, analysis)
-    VALUES ($1, $2, $3, $4, $5, $6::jsonb)
-  `, [reelId, roomId, objectId, checksum, status, JSON.stringify(duplicateOf ? { duplicateOf: duplicateOf.id } : {})])
-  await audit({ reelId, roomId, action: duplicateOf ? 'duplicate_detected' : 'registered', to: status, details: duplicateOf ? { duplicateOf: duplicateOf.id } : {} })
+  const inserted = await databaseQuery<{ id: string }>(`
+    WITH inserted AS (
+      INSERT INTO lifeos_reels (id, room_id, object_id, checksum_sha256, status, analysis)
+      VALUES ($1,$2,$3,$4,$5,$6::jsonb) ON CONFLICT DO NOTHING RETURNING id, room_id, status
+    ), queued AS (
+      INSERT INTO lifeos_reel_jobs (reel_id,room_id,life_areas)
+      SELECT id,room_id,$7::jsonb FROM inserted WHERE status='UPLOADED'
+    ) SELECT id FROM inserted
+  `, [reelId, roomId, objectId, checksum, status, JSON.stringify(duplicateOf ? { duplicateOf: duplicateOf.id } : {}), JSON.stringify(stringList(body.lifeAreas, 50))])
+  if (!inserted.rows[0]) {
+    const existing = await databaseQuery<{ id: string }>(`SELECT id FROM lifeos_reels WHERE room_id=$1 AND
+      (object_id=$2 OR (checksum_sha256=$3 AND status NOT IN ('DUPLICATE','SUPERSEDED'))) LIMIT 1`, [roomId, objectId, checksum])
+    if (!existing.rows[0]) throw new SyncHttpError(409, 'Registrierung bitte erneut versuchen.')
+    return syncJson({ ok: true, duplicate: true, reel: reelJson(await findReel(roomId, existing.rows[0].id)) })
+  }
+  await audit({ reelId, roomId, action: duplicateOf ? 'duplicate_detected' : 'registered', to: status })
   return syncJson({ ok: true, duplicate: Boolean(duplicateOf), reel: reelJson(await findReel(roomId, reelId)) })
 }
 
 async function listReels(url: URL, roomId: string): Promise<Response> {
-  const stale = await databaseQuery<{ id: string }>(`
-    UPDATE lifeos_reels SET status = 'FAILED', error_message = 'Verarbeitung wurde unterbrochen und kann erneut gestartet werden.',
-      updated_at = now(), version = version + 1
-    WHERE room_id = $1 AND status = 'PROCESSING' AND updated_at < now() - interval '20 minutes'
-    RETURNING id
-  `, [roomId])
-  for (const reel of stale.rows) {
-    await audit({ reelId: reel.id, roomId, action: 'stale_processing_recovered', from: 'PROCESSING', to: 'FAILED' })
-  }
   const status = url.searchParams.get('status')?.trim() || ''
-  const limit = Math.min(300, Math.max(1, Number(url.searchParams.get('limit')) || 100))
+  const limit = Math.min(1000, Math.max(1, Number(url.searchParams.get('limit')) || 100))
   const values: unknown[] = [roomId, limit]
   let statusSql = ''
   if (status) {
@@ -225,7 +244,9 @@ async function listReels(url: URL, roomId: string): Promise<Response> {
     statusSql = `AND r.status = $${values.length}`
   }
   const result = await databaseQuery<ReelRow>(`
-    SELECT r.*, o.original_name, o.content_type, o.size_bytes,
+    SELECT r.*, (SELECT knowledge_id FROM lifeos_reel_publications p WHERE p.reel_id=r.id) AS published_id,
+      (SELECT state FROM lifeos_reel_jobs j WHERE j.reel_id=r.id) AS job_state,
+      (SELECT available_at FROM lifeos_reel_jobs j WHERE j.reel_id=r.id) AS job_available_at, o.original_name, o.content_type, o.size_bytes,
       COALESCE((SELECT jsonb_agg(jsonb_build_object(
         'id', c.id, 'position', c.position, 'text', c.claim_text, 'type', c.claim_type,
         'verificationStatus', c.verification_status, 'confidence', c.confidence,
@@ -235,42 +256,56 @@ async function listReels(url: URL, roomId: string): Promise<Response> {
     WHERE r.room_id = $1 ${statusSql}
     ORDER BY r.created_at DESC LIMIT $2
   `, values)
-  return syncJson({ ok: true, reels: result.rows.map(reelJson) })
+  return syncJson({ ok: true, reels: result.rows.map(row => ({ ...reelJson(row), transcript: '', onScreenText: '' })), workerAvailable: await workerAvailable() })
 }
 
-async function processReel(request: Request, roomId: string, reelId: string): Promise<Response> {
-  const body = await readSyncJson<{ lifeAreas?: unknown }>(request)
-  const lifeAreas = stringList(body.lifeAreas, 50)
-  const current = await findReel(roomId, reelId)
-  if (current.status === 'DUPLICATE') throw new SyncHttpError(409, 'Duplikate werden nicht erneut verarbeitet.')
-  const staleProcessing = current.status === 'PROCESSING'
-    && Date.now() - new Date(current.updated_at).getTime() > 20 * 60_000
-  if (current.status === 'PROCESSING' && !staleProcessing) throw new SyncHttpError(409, 'Reel wird bereits verarbeitet.')
-  if (!['UPLOADED', 'FAILED', 'MORE_EVIDENCE'].includes(current.status) && !staleProcessing) {
-    return syncJson({ ok: true, reel: reelJson(current) })
-  }
-
-  const locked = await databaseQuery<ReelRow>(`
+export async function runReelJob(job: { room_id: string; reel_id: string; life_areas: string[] }, client: PoolClient): Promise<void> {
+  const roomId = job.room_id
+  const reelId = job.reel_id
+  const lifeAreas = job.life_areas.length ? job.life_areas : LIFE_AREAS.map(a => a.key)
+  const query: typeof databaseQuery = (sql, values) => client.query(sql, values)
+  const current = await findReel(roomId, reelId, query)
+  if (['REVIEW_READY','USER_REVIEWED','APPROVED_CANDIDATE','SOURCE_ONLY','REJECTED','DUPLICATE','SUPERSEDED'].includes(current.status)) return
+  const locked = await query<ReelRow>(`
     UPDATE lifeos_reels SET status = 'PROCESSING', processing_attempts = processing_attempts + 1,
       error_message = NULL, updated_at = now(), version = version + 1
     WHERE id = $1 AND room_id = $2 AND status = $3
     RETURNING *
   `, [reelId, roomId, current.status])
   if (!locked.rows[0]) throw new SyncHttpError(409, 'Reel-Status wurde gleichzeitig geändert.')
-  await audit({ reelId, roomId, action: 'processing_started', from: current.status, to: 'PROCESSING' })
 
-  const objectResult = await databaseQuery<{ storage_key: string }>('SELECT storage_key FROM lifeos_objects WHERE id = $1 AND room_id = $2 LIMIT 1', [current.object_id, roomId])
+
+  let temporary: string | undefined
+  try {
+  const objectResult = await query<{ storage_key: string }>('SELECT storage_key FROM lifeos_objects WHERE id = $1 AND room_id = $2 LIMIT 1', [current.object_id, roomId])
   const storageKey = objectResult.rows[0]?.storage_key
   if (!storageKey) throw new SyncHttpError(404, 'Quelldatei nicht gefunden.')
-  const temporary = await mkdtemp(join(tmpdir(), 'lifeos-reel-'))
-  try {
+  temporary = await mkdtemp(join(tmpdir(), 'lifeos-reel-'))
     const videoPath = join(temporary, 'source-video')
     const audioPath = join(temporary, 'audio.mp3')
     await materializeStoredObject(storageKey, videoPath)
-    let transcript = ''
-    let transcriptProvider: string | null = null
-    let transcriptModel: string | null = null
+    const hash = createHash('sha256')
+    for await (const chunk of createReadStream(videoPath)) hash.update(chunk)
+    const checksum = hash.digest('hex')
+    // Serialize exact-content decisions, including videos too large for client hashing.
+    await query('BEGIN')
+    try {
+      await query('SELECT pg_advisory_xact_lock(hashtextextended($1,2))', [roomId + checksum])
+      const duplicate = await query<{ id: string }>("SELECT id FROM lifeos_reels WHERE room_id=$1 AND checksum_sha256=$2 AND id<>$3 AND status NOT IN ('DUPLICATE','SUPERSEDED') LIMIT 1", [roomId, checksum, reelId])
+      if (duplicate.rows[0]) {
+        await query("UPDATE lifeos_reels SET status='DUPLICATE', checksum_sha256=$2, analysis=jsonb_build_object('duplicateOf',$3::text), updated_at=now(),version=version+1 WHERE id=$1", [reelId, checksum, duplicate.rows[0].id])
+        await query('COMMIT')
+        return
+      }
+      await query('UPDATE lifeos_reels SET checksum_sha256=$2 WHERE id=$1', [reelId, checksum])
+      await query('COMMIT')
+    } catch (error) { await query('ROLLBACK'); throw error }
+    const cached = (current.analysis ?? {}) as Record<string, unknown>
+    let transcript = current.transcript || ''
+    let transcriptProvider: string | null = current.transcript_provider
+    let transcriptModel: string | null = current.transcript_model
     let audio: Buffer | null = null
+    if (!cached.extractionComplete) {
     try {
       audio = await extractReelAudio(videoPath, audioPath)
     } catch {
@@ -286,28 +321,32 @@ async function processReel(request: Request, roomId: string, reelId: string): Pr
         if (!(error instanceof SyncHttpError) || error.status !== 422) throw error
       }
     }
-    const frames = transcript.length < 200 ? await extractReelFrames(videoPath, temporary) : []
-    const onScreenText = await readOnScreenText(frames)
+    }
+    const frames = !cached.extractionComplete && transcript.length < 200 ? await extractReelFrames(videoPath, temporary) : []
+    const onScreenText = cached.extractionComplete ? String(cached.onScreenText || '') : await readOnScreenText(frames)
     if (!transcript && !onScreenText) throw new SyncHttpError(422, 'Weder Sprache noch lesbarer Bildschirmtext erkannt.')
-    await databaseQuery(`
+    await query(`
       UPDATE lifeos_reels SET status = 'EXTRACTED', transcript = $3, transcript_provider = $4,
-        transcript_model = $5, updated_at = now(), version = version + 1
+        transcript_model = $5, analysis = COALESCE(analysis, '{}'::jsonb) || $6::jsonb, updated_at = now(), version = version + 1
       WHERE id = $1 AND room_id = $2
-    `, [reelId, roomId, transcript, transcriptProvider, transcriptModel])
+    `, [reelId, roomId, transcript, transcriptProvider, transcriptModel, JSON.stringify({ extractionComplete: true, onScreenText })])
 
-    const analysis = await analyzeReelTranscript(transcript, lifeAreas, onScreenText)
-    const jev = await triageReelWithJev({
+    const analysis = cached.completedAnalysis as Awaited<ReturnType<typeof analyzeReelTranscript>> | undefined
+      ?? await analyzeReelTranscript(transcript, lifeAreas, onScreenText)
+    await query("UPDATE lifeos_reels SET analysis=analysis || $2::jsonb WHERE id=$1", [reelId, JSON.stringify({ completedAnalysis: analysis })])
+    const jev = current.jev_result as Awaited<ReturnType<typeof triageReelWithJev>> | null
+      ?? await triageReelWithJev({
       title: analysis.title,
       summary: analysis.summary,
       transcript: [transcript, onScreenText].filter(Boolean).join('\n\n'),
       topics: analysis.topics,
       lifeAreas,
     })
-    const riskLevel = analysis.riskLevel === 'high' || jev.risk === 'high'
+    const riskLevel = analysis.riskLevel === 'high' || jev.risk === 'high' || analysis.claims.some(claim => claim.type !== 'general')
       ? 'high'
       : analysis.riskLevel === 'medium' || jev.risk === 'medium' ? 'medium' : 'low'
     const target = jev.available ? jev.target : 'source_only'
-    await databaseQuery(`
+    await query(`
       UPDATE lifeos_reels SET status = 'FACT_CHECK_PENDING', title = $3, summary = $4,
         life_area = $5, topics = $6::jsonb, usefulness_score = $7, risk_level = $8,
         suggested_target = $9, jev_result = $10::jsonb, analysis = $11::jsonb,
@@ -315,10 +354,11 @@ async function processReel(request: Request, roomId: string, reelId: string): Pr
       WHERE id = $1 AND room_id = $2
     `, [reelId, roomId, analysis.title, analysis.summary, jev.lifeArea || analysis.lifeArea || null,
       JSON.stringify(analysis.topics), analysis.usefulnessScore, riskLevel, target,
-      JSON.stringify(jev), JSON.stringify(analysis)])
+      JSON.stringify(jev), JSON.stringify({ ...cached, ...analysis, extractionComplete: true, completedAnalysis: analysis, onScreenText })])
 
     // Save web-search cost for clearly low-value sources; they remain visible and reviewable.
-    const verifications = analysis.usefulnessScore >= 40 && jev.relevance !== 'not_useful'
+    const verifications = cached.completedVerifications as Awaited<ReturnType<typeof verifyClaims>> | undefined
+      ?? (analysis.usefulnessScore >= 40 && jev.relevance !== 'not_useful'
       ? await verifyClaims(analysis.claims)
       : analysis.claims.map(claim => ({
           claim: claim.text,
@@ -326,34 +366,31 @@ async function processReel(request: Request, roomId: string, reelId: string): Pr
           confidence: 0,
           note: 'Faktencheck wegen niedriger Relevanz übersprungen.',
           evidence: [],
-        }))
-    await databaseQuery('DELETE FROM lifeos_reel_claims WHERE reel_id = $1', [reelId])
+        })))
+    await query("UPDATE lifeos_reels SET analysis=analysis || $2::jsonb WHERE id=$1", [reelId, JSON.stringify({ completedVerifications: verifications })])
+    await query('BEGIN')
+    await query('DELETE FROM lifeos_reel_claims WHERE reel_id = $1', [reelId])
     for (let index = 0; index < analysis.claims.length; index += 1) {
       const claim = analysis.claims[index]
       const verification = verifications[index]
-      await databaseQuery(`
+      await query(`
         INSERT INTO lifeos_reel_claims (
           id, reel_id, position, claim_text, claim_type, verification_status, confidence, evidence, verifier_note
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
       `, [randomUUID(), reelId, index, claim.text, claim.type, verification?.status ?? 'REVIEW_REQUIRED',
         verification?.confidence ?? 0, JSON.stringify(verification?.evidence ?? []), verification?.note ?? 'Manuelle Prüfung erforderlich.'])
     }
-    await databaseQuery(`
+    await query(`
       UPDATE lifeos_reels SET status = 'REVIEW_READY', updated_at = now(), version = version + 1
       WHERE id = $1 AND room_id = $2
     `, [reelId, roomId])
-    await audit({ reelId, roomId, action: 'processing_completed', from: 'PROCESSING', to: 'REVIEW_READY', details: { claimCount: analysis.claims.length, jevAvailable: jev.available } })
-    return syncJson({ ok: true, reel: reelJson(await findReel(roomId, reelId)) })
+    await query("INSERT INTO lifeos_reel_audit (reel_id,room_id,actor,action,to_status) VALUES ($1,$2,'worker','processing_completed','REVIEW_READY')", [reelId, roomId])
+    await query('COMMIT')
   } catch (error) {
-    const message = error instanceof Error ? error.message.slice(0, 1000) : 'Verarbeitung fehlgeschlagen.'
-    await databaseQuery(`
-      UPDATE lifeos_reels SET status = 'FAILED', error_message = $3, updated_at = now(), version = version + 1
-      WHERE id = $1 AND room_id = $2
-    `, [reelId, roomId, message]).catch(() => undefined)
-    await audit({ reelId, roomId, action: 'processing_failed', from: 'PROCESSING', to: 'FAILED', details: { message } }).catch(() => undefined)
+    await query('ROLLBACK').catch(() => undefined)
     throw error
   } finally {
-    await rm(temporary, { recursive: true, force: true }).catch(() => undefined)
+    if (temporary) await rm(temporary, { recursive: true, force: true }).catch(() => undefined)
   }
 }
 
@@ -377,6 +414,7 @@ async function reviewReel(request: Request, roomId: string, reelId: string): Pro
   if (!['REVIEW_READY', 'USER_REVIEWED', 'MORE_EVIDENCE', 'APPROVED_CANDIDATE', 'SOURCE_ONLY', 'REJECTED'].includes(current.status)) {
     throw new SyncHttpError(409, 'Reel ist noch nicht bereit zur Prüfung.')
   }
+  if (current.published_id) throw new SyncHttpError(409, 'Bereits übernommen. Änderungen bitte im Knowledge-Eintrag vornehmen.')
   const target = ['knowledge', 'guideline', 'source_only', 'reject'].includes(String(body.suggestedTarget))
     ? String(body.suggestedTarget)
     : current.suggested_target
@@ -388,7 +426,7 @@ async function reviewReel(request: Request, roomId: string, reelId: string): Pro
       SELECT count(*)::text AS count FROM lifeos_reel_claims
       WHERE reel_id = $1 AND verification_status <> 'SUPPORTED'
     `, [reelId])
-    if (Number(unresolved.rows[0]?.count) > 0) {
+    if (Number(unresolved.rows[0]?.count) > 0 || !Array.isArray(current.claims) || current.claims.length === 0) {
       throw new SyncHttpError(409, 'Leitlinien und Hochrisiko-Inhalte brauchen für jede Aussage einen belegten Status.')
     }
   }
@@ -407,6 +445,36 @@ async function reviewReel(request: Request, roomId: string, reelId: string): Pro
   return syncJson({ ok: true, reel: reelJson(await findReel(roomId, reelId)) })
 }
 
+async function batchReview(request: Request, roomId: string): Promise<Response> {
+  const body = await readSyncJson<{ items?: Array<{ id: string; version: number }>; action?: string }>(request)
+  if (!Array.isArray(body.items) || body.items.length < 1 || body.items.length > 50 || !['publish','reject','source_only'].includes(body.action || '')) {
+    throw new SyncHttpError(400, 'Bitte 1 bis 50 Einträge und eine Aktion wählen.')
+  }
+  const results: Array<{ id: string; error?: string; publication?: unknown }> = []
+  for (const item of body.items) {
+    try {
+      const id = uuid(item.id)
+      const reel = await findReel(roomId, id)
+      if (body.action === 'publish' && (reel.risk_level !== 'low' || reel.suggested_target !== 'knowledge')) {
+        throw new SyncHttpError(409, 'Bitte einzeln prüfen: Risiko oder Ziel ist nicht für die Sammelfreigabe geeignet.')
+      }
+      if (body.action === 'publish' && reel.published_id) {
+        results.push({ id, publication: await publishReel(roomId, id, item.version) }); continue
+      }
+      const response = await reviewReel(new Request(request.url, { method: 'POST', body: JSON.stringify({
+        action: body.action === 'publish' ? 'approve_candidate' : body.action,
+        version: item.version, title: reel.title, summary: reel.summary, lifeArea: reel.life_area,
+        topics: reel.topics, suggestedTarget: reel.suggested_target, reviewerNote: reel.reviewer_note,
+      }) }), roomId, id)
+      const reviewed = await response.json() as { reel: { version: number } }
+      results.push({ id, ...(body.action === 'publish' ? { publication: await publishReel(roomId, id, reviewed.reel.version) } : {}) })
+    } catch (error) {
+      results.push({ id: String(item?.id || ''), error: error instanceof SyncHttpError ? error.message : 'Aktion fehlgeschlagen. Bitte erneut laden.' })
+    }
+  }
+  return syncJson({ ok: true, results })
+}
+
 export async function handleReelRequest(request: Request): Promise<Response> {
   requireDatabase()
   if (request.method === 'OPTIONS') return syncJson({ ok: true })
@@ -414,12 +482,22 @@ export async function handleReelRequest(request: Request): Promise<Response> {
   const url = new URL(request.url)
   const pathname = url.pathname.replace(/\/$/, '')
   if (pathname.endsWith('/api/reels') && request.method === 'GET') return listReels(url, roomId)
+  if (pathname.endsWith('/api/reels/batch') && request.method === 'POST') return batchReview(request, roomId)
   if (pathname.endsWith('/api/reels/register') && request.method === 'POST') return registerReel(request, roomId)
-  const match = pathname.match(/\/api\/reels\/([0-9a-f-]+)(?:\/(process|review))?$/i)
+  const match = pathname.match(/\/api\/reels\/([0-9a-f-]+)(?:\/(process|review|publish))?$/i)
   if (!match) return syncJson({ error: 'Not found' }, 404)
   const reelId = uuid(match[1], 'Reel-ID')
   if (!match[2] && request.method === 'GET') return syncJson({ ok: true, reel: reelJson(await findReel(roomId, reelId)) })
-  if (match[2] === 'process' && request.method === 'POST') return processReel(request, roomId, reelId)
+  if (match[2] === 'process' && request.method === 'POST') {
+    const body = await readSyncJson<{ lifeAreas?: unknown }>(request)
+    await findReel(roomId, reelId)
+    await enqueueReel(reelId, roomId, stringList(body.lifeAreas, 50), true)
+    return syncJson({ ok: true, reel: reelJson(await findReel(roomId, reelId)) }, 202)
+  }
+  if (match[2] === 'publish' && request.method === 'POST') {
+    const body = await readSyncJson<{ version?: unknown }>(request)
+    return syncJson({ ok: true, publication: await publishReel(roomId, reelId, Number(body.version)) })
+  }
   if (match[2] === 'review' && request.method === 'POST') return reviewReel(request, roomId, reelId)
   return syncJson({ error: 'Not found' }, 404)
 }

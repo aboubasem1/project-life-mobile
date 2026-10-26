@@ -1,3 +1,5 @@
+import { startReelWorker } from './reel-jobs.js'
+import { runReelJob } from './reel-api.js'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { closeDatabase, ensureDatabaseSchema } from './database.js'
 import { handleSyncRequest } from './sync-router.js'
@@ -96,6 +98,7 @@ const server = createServer((incoming, outgoing) => {
 async function shutdown(signal: string): Promise<void> {
   console.info(`LifeOS API received ${signal}; shutting down.`)
   server.close()
+  await stopReelWorker()
   await closeDatabase().catch(() => undefined)
   process.exit(0)
 }
@@ -104,6 +107,7 @@ process.on('SIGTERM', () => void shutdown('SIGTERM'))
 process.on('SIGINT', () => void shutdown('SIGINT'))
 
 await ensureDatabaseSchema()
+const stopReelWorker = startReelWorker(runReelJob)
 server.listen(port, host, () => {
   console.info(`LifeOS API listening on ${host}:${port}`)
 })

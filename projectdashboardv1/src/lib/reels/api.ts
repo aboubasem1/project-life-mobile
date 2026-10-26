@@ -1,3 +1,5 @@
+import { loadLifeOsState, saveLifeOsState, type KnowledgeItem, type DomainEvent, LIFE_AREAS } from '../lifeos'
+import { validateReelFile, reelContentType, rememberImportReceipt, readImportReceipts, forgetImportReceipt, type ImportReceipt } from './import-session'
 import { loadSyncCredentials } from '../deviceSync'
 import type { ReelCandidate, ReelReviewAction } from './types'
 
@@ -35,8 +37,8 @@ async function apiJson<T>(path: string, init: RequestInit = {}, timeoutMs = 20_0
 }
 
 async function sha256(file: File): Promise<string | null> {
-  // Native WebCrypto is dependency-free and reliable. Very large files skip hashing to avoid high Mac RAM usage.
-  if (!globalThis.crypto?.subtle || file.size > 128 * 1024 * 1024) return null
+  // Native WebCrypto is dependency-free and reliable. Very large files skip hashing to avoid high mobile memory usage.
+  if (!globalThis.crypto?.subtle || file.size > 32 * 1024 * 1024) return null
   const digest = await globalThis.crypto.subtle.digest('SHA-256', await file.arrayBuffer())
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
 }
@@ -60,6 +62,8 @@ function putFile(url: string, headers: Record<string, string>, file: File, onPro
 }
 
 export async function uploadAndRegisterReel(file: File, onProgress: (percent: number) => void): Promise<ReelCandidate> {
+  const invalid = validateReelFile(file)
+  if (invalid) throw new Error(invalid)
   const checksumSha256 = await sha256(file)
   const presigned = await apiJson<{
     objectId: string
@@ -71,40 +75,47 @@ export async function uploadAndRegisterReel(file: File, onProgress: (percent: nu
     body: JSON.stringify({
       category: 'media',
       fileName: file.name,
-      contentType: file.type || 'video/mp4',
+      contentType: reelContentType(file),
       sizeBytes: file.size,
       checksumSha256,
     }),
   })
+  const receipt: ImportReceipt = { objectId: presigned.objectId, storageKey: presigned.storageKey, fileName: file.name, contentType: reelContentType(file), sizeBytes: file.size, checksumSha256, createdAt: new Date().toISOString() }
+  const roomId = loadSyncCredentials()!.roomId
+  rememberImportReceipt(roomId, receipt)
   await putFile(presigned.uploadUrl, presigned.uploadHeaders, file, onProgress)
-  await apiJson('/api/storage/complete', {
-    method: 'POST',
-    body: JSON.stringify({
-      objectId: presigned.objectId,
-      storageKey: presigned.storageKey,
-      fileName: file.name,
-      contentType: file.type || 'video/mp4',
-      sizeBytes: file.size,
-    }),
-  })
+  return completeReceipt(roomId, receipt)
+}
+
+async function completeReceipt(roomId: string, receipt: ImportReceipt): Promise<ReelCandidate> {
+  await apiJson('/api/storage/complete', { method: 'POST', body: JSON.stringify(receipt) })
   const registered = await apiJson<{ reel: ReelCandidate }>('/api/reels/register', {
-    method: 'POST',
-    body: JSON.stringify({ objectId: presigned.objectId, checksumSha256 }),
+    method: 'POST', body: JSON.stringify({ objectId: receipt.objectId, checksumSha256: receipt.checksumSha256, lifeAreas: LIFE_AREAS.map(a => a.key) }),
   })
+  forgetImportReceipt(roomId, receipt.objectId)
   return registered.reel
+}
+
+export async function recoverReelUploads(): Promise<number> {
+  const roomId = loadSyncCredentials()?.roomId
+  if (!roomId) return 0
+  let interrupted = 0
+  for (const receipt of readImportReceipts(roomId)) {
+    try { await completeReceipt(roomId, receipt) } catch { interrupted += 1 }
+  }
+  return interrupted
 }
 
 export async function processReel(reelId: string, lifeAreas: string[]): Promise<ReelCandidate> {
   const result = await apiJson<{ reel: ReelCandidate }>(`/api/reels/${reelId}/process`, {
     method: 'POST',
     body: JSON.stringify({ lifeAreas }),
-  }, 6 * 60_000)
+  })
   return result.reel
 }
 
-export async function listReels(): Promise<ReelCandidate[]> {
-  const result = await apiJson<{ reels: ReelCandidate[] }>('/api/reels?limit=300')
-  return result.reels
+export async function listReels(): Promise<{ reels: ReelCandidate[]; workerAvailable: boolean }> {
+  return apiJson('/api/reels?limit=1000')
 }
 
 export async function reviewReel(input: {
@@ -131,4 +142,29 @@ export async function reviewReel(input: {
     }),
   })
   return result.reel
+}
+
+export type ReelPublication = { version: 1; knowledge: KnowledgeItem; event: DomainEvent }
+export function acceptPublication(publication: ReelPublication) {
+  const state = loadLifeOsState()
+  if (state.deletedKnowledgeIds?.includes(publication.knowledge.id) || state.knowledge.some(k => k.id === publication.knowledge.id)) return
+  if (!saveLifeOsState({ ...state, knowledge: [...state.knowledge, publication.knowledge],
+    events: state.events.some(e => e.id === publication.event.id) ? state.events : [...state.events, publication.event] })) {
+    throw new Error('Auf dem Server gespeichert. Lokaler Speicher voll; bitte Sync erneut laden.')
+  }
+}
+export async function publishReel(reel: ReelCandidate) {
+  const result = await apiJson<{ publication: ReelPublication }>(`/api/reels/${reel.id}/publish`, { method: 'POST', body: JSON.stringify({ version: reel.version }) })
+  acceptPublication(result.publication)
+  return result.publication.knowledge.id
+}
+export async function batchReviewReels(reels: ReelCandidate[], action: 'publish' | 'reject' | 'source_only') {
+  const result = await apiJson<{ results: Array<{ id: string; error?: string; publication?: ReelPublication }> }>('/api/reels/batch', {
+    method: 'POST', body: JSON.stringify({ items: reels.map(r => ({ id: r.id, version: r.version })), action }),
+  }, 60_000)
+  for (const item of result.results) if (item.publication) acceptPublication(item.publication)
+  return result.results
+}
+export async function getReel(id: string): Promise<ReelCandidate> {
+  return (await apiJson<{ reel: ReelCandidate }>(`/api/reels/${id}`)).reel
 }

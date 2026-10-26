@@ -132,6 +132,35 @@ export async function ensureDatabaseSchema(): Promise<void> {
       ON lifeos_reels (room_id, checksum_sha256)
       WHERE checksum_sha256 IS NOT NULL AND status NOT IN ('DUPLICATE', 'SUPERSEDED');
 
+    CREATE TABLE IF NOT EXISTS lifeos_reel_jobs (
+      reel_id uuid PRIMARY KEY REFERENCES lifeos_reels(id) ON DELETE CASCADE,
+      room_id text NOT NULL REFERENCES lifeos_sync_rooms(room_id) ON DELETE RESTRICT,
+      state text NOT NULL DEFAULT 'queued' CHECK (state IN ('queued', 'running', 'done', 'failed')),
+      life_areas jsonb NOT NULL DEFAULT '[]'::jsonb,
+      attempts integer NOT NULL DEFAULT 0,
+      available_at timestamptz NOT NULL DEFAULT now(),
+      heartbeat_at timestamptz,
+      started_at timestamptz,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS lifeos_reel_jobs_due_idx ON lifeos_reel_jobs (state, available_at);
+    INSERT INTO lifeos_reel_jobs(reel_id,room_id)
+      SELECT id,room_id FROM lifeos_reels WHERE status IN ('UPLOADED','PROCESSING','EXTRACTED','CLASSIFIED','FACT_CHECK_PENDING')
+      ON CONFLICT(reel_id) DO NOTHING;
+    CREATE TABLE IF NOT EXISTS lifeos_reel_publications (
+      reel_id uuid PRIMARY KEY REFERENCES lifeos_reels(id) ON DELETE RESTRICT,
+      room_id text NOT NULL REFERENCES lifeos_sync_rooms(room_id) ON DELETE RESTRICT,
+      knowledge_id text NOT NULL UNIQUE,
+      reel_version integer NOT NULL,
+      payload jsonb NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS lifeos_reel_publications_room_idx ON lifeos_reel_publications(room_id);
+    CREATE TABLE IF NOT EXISTS lifeos_reel_workers (
+      id uuid PRIMARY KEY,
+      heartbeat_at timestamptz NOT NULL DEFAULT now()
+    );
+
     CREATE TABLE IF NOT EXISTS lifeos_reel_claims (
       id uuid PRIMARY KEY,
       reel_id uuid NOT NULL REFERENCES lifeos_reels(id) ON DELETE CASCADE,

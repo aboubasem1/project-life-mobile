@@ -15,6 +15,9 @@ export type ReelClaim = {
 }
 
 export type ReelCandidate = {
+  publishedId?: string
+  jobAvailableAt?: string
+  jobState?: 'queued' | 'running' | 'done' | 'failed'
   id: string
   objectId: string
   checksumSha256: string | null

@@ -1,8 +1,9 @@
+import { mergeLifeOsSnapshots } from './lifeos-merge.js'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
-import { databaseConfigured, databaseQuery, probeDatabase } from './database.js'
+import { databaseConfigured, databasePool, ensureDatabaseSchema, databaseQuery, probeDatabase } from './database.js'
 import {
   createObjectKey,
   headStoredObject,
@@ -264,7 +265,18 @@ async function getRoomIdByPairCodeFromPostgres(pairCode: string): Promise<string
 
 async function saveRoomToPostgres(room: SyncRoom): Promise<void> {
   if (room.pairCode) await clearExpiredPairCodesFromPostgres()
-  await databaseQuery(`
+  await ensureDatabaseSchema()
+  const client = await databasePool().connect()
+  try {
+  await client.query('BEGIN')
+  // Serialize saves even for a newly created room. Merge Knowledge against the latest
+  // persisted snapshot, not a stale read made before another device pushed edits.
+  await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,3))', [room.roomId])
+  const current = await client.query<{ snapshot: SyncSnapshot }>('SELECT snapshot FROM lifeos_sync_rooms WHERE room_id=$1 FOR UPDATE', [room.roomId])
+  if (room.snapshot && current.rows[0]?.snapshot?.lifeOs) {
+    room.snapshot.lifeOs = mergeLifeOsSnapshots(current.rows[0].snapshot.lifeOs, room.snapshot.lifeOs)
+  }
+  await client.query(`
     INSERT INTO lifeos_sync_rooms (
       room_id,
       device_tokens,
@@ -289,6 +301,8 @@ async function saveRoomToPostgres(room: SyncRoom): Promise<void> {
     room.createdAt,
     room.updatedAt,
   ])
+  await client.query('COMMIT')
+  } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
 }
 
 async function getRoomFromUpstash(roomId: string): Promise<SyncRoom | null> {

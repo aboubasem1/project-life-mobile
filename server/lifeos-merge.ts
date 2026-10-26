@@ -16,6 +16,7 @@ export function mergeLifeOsSnapshots(local: unknown, remote: unknown): unknown {
     ...remote,
     version: typeof remote.version === 'number' ? remote.version : local.version,
     captures: pick('captures'),
+    deletedKnowledgeIds: [...new Set([...(Array.isArray(local.deletedKnowledgeIds) ? local.deletedKnowledgeIds : []), ...(Array.isArray(remote.deletedKnowledgeIds) ? remote.deletedKnowledgeIds : [])])],
     knowledge: pick('knowledge'),
     decisions: pick('decisions'),
     signals: pick('signals'),

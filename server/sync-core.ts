@@ -1,3 +1,4 @@
+import { deliverReelPublications } from './reel-publication.js'
 import { randomInt, randomUUID } from 'node:crypto'
 import {
   getRoom,
@@ -283,6 +284,7 @@ export async function pushSyncSnapshot(input: {
       incoming.privateVault,
     ) ?? undefined,
   }
+  room.snapshot.lifeOs = await deliverReelPublications(input.roomId, room.snapshot.lifeOs)
   room.updatedAt = updatedAt
   await saveRoom(room)
   return { revision: nextRevision, updatedAt }
@@ -295,5 +297,7 @@ export async function pullSyncSnapshot(roomId: string, deviceToken: string): Pro
   const room = await getRoom(roomId)
   if (!room) throw new SyncHttpError(404, 'Sync-Raum nicht gefunden.')
   assertDevice(room, deviceToken)
-  return { snapshot: room.snapshot, storage: syncStorageMode() }
+  const lifeOs = await deliverReelPublications(roomId, room.snapshot?.lifeOs)
+  const snapshot = lifeOs ? { ...(room.snapshot ?? { revision: 0, updatedAt: room.updatedAt, entries: [] }), lifeOs } : room.snapshot
+  return { snapshot, storage: syncStorageMode() }
 }

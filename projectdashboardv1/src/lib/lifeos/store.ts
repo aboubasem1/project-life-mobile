@@ -216,6 +216,10 @@ export function normalizeKnowledge(raw: unknown): KnowledgeItem | null {
     content: asString(item.content),
     summary: asString(item.summary),
     source: asString(item.source),
+    reelSource: item.reelSource && typeof item.reelSource.reelId === 'string' ? {
+      reelId: item.reelSource.reelId, objectId: asString(item.reelSource.objectId),
+      version: Number(item.reelSource.version) || 1, evidence: asString(item.reelSource.evidence), risk: asString(item.reelSource.risk),
+    } : undefined,
     sourceUrl: asOptionalString(item.sourceUrl),
     type: pick(item.type, KNOWLEDGE_TYPES, 'thought'),
     topics: Array.isArray(item.topics) ? item.topics.map(String).filter(Boolean) : [],
@@ -458,7 +462,8 @@ export function normalizeLifeOsState(raw: unknown): LifeOsState {
   return {
     version: LIFE_OS_STORE_VERSION,
     captures: list(item.captures, normalizeCapture),
-    knowledge: list(item.knowledge, normalizeKnowledge),
+    deletedKnowledgeIds: Array.isArray(item.deletedKnowledgeIds) ? item.deletedKnowledgeIds.filter(id => typeof id === 'string') : [],
+    knowledge: list(item.knowledge, normalizeKnowledge).filter(k => !(Array.isArray(item.deletedKnowledgeIds) && item.deletedKnowledgeIds.includes(k.id))),
     decisions: list(item.decisions, normalizeDecision).map(decision => refreshDecisionStatus(decision)),
     signals: list(item.signals, normalizeSignal).slice(-MAX_SIGNALS),
     reviews: list(item.reviews, normalizeReview),
@@ -514,6 +519,7 @@ export function mergeLifeOsState(localRaw: unknown, remoteRaw: unknown): LifeOsS
   return normalizeLifeOsState({
     version: LIFE_OS_STORE_VERSION,
     captures: mergeByUpdatedAt(local.captures, remote.captures),
+    deletedKnowledgeIds: [...new Set([...(local.deletedKnowledgeIds ?? []), ...(remote.deletedKnowledgeIds ?? [])])],
     knowledge: mergeByUpdatedAt(local.knowledge, remote.knowledge),
     decisions: mergeByUpdatedAt(local.decisions, remote.decisions),
     signals: mergeByCreatedAt(local.signals, remote.signals).slice(-MAX_SIGNALS),

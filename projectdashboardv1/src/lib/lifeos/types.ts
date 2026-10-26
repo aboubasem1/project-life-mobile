@@ -82,6 +82,7 @@ export type KnowledgeType =
   | 'import'
 
 export type KnowledgeItem = {
+  reelSource?: { reelId: string; objectId: string; version: number; evidence: string; risk: string }
   id: string
   title: string
   content: string
@@ -309,6 +310,7 @@ export type NormalizedObject =
 export type LifeOsState = {
   version: number
   captures: Capture[]
+  deletedKnowledgeIds?: string[]
   knowledge: KnowledgeItem[]
   decisions: Decision[]
   signals: Signal[]
