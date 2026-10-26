@@ -2,10 +2,10 @@ import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { databaseConfigured, databaseQuery } from './database.js'
+import { databaseConfigured, databaseQuery, databaseTransaction, type SqlQuery } from './database.js'
 import { materializeStoredObject } from './object-storage.js'
 import { analyzeReelTranscript, readOnScreenText, verifyClaims } from './reel-analysis.js'
-import { enqueueReelJob, reelWorkerEnabled, reelWorkerStatus, roomJobCounts, startReelWorker } from './reel-jobs.js'
+import { enqueueReelJob, enqueueReelJobWithQuery, reelWorkerEnabled, reelWorkerStatus, roomJobCounts, startReelWorker } from './reel-jobs.js'
 import { triageReelWithJev } from './reel-jev.js'
 import { extractReelAudio, extractReelFrames } from './reel-media.js'
 import { buildKnowledgeDraft, bulkItemDecision, normalizeLifeAreas, pipelineStage, publishBlockReason, type KnowledgePublishDraft } from './reel-policy.js'
@@ -172,8 +172,9 @@ async function audit(input: {
   from?: string | null
   to?: string | null
   details?: unknown
+  query?: SqlQuery
 }): Promise<void> {
-  await databaseQuery(`
+  await (input.query ?? databaseQuery)(`
     INSERT INTO lifeos_reel_audit (reel_id, room_id, actor, action, from_status, to_status, details)
     VALUES ($1, $2, 'authenticated_device', $3, $4, $5, $6::jsonb)
   `, [input.reelId, input.roomId, input.action, input.from ?? null, input.to ?? null, JSON.stringify(input.details ?? {})])
@@ -208,40 +209,50 @@ async function findReel(roomId: string, reelId: string): Promise<ReelRow> {
 async function registerReel(request: Request, roomId: string): Promise<Response> {
   const body = await readSyncJson<{ objectId?: unknown; checksumSha256?: unknown; lifeAreas?: unknown }>(request)
   const objectId = uuid(body.objectId, 'Datei-ID')
-  const objectResult = await databaseQuery<{ checksum_sha256: string | null; status: string }>(`
-    SELECT checksum_sha256, status FROM lifeos_objects WHERE id = $1 AND room_id = $2 LIMIT 1
-  `, [objectId, roomId])
-  const object = objectResult.rows[0]
-  if (!object || object.status !== 'ready') throw new SyncHttpError(409, 'Upload ist noch nicht vollständig.')
-  const checksum = optionalChecksum(body.checksumSha256) || object.checksum_sha256
+  const result = await databaseTransaction(async query => {
+    const objectResult = await query<{ checksum_sha256: string | null; status: string }>(`
+      SELECT checksum_sha256, status FROM lifeos_objects WHERE id = $1 AND room_id = $2 FOR UPDATE
+    `, [objectId, roomId])
+    const object = objectResult.rows[0]
+    if (!object || object.status !== 'ready') throw new SyncHttpError(409, 'Upload ist noch nicht vollständig.')
+    const checksum = optionalChecksum(body.checksumSha256) || object.checksum_sha256
 
-  const existingObject = await databaseQuery<ReelRow>('SELECT * FROM lifeos_reels WHERE object_id = $1 AND room_id = $2 LIMIT 1', [objectId, roomId])
-  if (existingObject.rows[0]) return syncJson({ ok: true, duplicate: false, reel: reelJson(await findReel(roomId, existingObject.rows[0].id)) })
+    const existingObject = await query<ReelRow>('SELECT * FROM lifeos_reels WHERE object_id = $1 AND room_id = $2 LIMIT 1', [objectId, roomId])
+    if (existingObject.rows[0]) {
+      const existing = existingObject.rows[0]
+      const job = existing.status === 'UPLOADED' || existing.status === 'FAILED'
+        ? await enqueueReelJobWithQuery(query, { reelId: existing.id, roomId, lifeAreas: body.lifeAreas, force: existing.status === 'FAILED' })
+        : null
+      return { reelId: existing.id, duplicate: existing.status === 'DUPLICATE', job }
+    }
 
-  let duplicateOf: ReelRow | undefined
-  if (checksum) {
-    const duplicate = await databaseQuery<ReelRow>(`
+    if (checksum) await query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`${roomId}:${checksum}`])
+    let duplicateOf: ReelRow | undefined
+    if (checksum) {
+      const duplicate = await query<ReelRow>(`
       SELECT * FROM lifeos_reels
       WHERE room_id = $1 AND checksum_sha256 = $2 AND status NOT IN ('DUPLICATE', 'SUPERSEDED')
       ORDER BY created_at ASC LIMIT 1
     `, [roomId, checksum])
-    duplicateOf = duplicate.rows[0]
-  }
+      duplicateOf = duplicate.rows[0]
+    }
 
-  const reelId = randomUUID()
-  const status: ReelStatus = duplicateOf ? 'DUPLICATE' : 'UPLOADED'
-  await databaseQuery(`
+    const reelId = randomUUID()
+    const status: ReelStatus = duplicateOf ? 'DUPLICATE' : 'UPLOADED'
+    await query(`
     INSERT INTO lifeos_reels (id, room_id, object_id, checksum_sha256, status, analysis)
     VALUES ($1, $2, $3, $4, $5, $6::jsonb)
-  `, [reelId, roomId, objectId, checksum, status, JSON.stringify(duplicateOf ? { duplicateOf: duplicateOf.id } : {})])
-  await audit({ reelId, roomId, action: duplicateOf ? 'duplicate_detected' : 'registered', to: status, details: duplicateOf ? { duplicateOf: duplicateOf.id } : {} })
-  const job = duplicateOf ? null : await enqueueReelJob({ reelId, roomId, lifeAreas: body.lifeAreas })
+    `, [reelId, roomId, objectId, checksum, status, JSON.stringify(duplicateOf ? { duplicateOf: duplicateOf.id } : {})])
+    await audit({ reelId, roomId, action: duplicateOf ? 'duplicate_detected' : 'registered', to: status, details: duplicateOf ? { duplicateOf: duplicateOf.id } : {}, query })
+    const job = duplicateOf ? null : await enqueueReelJobWithQuery(query, { reelId, roomId, lifeAreas: body.lifeAreas })
+    return { reelId, duplicate: Boolean(duplicateOf), job }
+  })
   return syncJson({
     ok: true,
-    duplicate: Boolean(duplicateOf),
-    queued: Boolean(job?.queued),
-    deferred: Boolean(job?.deferred),
-    reel: reelJson(await findReel(roomId, reelId)),
+    duplicate: result.duplicate,
+    queued: Boolean(result.job?.queued),
+    deferred: Boolean(result.job?.deferred),
+    reel: reelJson(await findReel(roomId, result.reelId)),
   })
 }
 

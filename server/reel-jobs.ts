@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { databaseQuery, databaseTransaction } from './database.js'
+import { databaseQuery, databaseTransaction, type SqlQuery } from './database.js'
 import { REEL_DAILY_JOB_LIMIT, REEL_MAX_ATTEMPTS, REEL_STALE_LOCK_MS, isClaimable, normalizeLifeAreas, processingFailureDisposition, retryDelayMs, type JobView } from './reel-policy.js'
 
 type JobRow = {
@@ -56,7 +56,7 @@ function log(event: string, fields: Record<string, unknown> = {}): void {
   console.info(JSON.stringify({ scope: 'reel-worker', event, ...fields }))
 }
 
-export async function enqueueReelJob(input: {
+export async function enqueueReelJobWithQuery(query: SqlQuery, input: {
   reelId: string
   roomId: string
   lifeAreas?: unknown
@@ -64,38 +64,45 @@ export async function enqueueReelJob(input: {
 }): Promise<{ queued: boolean; deferred: boolean; jobId: string | null; state: string }> {
   const lifeAreas = normalizeLifeAreas(input.lifeAreas)
   const dailyLimit = envNumber('REEL_DAILY_JOB_LIMIT', REEL_DAILY_JOB_LIMIT, 1, 5000)
-  return databaseTransaction(async query => {
-    const open = await query<JobRow>(`
-      SELECT * FROM lifeos_reel_jobs
-      WHERE reel_id = $1 AND room_id = $2 AND status IN ('queued', 'running', 'retry')
-      ORDER BY created_at DESC
-      LIMIT 1
-    `, [input.reelId, input.roomId])
-    const existing = open.rows[0]
-    if (existing && (!input.force || existing.status === 'running')) {
-      return { queued: true, deferred: new Date(existing.run_after).getTime() > Date.now() + 60_000, jobId: existing.id, state: existing.status }
-    }
-    if (existing) {
-      await query(`
-        UPDATE lifeos_reel_jobs
-        SET status = 'queued', run_after = now(), last_error = NULL, locked_at = NULL, locked_by = NULL, updated_at = now()
-        WHERE id = $1
-      `, [existing.id])
-      return { queued: true, deferred: false, jobId: existing.id, state: 'queued' }
-    }
-    const usage = await query<{ count: string }>(`
-      SELECT count(*)::text AS count FROM lifeos_reel_jobs
-      WHERE room_id = $1 AND created_at >= date_trunc('day', now())
-    `, [input.roomId])
-    const deferred = Number(usage.rows[0]?.count ?? 0) >= dailyLimit
-    const jobId = randomUUID()
+  const open = await query<JobRow>(`
+    SELECT * FROM lifeos_reel_jobs
+    WHERE reel_id = $1 AND room_id = $2 AND status IN ('queued', 'running', 'retry')
+    ORDER BY created_at DESC
+    LIMIT 1
+  `, [input.reelId, input.roomId])
+  const existing = open.rows[0]
+  if (existing && (!input.force || existing.status === 'running')) {
+    return { queued: true, deferred: new Date(existing.run_after).getTime() > Date.now() + 60_000, jobId: existing.id, state: existing.status }
+  }
+  if (existing) {
     await query(`
-      INSERT INTO lifeos_reel_jobs (id, reel_id, room_id, status, max_attempts, run_after, life_areas, last_error)
-      VALUES ($1, $2, $3, 'queued', $4, CASE WHEN $5::boolean THEN now() + interval '1 day' ELSE now() END, $6::jsonb, $7)
-    `, [jobId, input.reelId, input.roomId, envNumber('REEL_JOB_MAX_ATTEMPTS', REEL_MAX_ATTEMPTS, 1, 8), deferred, JSON.stringify(lifeAreas), deferred ? 'Tageslimit erreicht. Die Verarbeitung startet automatisch später.' : null])
-    log('enqueued', { reelId: input.reelId, roomId: input.roomId, jobId, deferred })
-    return { queued: true, deferred, jobId, state: 'queued' }
-  })
+      UPDATE lifeos_reel_jobs
+      SET status = 'queued', run_after = now(), last_error = NULL, locked_at = NULL, locked_by = NULL, updated_at = now()
+      WHERE id = $1
+    `, [existing.id])
+    return { queued: true, deferred: false, jobId: existing.id, state: 'queued' }
+  }
+  const usage = await query<{ count: string }>(`
+    SELECT count(*)::text AS count FROM lifeos_reel_jobs
+    WHERE room_id = $1 AND created_at >= date_trunc('day', now())
+  `, [input.roomId])
+  const deferred = Number(usage.rows[0]?.count ?? 0) >= dailyLimit
+  const jobId = randomUUID()
+  await query(`
+    INSERT INTO lifeos_reel_jobs (id, reel_id, room_id, status, max_attempts, run_after, life_areas, last_error)
+    VALUES ($1, $2, $3, 'queued', $4, CASE WHEN $5::boolean THEN now() + interval '1 day' ELSE now() END, $6::jsonb, $7)
+  `, [jobId, input.reelId, input.roomId, envNumber('REEL_JOB_MAX_ATTEMPTS', REEL_MAX_ATTEMPTS, 1, 8), deferred, JSON.stringify(lifeAreas), deferred ? 'Tageslimit erreicht. Die Verarbeitung startet automatisch später.' : null])
+  log('enqueued', { reelId: input.reelId, roomId: input.roomId, jobId, deferred })
+  return { queued: true, deferred, jobId, state: 'queued' }
+}
+
+export async function enqueueReelJob(input: {
+  reelId: string
+  roomId: string
+  lifeAreas?: unknown
+  force?: boolean
+}): Promise<{ queued: boolean; deferred: boolean; jobId: string | null; state: string }> {
+  return databaseTransaction(query => enqueueReelJobWithQuery(query, input))
 }
 
 async function claimJobs(workerId: string, limit: number): Promise<JobRow[]> {

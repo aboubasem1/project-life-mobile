@@ -10,6 +10,7 @@ import {
   publishReel,
   reviewReel,
   uploadAndRegisterReel,
+  recoverUploadedReels,
   type KnowledgePublishDraft,
   type ReelCandidate,
   type ReelReviewAction,
@@ -96,7 +97,17 @@ export function ReelImportPanel({
     }
   }
 
-  useEffect(() => { void reload() }, [])
+  useEffect(() => {
+    void (async () => {
+      const recovery = await recoverUploadedReels()
+      if (recovery.recovered.length) {
+        setNotice(`${recovery.recovered.length} abgeschlossene Übertragung${recovery.recovered.length === 1 ? '' : 'en'} wiederhergestellt.`)
+      } else if (recovery.awaitingReselection) {
+        setNotice(`${recovery.awaitingReselection} unterbrochene Übertragung${recovery.awaitingReselection === 1 ? '' : 'en'}: Datei bitte erneut auswählen.`)
+      }
+      await reload()
+    })()
+  }, [])
   useEffect(() => {
     const active = reels.some(reel => statusGroup(reel) === 'processing')
     if (!active) return undefined

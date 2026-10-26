@@ -1,4 +1,5 @@
 import { loadSyncCredentials } from '../deviceSync'
+import { loadImportReceipts, markImportUploaded, removeImportReceipt, saveImportReceipt, type ReelImportReceipt } from './import-session'
 import type { KnowledgePublishDraft, ReelCandidate, ReelReviewAction } from './types'
 
 function authHeaders(): Record<string, string> {
@@ -35,8 +36,8 @@ async function apiJson<T>(path: string, init: RequestInit = {}, timeoutMs = 20_0
 }
 
 async function sha256(file: File): Promise<string | null> {
-  // Native WebCrypto is dependency-free and reliable. Very large files skip hashing to avoid high Mac RAM usage.
-  if (!globalThis.crypto?.subtle || file.size > 128 * 1024 * 1024) return null
+  // WebCrypto buffers the complete file. Keep the limit conservative for iPhone memory pressure.
+  if (!globalThis.crypto?.subtle || file.size > 32 * 1024 * 1024) return null
   const digest = await globalThis.crypto.subtle.digest('SHA-256', await file.arrayBuffer())
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
 }
@@ -92,7 +93,22 @@ export async function uploadAndRegisterReel(
       checksumSha256,
     }),
   })
+  const credentials = loadSyncCredentials()
+  if (!credentials) throw new Error('Reel-Import benötigt einen gekoppelten Geräte-Sync.')
+  const receipt: ReelImportReceipt = {
+    objectId: presigned.objectId,
+    storageKey: presigned.storageKey,
+    fileName: file.name,
+    contentType: file.type || 'video/mp4',
+    sizeBytes: file.size,
+    checksumSha256,
+    lifeAreas,
+    uploaded: false,
+    createdAt: new Date().toISOString(),
+  }
+  saveImportReceipt(credentials.roomId, receipt)
   await putFile(presigned.uploadUrl, presigned.uploadHeaders, file, onProgress)
+  markImportUploaded(credentials.roomId, presigned.objectId)
   await apiJson('/api/storage/complete', {
     method: 'POST',
     body: JSON.stringify({
@@ -107,7 +123,41 @@ export async function uploadAndRegisterReel(
     method: 'POST',
     body: JSON.stringify({ objectId: presigned.objectId, checksumSha256, lifeAreas }),
   })
+  removeImportReceipt(credentials.roomId, presigned.objectId)
   return { reel: registered.reel, queued: Boolean(registered.queued), duplicate: Boolean(registered.duplicate) }
+}
+
+export async function recoverUploadedReels(): Promise<{ recovered: ReelCandidate[]; awaitingReselection: number }> {
+  const credentials = loadSyncCredentials()
+  if (!credentials) return { recovered: [], awaitingReselection: 0 }
+  const receipts = loadImportReceipts(credentials.roomId)
+  const recovered: ReelCandidate[] = []
+  for (const receipt of receipts.filter(item => item.uploaded)) {
+    try {
+      await apiJson('/api/storage/complete', {
+        method: 'POST',
+        body: JSON.stringify({
+          objectId: receipt.objectId,
+          storageKey: receipt.storageKey,
+          fileName: receipt.fileName,
+          contentType: receipt.contentType,
+          sizeBytes: receipt.sizeBytes,
+        }),
+      })
+      const registered = await apiJson<{ reel: ReelCandidate }>('/api/reels/register', {
+        method: 'POST',
+        body: JSON.stringify({ objectId: receipt.objectId, checksumSha256: receipt.checksumSha256, lifeAreas: receipt.lifeAreas }),
+      })
+      recovered.push(registered.reel)
+      removeImportReceipt(credentials.roomId, receipt.objectId)
+    } catch {
+      // Keep the receipt. A later reopen can retry without selecting the completed upload again.
+    }
+  }
+  return {
+    recovered,
+    awaitingReselection: loadImportReceipts(credentials.roomId).filter(item => !item.uploaded).length,
+  }
 }
 
 export async function processReel(reelId: string, lifeAreas: string[]): Promise<ReelCandidate> {
