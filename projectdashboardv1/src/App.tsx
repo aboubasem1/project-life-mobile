@@ -1,8715 +1,1475 @@
-import {
-  useEffect,
-  useRef,
-  useMemo,
-  useState,
-  type CSSProperties,
-  type Dispatch,
-  type FormEvent,
-  type ReactNode,
-  type SetStateAction,
-} from 'react'
-import {
-  AlertCircle,
-  ArrowDownRight,
-  ArrowUpRight,
-  Bell,
-  BookOpen,
-  Brain,
-  CalendarPlus,
-  Check,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  ChevronUp,
-  Circle,
-  Cloud,
-  Compass,
-  Coffee,
-  CreditCard,
-  Crown,
-  Database,
-  Droplet,
-  Dumbbell,
-  Fish,
-  Eye,
-  EyeOff,
-  FlaskConical,
-  Focus,
-  Home,
-  Inbox,
-  LayoutGrid,
-  Mic,
-  Leaf,
-  Moon,
-  Pause,
-  Pencil,
-  Pill,
-  Play,
-  Plus,
-  Receipt,
-  RotateCcw,
-  Search,
-  Settings,
-  Share2,
-  ShoppingBag,
-  Smartphone,
-  Snowflake,
-  Sparkles,
-  Sun,
-  Timer,
-  Trash2,
-  User,
-  Users,
-  Utensils,
-  X,
-  type LucideIcon,
-} from 'lucide-react'
-import { useEntries } from './hooks/useEntries'
-import { SwipeableRow } from './components/SwipeableRow'
-import { ContextMenu, type ContextMenuItem } from './components/ContextMenu'
-import type { DashboardEntry } from './types/DashboardEntry'
-import { createDefaultEntry } from './types/DashboardEntry'
-import { getDayPolicy } from './lib/dayPolicy'
-import { buildWeekInsights } from './lib/insights'
-import { deriveLaborOverview, deriveLaborStats, smartLaborHints } from './lib/laborLive'
-import { searchLabor } from './lib/laborSearch'
-import { buildMonthGrid, monthLabel } from './lib/calendarGrid'
-import { hashFromView, hashPathOnly, isProgressHubView, labDataSectionFromHash, navigateHash, navigateHashWithId, navigateLabDataSection, peekAppAction, takeAppActionFromLocation, viewFromHash, entityIdFromHash, buildActionUrl, SHORTCUT_RECIPES, VIEW_LABELS, type AppAction, type AppView, type LabDataSection } from './lib/routing'
-import {
-  LAB_DATA_AREAS,
-  LAB_DATA_SECTION_IDS,
-  contextLineForSection,
-  type LabDataQuickAction,
-} from './lib/labDataNav'
-import { shareOrDownloadIcs } from './lib/ics'
-import { copyText, shareText } from './lib/share'
-import { releaseScreenWakeLock, requestScreenWakeLock } from './lib/wakeLock'
-import { calculateScore, calculateStreakForHabit, getScoreBreakdown } from './lib/score'
-import { calculateHabitStrength, habitStrengthLabel } from './lib/habitStrength'
-import {
-  filterHabitsForDate,
-  normalizeHabitSchedules,
-  toggleScheduleDay,
-  WEEKDAY_LABELS,
-  type HabitScheduleMap,
-} from './lib/habitSchedule'
-import { buildYearHeatmap, eveningPromptForDate } from './lib/heatmap'
-import { buildWeeklyReview, buildWeightSeries } from './lib/weeklyReview'
-import {
-  averageSleepHours,
-  buildWeightInsights,
-  formatSleepHoursLabel,
-  hoursBetweenTimes,
-  macroProgress,
-} from './lib/healthMetrics'
-import type { HabitKey } from './types/DashboardEntry'
-import {
-  applyBackupExtras,
-  exportBackupBundle,
-  getLastBackupAt,
-  importBackupFile,
-  mergeEntriesByDate,
-  saveAllEntries,
-} from './lib/storage'
-import {
-  clearSyncCredentials,
-  createDevicePairing,
-  isDeviceSyncEnabled,
-  joinDevicePairing,
-  LIFE_OS_SYNC_EXTRAS_EVENT,
-  loadSyncCredentials,
-  remoteApplyGenerationNow,
-  pushDeviceSync,
-  refreshPairCode,
-  type DeviceSyncCredentials,
-} from './lib/deviceSync'
-import { levelProgress, loadXP, recomputeXPFromEntries, xpToNextLevel } from './lib/xp-store'
-import {
-  dueMedicationReminders,
-  isMedTakenToday,
-  reminderStorageKey,
-} from './lib/medReminders'
-import {
-  FULLSCREEN_STEP_IDS,
-  MORNING_RITUAL_PROGRESS_KEY,
-  loadMorningGateSkip,
-  loadMorningRitualProgress,
-  markRitualStepDone,
-  morningRitualMeta,
-  morningRitualPhase,
-  moveRitualStep,
-  nextMorningRitualStep,
-  normalizeMorningRitualConfig,
-  normalizeSelfcareItems,
-  ritualSequence,
-  saveMorningGateSkip,
-  saveMorningRitualProgress,
-  type MorningRitualConfig,
-  type MorningRitualProgress,
-  type MorningRitualStepId,
-} from './lib/morningGate'
-import { useLifeOs } from './hooks/useLifeOs'
-import {
-  LIFE_OS_CHANGE_EVENT,
-  applyConvertResult,
-  buildDeterministicInsights,
-  completeReview,
-  convertCapture,
-  createCapture,
-  createConnectorInstance,
-  createId,
-  createReviewDraft,
-  emitDomainEvent,
-  hashSecret,
-  interpretInsights,
-  nowIso,
-  periodForReviewType,
-  relatedIds,
-  refreshDecisionStatus,
-  upsertRelation,
-  groupByResolvedArea,
-  lifeAreaTransitionEvents,
-  matchesAreaFilter,
-  parseLifeArea,
-  resolveLifeArea,
-  type AreaFilter,
-  type CaptureTargetType,
-  type Decision,
-  type DomainEventType,
-  type Insight,
-  type KnowledgeItem,
-  type LifeAreaKey,
-  type Review,
-  type ReviewType,
-} from './lib/lifeos'
-import { applyConvertToDashboard } from './lib/lifeos/dashboardBridge'
-import {
-  applyDecisionBatch,
-  batchFromPreview,
-  decideCaptureInput,
-  defaultRoutineMeals,
-  previewFromBatch,
-  recordDecisionAudits,
-  rememberExecutedKeys,
-  resolveDecisionFlags,
-  type DecisionBatch,
-} from './lib/decision-engine'
-import { CaptureSheet } from './views/lifeos/CaptureSheet'
-import { ChangePreviewSheet } from './components/ChangePreviewSheet'
-import { localPriority } from './lib/generationalRun/logic'
-import { GenerationalRunView } from './views/lifeos/GenerationalRunView'
-import { CommandPalette } from './views/lifeos/CommandPalette'
-import { DecisionView } from './views/lifeos/DecisionView'
-import { GoalDetailView } from './views/lifeos/GoalDetailView'
-import { InboxView } from './views/lifeos/InboxView'
-import { InsightsView } from './views/lifeos/InsightsView'
-import { IntegrationsView } from './views/lifeos/IntegrationsView'
-import { KnowledgeView } from './views/lifeos/KnowledgeView'
-import { applyPublishedKnowledge } from './lib/reels'
-import { ProjectDetailView } from './views/lifeos/ProjectDetailView'
-import { ReviewView } from './views/lifeos/ReviewView'
-import { SignalsView } from './views/lifeos/SignalsView'
-import { LifeAreaFilter, LifeAreaMark, LifeAreaSelect } from './views/lifeos/lifeosUi'
-import { MorningGate } from './components/MorningGate'
-import { EveningGate } from './components/EveningGate'
-import { ProgressHubNav } from './components/ProgressHubNav'
-import { LabDataMobileChrome } from './components/lab/LabDataMobileChrome'
-import { RoutineModeSelector } from './components/RoutineModeSelector'
-import { PrivateNotesSheet } from './components/PrivateNotesSheet'
-import {
-  defaultAdaptiveLifeConfig,
-  labUiClassNames,
-  applyNowDedupePolicy,
-  readAdaptiveFromSettings,
-  type AdaptiveLifeConfig,
-} from './lib/adaptive-core'
-import {
-  commitSystemChange,
-  tryOpenSystemChange,
-  undoSystemChange,
-  type JoChangeSession,
-} from './lib/adaptive-core/jo/system-change'
-import { tryAnswerKnowledgeQuery, type KnowledgeQueryAnswer } from './lib/adaptive-core/jo/knowledge-query'
-import { KnowledgeAnswerSheet } from './components/KnowledgeAnswerSheet'
-import { emitAdaptiveEvent } from './lib/adaptive-core/events/store'
-import {
-  assessDailyProgress,
-  completedRitualSteps,
-  eveningOwnedHabitKeys,
-  eveningRemaining,
-  entryHasMeal,
-  isHabitRelevantNow,
-  isHeadRecoveryDone,
-  nowChipLabel,
-  overviewSlot,
-  ritualOwnedHabitKeys,
-  ritualRemaining,
-  selectNowItems,
-  selectOverviewItems,
-  SHAKE_MEAL_ID,
-  shouldShowDailyClose,
-  syncProteinShakeNutrition,
-  weekDateKeys,
-  type DaySlot,
-  type NowItem,
-} from './lib/dailyFlow'
-import {
-  loadBodyMeasurements,
-  selectTodayWeight,
-} from './lib/bodyMeasurement'
-import { HabitDetailSheet } from './components/HabitDetailSheet'
-import { defaultHabitKind, isHabitComplete, isHabitKey } from './lib/habitKinds'
-import { moodHabitLine } from './lib/moodHabit'
-import { appendJournal, formatNoteLine, mergeQuickNote, parseQuickNote } from './lib/inboundNote'
-import {
-  assessDayCompleteness,
-  EVENING_CLOSE_CHECK_IDS,
-  EVENING_CLOSE_CHECK_META,
-  normalizeEveningGateConfig,
-  type EveningCloseCheckId,
-  type EveningGateConfig,
-} from './lib/dayClose'
-import {
-  LIFE_OS_DAILY_EVENTS_EVENT,
-  appendDailyEvent,
-  buildUndoPatch,
-  canUndoEntryPatch,
-  canUndoRitualStep,
-  capturePreviousValues,
-  createEntryPatchEvent,
-  createRitualStepEvent,
-  DAILY_EVENTS_KEY,
-  eventsForDate,
-  formatEventTime,
-  loadDailyEvents,
-  sourceLabel,
-  summarizeDailyEvent,
-  type DailyEvent,
-  type DailyEventSource,
-  type EntryPatchEvent,
-} from './lib/dailyEvents'
-import './launch.css'
-
-type View = AppView
-type ThemePreference = 'light' | 'dark' | 'system'
-type AccentPreference = 'ice' | 'terracotta' | 'sage' | 'ocean' | 'lilac' | 'amber'
-
-const ACCENT_OPTIONS: Array<{ id: AccentPreference; label: string; swatch: string }> = [
-  { id: 'ice', label: 'Ice', swatch: '#CFECF3' },
-  { id: 'terracotta', label: 'Terrakotta', swatch: '#c77f6b' },
-  { id: 'sage', label: 'Salbei', swatch: '#6f8f7d' },
-  { id: 'ocean', label: 'Ozean', swatch: '#6e8db1' },
-  { id: 'lilac', label: 'Flieder', swatch: '#a08cb8' },
-  { id: 'amber', label: 'Bernstein', swatch: '#b68c4c' },
-]
-
-const ACCENT_IDS = ACCENT_OPTIONS.map(option => option.id)
-type EnergyLevel = NonNullable<DashboardEntry['energyLevel']>
-type RoutineKey =
-  | 'breathingDone' | 'coldShower' | 'proteinShake'
-  | 'pushupsDone' | 'squatsDone' | 'wallsitDone' | 'plankDone'
-  | 'gratitudeDone' | 'focusDone' | 'winnerModeDone'
-  | 'journalDone' | 'familyTimeDone'
-
-type AppSettings = {
-  name: string
-  theme: ThemePreference
-  accent: AccentPreference
-  focusMinutes: number
-  proteinGoal: number
-  calorieGoal: number
-  fatGoal: number
-  carbsGoal: number
-  fiberGoal: number
-  /** For BMI; 0 = nicht gesetzt. */
-  heightCm: number
-  /** Target weight; 0 = nicht gesetzt. */
-  weightGoalKg: number
-  /** Optional baseline for progress; 0 = erster gespeicherter Wert. */
-  weightStartKg: number
-  activeHabits: string[]
-  /** Empty / missing = every day. Values 0=Mo ‚Ä¶ 6=So. */
-  habitSchedules: HabitScheduleMap
-  dashboardPlusLayout: DashboardPlusLayout
-  /** Opt-in: soft Medis reminders when clock matches (no auto permission ask). */
-  medisRemindersEnabled: boolean
-  /** First open of the day: complete these widgets before Heute. */
-  morningGateEnabled: boolean
-  morningRitual: MorningRitualConfig
-  eveningGate: EveningGateConfig
-  adaptive: AdaptiveLifeConfig
-}
-
-type DashboardPlusLayout = {
-  order: DashboardPlusSection[]
-  hidden: DashboardPlusSection[]
-}
-
-type FocusSession = {
-  title: string
-  minutes: number
-  taskIndex?: number
-  routineKey?: RoutineKey
-}
-
-type ToastState = {
-  message: string
-  actionLabel?: string
-  onAction?: () => void
-} | null
-
-type DashboardPlusPriority = 'p1' | 'p2' | 'p3' | 'p4'
-
-const PRIORITY_ORDER: DashboardPlusPriority[] = ['p1', 'p2', 'p3', 'p4']
-
-const PRIORITY_META: Record<DashboardPlusPriority, { label: string; color: string }> = {
-  p1: { label: 'P1', color: 'var(--danger)' },
-  p2: { label: 'P2', color: 'var(--warning)' },
-  p3: { label: 'P3', color: 'var(--blue)' },
-  p4: { label: 'P4', color: 'var(--text-muted)' },
-}
-
-function nextPriority(current: DashboardPlusPriority): DashboardPlusPriority {
-  const index = PRIORITY_ORDER.indexOf(current)
-  return PRIORITY_ORDER[(index + 1) % PRIORITY_ORDER.length]
-}
-
-type DashboardPlusTask = {
-  id: string
-  title: string
-  tag: string
-  time: string
-  done: boolean
-  priority: DashboardPlusPriority
-  plannedMinutes?: number
-  actualMinutes?: number
-  lifeArea?: LifeAreaKey
-}
-
-type DashboardPlusSupplement = {
-  id: string
-  name: string
-  brand: string
-  stock: number
-  unit: string
-  dailyUse: number
-  dailyUnit: string
-  /** Legacy / optional ‚Äî accent is derived in UI from id/name */
-  color?: string
-}
-
-const SUPPLEMENT_ACCENTS = [
-  'var(--accent)',
-  'var(--sage)',
-  'var(--blue)',
-  'var(--lilac)',
-  'var(--warning)',
-] as const
-
-function hashSupplementKey(value: string): number {
-  let hash = 0
-  for (let index = 0; index < value.length; index += 1) {
-    hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0
-  }
-  return Math.abs(hash)
-}
-
-function supplementAccent(item: Pick<DashboardPlusSupplement, 'id' | 'name'>, index: number): string {
-  const key = item.id || item.name || String(index)
-  return SUPPLEMENT_ACCENTS[hashSupplementKey(key) % SUPPLEMENT_ACCENTS.length]
-}
-
-function supplementDaysRemaining(stock: number, dailyUse: number): number | null {
-  if (dailyUse <= 0) return null
-  return Math.floor(stock / dailyUse)
-}
-
-type ProjectStatus = 'active' | 'paused' | 'done' | 'archived'
-
-type ProjectMilestone = { id: string; title: string; done: boolean; due?: string }
-
-type DashboardPlusBoard = {
-  id: string
-  label: string
-  count: number
-  tasks: DashboardPlusTask[]
-  description?: string
-  outcome?: string
-  status?: ProjectStatus
-  priority?: DashboardPlusPriority
-  startDate?: string
-  targetDate?: string
-  nextAction?: string
-  nextActionTaskId?: string
-  milestones?: ProjectMilestone[]
-  goalId?: string
-  lastActivityAt?: string
-  lifeArea?: LifeAreaKey
-}
-
-type ShoppingIconKey = 'flask' | 'fish' | 'pill' | 'bag' | 'droplet'
-
-type DashboardPlusShoppingItem = {
-  id: string
-  /** Semantic icon key ‚Äî never an emoji */
-  icon: ShoppingIconKey | string
-  name: string
-  note: string
-  price: number
-  done: boolean
-  lowStock?: boolean
-}
-
-const SHOPPING_ICON_MAP: Record<ShoppingIconKey, typeof ShoppingBag> = {
-  flask: FlaskConical,
-  fish: Fish,
-  droplet: Droplet,
-  pill: Pill,
-  bag: ShoppingBag,
-}
-
-function shoppingIconKey(raw: string): ShoppingIconKey {
-  const value = raw.trim().toLowerCase()
-  if (value === 'flask' || value === 'fish' || value === 'pill' || value === 'bag' || value === 'droplet') return value
-  // Legacy emoji / unknown ‚Üí bag
-  return 'bag'
-}
-
-function ShoppingItemIcon({ icon }: { icon: string }) {
-  const Icon = SHOPPING_ICON_MAP[shoppingIconKey(icon)]
-  return <Icon size={16} />
-}
-
-type DashboardPlusBillStatus = 'paid' | 'open' | 'overdue'
-
-type DashboardPlusBill = {
-  id: string
-  name: string
-  subtitle: string
-  amount: number
-  due: string
-  status: DashboardPlusBillStatus
-  color: string
-}
-
-type DashboardPlusMedication = {
-  id: string
-  name: string
-  dosage: string
-  time: string
-  notes: string
-  effect: string
-  sideEffects: string
-  /** @deprecated use takenDate ‚Äî kept for seed/legacy */
-  taken: boolean
-  /** YYYY-MM-DD when taken; cleared after midnight by comparing to today */
-  takenDate?: string
-  /** Soft reminder at `time` when settings.medisRemindersEnabled */
-  remind?: boolean
-  color: string
-}
-
-function isMedicationTakenToday(item: DashboardPlusMedication, today: string): boolean {
-  return isMedTakenToday(item, today)
-}
-
-function normalizeMedication(item: DashboardPlusMedication, today: string): DashboardPlusMedication {
-  if (item.taken && !item.takenDate) {
-    return { ...item, takenDate: today, taken: true }
-  }
-  return item
-}
-
-type DashboardPlusGoalTimeframe = 'Jahr' | 'Quartal' | 'Monat' | 'Woche'
-
-type GoalCheckIn = { id: string; at: string; note: string; value?: number }
-
-type DashboardPlusGoal = {
-  id: string
-  title: string
-  timeframe: DashboardPlusGoalTimeframe
-  percent: number
-  dueDate: string
-  color: string
-  description?: string
-  outcome?: string
-  metric?: string
-  target?: number
-  current?: number
-  unit?: string
-  status?: 'active' | 'paused' | 'done' | 'dropped'
-  checkIns?: GoalCheckIn[]
-  lifeArea?: LifeAreaKey
-}
-
-type FinanceSummary = {
-  monthlyFixed: number
-  recurringCount: number
-  openSum: number
-  openCount: number
-  overdueSum: number
-  overdueCount: number
-  pressure: number
-  nextDue: { name: string; due: string; amount: number } | null
-  hints: string[]
-}
-
-function sumBillAmounts(bills: DashboardPlusBill[]): number {
-  return bills.reduce((total, bill) => total + (Number.isFinite(bill.amount) ? bill.amount : 0), 0)
-}
-
-function parseBillDueDate(due: string): string | null {
-  const value = String(due ?? '').trim()
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
-  return null
-}
-
-function cycleBillStatus(status: DashboardPlusBillStatus): DashboardPlusBillStatus {
-  switch (status) {
-    case 'open':
-      return 'paid'
-    case 'paid':
-      return 'overdue'
-    case 'overdue':
-      return 'open'
-    default: {
-      const _exhaustive: never = status
-      return _exhaustive
-    }
-  }
-}
-
-function createBillDraft(
-  kind: 'recurring' | 'open',
-  today: string,
-  index: number,
-): DashboardPlusBill {
-  return {
-    id: crypto.randomUUID(),
-    name: kind === 'recurring' ? 'Neue Fixkosten' : 'Neue Rechnung',
-    subtitle: kind === 'recurring' ? 'monatlich' : '',
-    amount: 0,
-    due: today,
-    status: 'open',
-    color: SUPPLEMENT_ACCENTS[index % SUPPLEMENT_ACCENTS.length],
-  }
-}
-
-function deriveFinanceSummary(finances: DashboardPlusState['finances']): FinanceSummary {
-  const unpaidOpen = finances.openBills.filter(bill => bill.status === 'open')
-  const overdueBills = [...finances.recurring, ...finances.openBills].filter(bill => bill.status === 'overdue')
-  const monthlyFixed = sumBillAmounts(finances.recurring)
-  const openSum = sumBillAmounts(unpaidOpen)
-  const overdueSum = sumBillAmounts(overdueBills)
-  const pressure = monthlyFixed > 0
-    ? Math.round(((openSum + overdueSum) / monthlyFixed) * 100)
-    : 0
-
-  const nextCandidates = [...finances.recurring, ...finances.openBills]
-    .filter(bill => bill.status === 'open' || bill.status === 'overdue')
-    .map(bill => {
-      const due = parseBillDueDate(bill.due)
-      return due ? { name: bill.name || 'Rechnung', due, amount: bill.amount } : null
-    })
-    .filter((item): item is { name: string; due: string; amount: number } => Boolean(item))
-    .sort((a, b) => a.due.localeCompare(b.due))
-  const nextDue = nextCandidates[0] ?? null
-
-  const hints: string[] = []
-  if (overdueBills.length > 0) {
-    hints.push(
-      overdueBills.length === 1
-        ? 'Eine Rechnung ist √ºberf√§llig ‚Äî zuerst kl√§ren, dann weiterplanen.'
-        : `${overdueBills.length} Rechnungen sind √ºberf√§llig ‚Äî ruhig abarbeiten, bevor Neues dazukommt.`,
-    )
-  }
-  if (monthlyFixed > 0 && openSum + overdueSum > monthlyFixed * 0.45) {
-    hints.push('Offene Betr√§ge sind relativ hoch zum Monatsfix ‚Äî kurz priorisieren.')
-  }
-
-  return {
-    monthlyFixed,
-    recurringCount: finances.recurring.length,
-    openSum,
-    openCount: unpaidOpen.length,
-    overdueSum,
-    overdueCount: overdueBills.length,
-    pressure,
-    nextDue,
-    hints: hints.slice(0, 2),
-  }
-}
-
-function billStatusLabel(status: DashboardPlusBillStatus): string {
-  switch (status) {
-    case 'paid':
-      return 'Bezahlt'
-    case 'open':
-      return 'Offen'
-    case 'overdue':
-      return '√úberf√§llig'
-    default: {
-      const _exhaustive: never = status
-      return _exhaustive
-    }
-  }
-}
-
-type DashboardPlusListKind = 'pack' | 'wishlist' | 'books' | 'recipes' | 'custom'
-
-type DashboardPlusListItem = {
-  id: string
-  title: string
-  note: string
-  done: boolean
-}
-
-type DashboardPlusList = {
-  id: string
-  title: string
-  kind: DashboardPlusListKind
-  items: DashboardPlusListItem[]
-}
-
-const LIST_KIND_LABELS: Record<DashboardPlusListKind, string> = {
-  pack: 'Packliste',
-  wishlist: 'Wunschliste',
-  books: 'B√ºcher',
-  recipes: 'Rezepte',
-  custom: 'Liste',
-}
-
-type DashboardPlusState = {
-  overview: {
-    dateLabel: string
-    syncStatus: string
-    syncTime: string
-    score: number
-    habits: number
-    todos: number
-    projects: number
-  }
-  focusTodos: DashboardPlusTask[]
-  supplements: DashboardPlusSupplement[]
-  medications: DashboardPlusMedication[]
-  goals: DashboardPlusGoal[]
-  boards: DashboardPlusBoard[]
-  shopping: {
-    total: number
-    items: DashboardPlusShoppingItem[]
-  }
-  lists: DashboardPlusList[]
-  stats: {
-    average: number
-    best: number
-    rhythm: number
-    weight: number
-    weeklyBars: number[]
-    heatmap: number[]
-    projects: Array<{ id: string; name: string; percent: number; color: string }>
-  }
-  finances: {
-    monthlyFixed: number
-    open: number
-    overdue: number
-    recurring: DashboardPlusBill[]
-    openBills: DashboardPlusBill[]
-  }
-}
-
-const DASHBOARD_PLUS_TABS = LAB_DATA_AREAS
-
-type DashboardPlusSection = LabDataSection
-
-const SETTINGS_KEY = 'life-os-v1-settings'
-/** Stores the date of the last splash so the intro animation only plays on the first open of a day. */
-const SPLASH_KEY = 'life-os-splash-day'
-const QUICK_NOTE_KEY = 'life-os-quick-note'
-const DASHBOARD_PLUS_KEY = 'life-os-v1-dashboard-plus'
-
-function shouldBypassMorningGate(action: AppAction | null): boolean {
-  return action?.kind === 'note'
-    || action?.kind === 'log'
-    || action?.kind === 'add-task'
-    || action?.kind === 'focus'
-    || action?.kind === 'capture'
-}
-
-// ‚îÄ‚îÄ Data from projectbaby ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ
-const DEF_TASKS = [
-  'Morning Routine abschlie√üen',
-  'Training ¬∑ 45 Min Workout',
-  '2L Wasser trinken',
-  'Deep Work Block ¬∑ 90 Min',
-  'Supplements einnehmen',
-  '3 Todos aus Projekt',
-  'Abend-Check-in ¬∑ Reflektion',
-] as const
-
-const LVLS = ['Einstieg', 'Aufbau', '√úbung', 'Rhythmus', 'Konstanz', 'Gefestigt', 'Vertieft', 'Verankert', 'Meisterschaft', 'Souver√§n'] as const
-
-/** Maps the persisted xp-store level (unbounded) onto the LVLS name ladder. */
-function levelName(level: number): string {
-  return LVLS[Math.min(Math.max(level, 1), LVLS.length) - 1]
-}
-
-type HabitDef = {
-  id: RoutineKey
-  label: string
-  category: string
-  minutes?: number
-  icon: React.ComponentType<{ size?: number }>
-}
-
-const DAILY_HABITS: HabitDef[] = [
-  { id: 'breathingDone',   label: '11 Min. Atmung',    category: 'Mind', minutes: 11, icon: Brain    },
-  { id: 'coldShower',      label: 'Cold Shower',       category: 'Body', icon: Snowflake },
-  { id: 'proteinShake',    label: 'Protein Shake',     category: 'Body', icon: Coffee   },
-  { id: 'pushupsDone',     label: '50 Pushups',        category: 'Body', icon: Dumbbell },
-  { id: 'squatsDone',      label: '50 Squats',         category: 'Body', icon: Dumbbell },
-  { id: 'wallsitDone',     label: '50s Wallsit',       category: 'Body', icon: Timer    },
-  { id: 'plankDone',       label: '50s Plank',         category: 'Body', icon: Timer    },
-  { id: 'gratitudeDone',   label: 'Dankbarkeit',       category: 'Mind', icon: Sparkles },
-  { id: 'focusDone',       label: 'Deep Focus',        category: 'Mind', icon: Focus    },
-  { id: 'winnerModeDone',  label: 'Winner Mode',       category: 'Mind', icon: Crown    },
-  { id: 'journalDone',     label: 'Journal schreiben', category: 'Mind', icon: BookOpen },
-  { id: 'familyTimeDone',  label: 'Familienzeit',      category: 'Main', icon: Users    },
-]
-
-function createDashboardPlusSeed(): DashboardPlusState {
-  return {
-    overview: {
-      dateLabel: new Intl.DateTimeFormat('de-DE', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' }).format(new Date()),
-      syncStatus: 'Lokal',
-      syncTime: '',
-      score: 0,
-      habits: 0,
-      todos: 0,
-      projects: 0,
-    },
-    focusTodos: [],
-    supplements: [],
-    medications: [],
-    goals: [],
-    boards: [
-      { id: 'personal', label: 'Personal', count: 0, tasks: [] },
-      { id: 'work', label: 'Arbeit', count: 0, tasks: [] },
-      { id: 'health', label: 'Health', count: 0, tasks: [] },
-    ],
-    shopping: { total: 0, items: [] },
-    lists: [
-      { id: 'pack', title: 'Packliste', kind: 'pack', items: [] },
-      { id: 'wishlist', title: 'Wunschliste', kind: 'wishlist', items: [] },
-    ],
-    stats: {
-      average: 0,
-      best: 0,
-      rhythm: 0,
-      weight: 0,
-      weeklyBars: [0, 0, 0, 0, 0, 0, 0],
-      heatmap: [],
-      projects: [],
-    },
-    finances: {
-      monthlyFixed: 0,
-      open: 0,
-      overdue: 0,
-      recurring: [],
-      openBills: [],
-    },
-  }
-}
-
-function syncBoardCounts(boards: DashboardPlusBoard[]): DashboardPlusBoard[] {
-  return boards.map(board => ({
-    ...board,
-    count: board.tasks.filter(task => !task.done).length,
-  }))
-}
-
-function stripEmojis(value: string): string {
-  return value
-    .replace(/\p{Extended_Pictographic}/gu, '')
-    .replace(/\uFE0F/g, '')
-    .replace(/\s{2,}/g, ' ')
-    .trim()
-}
-
-function normalizeShoppingItem(item: DashboardPlusShoppingItem): DashboardPlusShoppingItem {
-  const legacyMap: Record<string, ShoppingIconKey> = {
-    'üß™': 'flask',
-    'üêü': 'fish',
-    'üíä': 'pill',
-    'üíß': 'droplet',
-  }
-  const mapped = legacyMap[item.icon] ?? shoppingIconKey(String(item.icon))
-  return {
-    ...item,
-    icon: mapped,
-    name: stripEmojis(item.name),
-    note: stripEmojis(item.note),
-  }
-}
-
-// Every array below is rendered with a direct .map() in DashboardPlusView, so
-// persisted state that predates a field (or was hand-edited into a bad shape)
-// must never reach render as anything but a same-shaped array ‚Äî otherwise a
-// single stale/missing field crashes the whole view (e.g. an unknown
-// shopping-item icon, or a field from before it existed in the schema).
-// PriorityBadge does PRIORITY_META[priority] with no fallback, so any task
-// persisted under the pre-Phase-2 scheme ('red'/'orange'/'blue') or otherwise
-// invalid crashes the Todos tab the instant it renders.
-function normalizeTaskPriority(task: DashboardPlusTask): DashboardPlusTask {
-  const legacyPriority: Record<string, DashboardPlusPriority> = {
-    red: 'p1',
-    orange: 'p2',
-    blue: 'p3',
-  }
-  const raw = task.priority as string
-  const mapped = (legacyPriority[raw] ?? raw) as DashboardPlusPriority
-  return {
-    ...(PRIORITY_ORDER.includes(mapped) ? { ...task, priority: mapped } : { ...task, priority: 'p3' }),
-    lifeArea: parseLifeArea(task.lifeArea),
-  }
-}
-
-function resolveDashboardTaskArea(
-  task: DashboardPlusTask,
-  board: DashboardPlusBoard | undefined,
-  goals: DashboardPlusGoal[],
-) {
-  const goal = board?.goalId ? goals.find(item => item.id === board.goalId) : undefined
-  return resolveLifeArea({ explicit: task.lifeArea, project: board, goal })
-}
-
-function normalizeDashboardPlusState(parsed: Partial<DashboardPlusState> | null | undefined): DashboardPlusState {
-  const seed = createDashboardPlusSeed()
-  if (!parsed || typeof parsed !== 'object' || !parsed.overview) return seed
-
-  return {
-    overview: { ...seed.overview, ...parsed.overview },
-    focusTodos: Array.isArray(parsed.focusTodos) ? parsed.focusTodos.map(normalizeTaskPriority) : seed.focusTodos,
-    supplements: Array.isArray(parsed.supplements) ? parsed.supplements : seed.supplements,
-    medications: Array.isArray(parsed.medications)
-      ? parsed.medications.map(item => normalizeMedication(item, dateKey(new Date())))
-      : seed.medications,
-    goals: Array.isArray(parsed.goals) ? parsed.goals.map(goal => ({
-      ...goal,
-      checkIns: Array.isArray(goal.checkIns) ? goal.checkIns : [],
-      lifeArea: parseLifeArea(goal.lifeArea),
-    })) : seed.goals,
-    boards: Array.isArray(parsed.boards)
-      ? syncBoardCounts(parsed.boards.map(board => ({
-        ...board,
-        lifeArea: parseLifeArea(board.lifeArea),
-        tasks: Array.isArray(board.tasks) ? board.tasks.map(normalizeTaskPriority) : [],
-        milestones: Array.isArray(board.milestones) ? board.milestones : [],
-      })))
-      : seed.boards,
-    shopping: {
-      total: typeof parsed.shopping?.total === 'number' ? parsed.shopping.total : seed.shopping.total,
-      items: Array.isArray(parsed.shopping?.items)
-        ? parsed.shopping.items.map(item => normalizeShoppingItem({
-          ...item,
-          icon: typeof item.icon === 'string' ? item.icon : 'flask',
-        }))
-        : seed.shopping.items,
-    },
-    lists: Array.isArray(parsed.lists) && parsed.lists.length > 0
-      ? parsed.lists.map(list => ({
-        id: String(list.id || crypto.randomUUID()),
-        title: String(list.title || 'Liste'),
-        kind: (['pack', 'wishlist', 'books', 'recipes', 'custom'] as const).includes(list.kind as DashboardPlusListKind)
-          ? list.kind as DashboardPlusListKind
-          : 'custom',
-        items: Array.isArray(list.items)
-          ? list.items.map(item => ({
-            id: String(item.id || crypto.randomUUID()),
-            title: String(item.title || ''),
-            note: String(item.note || ''),
-            done: Boolean(item.done),
-          }))
-          : [],
-      }))
-      : seed.lists,
-    stats: {
-      ...seed.stats,
-      ...parsed.stats,
-      weeklyBars: Array.isArray(parsed.stats?.weeklyBars) ? parsed.stats.weeklyBars : seed.stats.weeklyBars,
-      heatmap: Array.isArray(parsed.stats?.heatmap) ? parsed.stats.heatmap : seed.stats.heatmap,
-      projects: Array.isArray(parsed.stats?.projects) ? parsed.stats.projects : seed.stats.projects,
-    },
-    finances: {
-      ...seed.finances,
-      ...parsed.finances,
-      recurring: Array.isArray(parsed.finances?.recurring) ? parsed.finances.recurring : seed.finances.recurring,
-      openBills: Array.isArray(parsed.finances?.openBills) ? parsed.finances.openBills : seed.finances.openBills,
-    },
-  }
-}
-
-function loadDashboardPlusState(): DashboardPlusState {
-  try {
-    const stored = localStorage.getItem(DASHBOARD_PLUS_KEY)
-    if (!stored) return createDashboardPlusSeed()
-    const parsed = JSON.parse(stored) as Partial<DashboardPlusState>
-    return normalizeDashboardPlusState(parsed)
-  } catch {
-    return createDashboardPlusSeed()
-  }
-}
-
-const DEFAULT_ACTIVE_HABITS = ['breathingDone', 'coldShower', 'proteinShake', 'pushupsDone', 'gratitudeDone']
-
-const DASHBOARD_PLUS_SECTION_IDS = [...LAB_DATA_SECTION_IDS]
-
-const DEFAULT_DASHBOARD_PLUS_LAYOUT: DashboardPlusLayout = {
-  order: [...DASHBOARD_PLUS_SECTION_IDS],
-  hidden: [],
-}
-
-const DEFAULT_SETTINGS: AppSettings = {
-  name: '',
-  theme: 'system',
-  accent: 'ice',
-  focusMinutes: 25,
-  proteinGoal: 150,
-  calorieGoal: 3500,
-  fatGoal: 70,
-  carbsGoal: 250,
-  fiberGoal: 30,
-  heightCm: 0,
-  weightGoalKg: 0,
-  weightStartKg: 0,
-  activeHabits: DEFAULT_ACTIVE_HABITS,
-  habitSchedules: {},
-  dashboardPlusLayout: DEFAULT_DASHBOARD_PLUS_LAYOUT,
-  medisRemindersEnabled: false,
-  morningGateEnabled: true,
-  morningRitual: normalizeMorningRitualConfig(undefined),
-  eveningGate: normalizeEveningGateConfig(undefined),
-  adaptive: defaultAdaptiveLifeConfig(),
-}
-
-function normalizeDashboardPlusLayout(raw: unknown): DashboardPlusLayout {
-  const candidate = (raw ?? {}) as Partial<DashboardPlusLayout>
-  const isSection = (id: unknown): id is DashboardPlusSection =>
-    typeof id === 'string' && (DASHBOARD_PLUS_SECTION_IDS as string[]).includes(id)
-
-  const storedOrder = Array.isArray(candidate.order) ? candidate.order.filter(isSection) : []
-  const order = [...storedOrder, ...DASHBOARD_PLUS_SECTION_IDS.filter(id => !storedOrder.includes(id))]
-
-  const storedHidden = Array.isArray(candidate.hidden) ? candidate.hidden.filter(isSection) : []
-  // Never let every tab be hidden ‚Äî fall back to "all visible" rather than an unusable Dashboard+.
-  const hidden = storedHidden.length >= DASHBOARD_PLUS_SECTION_IDS.length ? [] : storedHidden
-
-  return { order, hidden }
-}
-
-const NAV_ITEMS: Array<{ id: View; label: string; icon: typeof Home }> = [
-  { id: 'today', label: 'Heute', icon: Home },
-  { id: 'progress', label: 'Lab', icon: FlaskConical },
-]
-
-const STREAK_HABIT_KEYS: HabitKey[] = [
-  'coldShower', 'proteinShake', 'pushupsDone', 'squatsDone', 'wallsitDone', 'plankDone',
-  'gratitudeDone', 'focusDone', 'winnerModeDone', 'journalDone', 'familyTimeDone', 'breathingDone',
-]
-
-function storageStatusLabel(syncStatus: string, isOnline: boolean, deviceSync = false): string {
-  if (syncStatus === 'error') return deviceSync ? 'Sync fehlgeschlagen' : 'Speichern fehlgeschlagen'
-  if (!isOnline || syncStatus === 'offline') return 'Offline ¬∑ lokal'
-  if (syncStatus === 'syncing') return deviceSync ? 'Synchronisiert ‚Ä¶' : 'Speichert lokal ‚Ä¶'
-  if (syncStatus === 'synced') return deviceSync ? 'Ger√§te synchron' : 'Lokal gespeichert'
-  return deviceSync ? 'Ger√§te-Sync an' : 'Lokal gespeichert'
-}
-
-const MOODS = ['Sehr schlecht', 'Schlecht', 'Okay', 'Gut', 'Sehr gut']
-const SLEEP_QUALITY = ['Schlecht', 'Okay', 'Gut', 'Sehr gut']
-const SLEEP_DURATION_PRESETS = ['<5h', '6h', '7h', '7.5h', '8h', '>8h']
-
-/** Parse stored sleep labels ("7.5h", "<5h") into hour/minute drafts. */
-function parseSleepDurationParts(raw: string): { hours: string; minutes: string } {
-  const value = String(raw ?? '').trim().toLowerCase()
-  if (!value) return { hours: '', minutes: '' }
-  if (value.startsWith('<')) return { hours: '4', minutes: '30' }
-  if (value.startsWith('>')) return { hours: '9', minutes: '0' }
-  const match = value.match(/^(\d+(?:[.,]\d+)?)\s*h?$/)
-  if (!match) return { hours: '', minutes: '' }
-  const total = Number.parseFloat(match[1].replace(',', '.'))
-  if (!Number.isFinite(total) || total < 0) return { hours: '', minutes: '' }
-  const hours = Math.floor(total)
-  const minutes = Math.round((total - hours) * 60)
-  return { hours: String(hours), minutes: String(minutes) }
-}
-
-function formatSleepDurationLabel(hours: number, minutes: number): string {
-  const safeHours = Math.max(0, Math.min(16, Math.floor(hours)))
-  const safeMinutes = Math.max(0, Math.min(59, Math.floor(minutes)))
-  if (safeHours === 0 && safeMinutes === 0) return ''
-  if (safeMinutes === 0) return `${safeHours}h`
-  if (safeMinutes === 30) return `${safeHours}.5h`
-  const total = Math.round((safeHours + safeMinutes / 60) * 10) / 10
-  return `${total}h`
-}
-
-function SoftDurationInput({
-  value,
-  onChange,
-}: {
-  value: string
-  onChange: (next: string) => void
-}) {
-  const [hours, setHours] = useState(() => parseSleepDurationParts(value).hours)
-  const [minutes, setMinutes] = useState(() => parseSleepDurationParts(value).minutes)
-  const [confirmed, setConfirmed] = useState(() => Boolean(value))
-  const [pulse, setPulse] = useState(false)
-
-  useEffect(() => {
-    const parts = parseSleepDurationParts(value)
-    setHours(parts.hours)
-    setMinutes(parts.minutes)
-    setConfirmed(Boolean(value))
-  }, [value])
-
-  const confirm = () => {
-    const next = formatSleepDurationLabel(Number(hours) || 0, Number(minutes) || 0)
-    onChange(next)
-    setConfirmed(Boolean(next))
-    if (!next) return
-    setPulse(true)
-    window.setTimeout(() => setPulse(false), 420)
-  }
-
-  return (
-    <div
-      className={[
-        'soft-duration',
-        confirmed ? 'is-confirmed' : '',
-        pulse ? 'is-pulse' : '',
-      ].filter(Boolean).join(' ')}
-    >
-      <label className="soft-duration__field">
-        <input
-          inputMode="numeric"
-          pattern="[0-9]*"
-          value={hours}
-          placeholder="0"
-          aria-label="Stunden"
-          onChange={event => setHours(event.target.value.replace(/\D/g, '').slice(0, 2))}
-          onKeyDown={event => {
-            if (event.key === 'Enter') confirm()
-          }}
-        />
-        <span>Std.</span>
-      </label>
-      <label className="soft-duration__field">
-        <input
-          inputMode="numeric"
-          pattern="[0-9]*"
-          value={minutes}
-          placeholder="0"
-          aria-label="Minuten"
-          onChange={event => {
-            const digits = event.target.value.replace(/\D/g, '').slice(0, 2)
-            if (digits === '') {
-              setMinutes('')
-              return
-            }
-            setMinutes(String(Math.min(59, Number(digits))))
-          }}
-          onKeyDown={event => {
-            if (event.key === 'Enter') confirm()
-          }}
-        />
-        <span>Min.</span>
-      </label>
-      <button
-        type="button"
-        className="soft-duration__confirm"
-        onClick={confirm}
-        aria-label="Dauer best√§tigen"
-      >
-        <Check size={20} strokeWidth={2.5} />
-      </button>
-    </div>
-  )
-}
-
-function loadSettings(): AppSettings {
-  try {
-    const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') as Partial<AppSettings>
-    const theme: ThemePreference = ['light', 'dark', 'system'].includes(stored.theme ?? '')
-      ? stored.theme as ThemePreference
-      : DEFAULT_SETTINGS.theme
-
-    const accent: AccentPreference = ACCENT_IDS.includes(stored.accent as AccentPreference)
-      ? stored.accent as AccentPreference
-      : DEFAULT_SETTINGS.accent
-
-    return {
-      name: typeof stored.name === 'string' ? stored.name.slice(0, 40) : DEFAULT_SETTINGS.name,
-      theme,
-      accent,
-      focusMinutes: clampNumber(Number(stored.focusMinutes) || DEFAULT_SETTINGS.focusMinutes, 5, 120),
-      proteinGoal: clampNumber(Number(stored.proteinGoal) || DEFAULT_SETTINGS.proteinGoal, 50, 400),
-      calorieGoal: clampNumber(Number(stored.calorieGoal) || DEFAULT_SETTINGS.calorieGoal, 1000, 8000),
-      fatGoal: clampNumber(Number(stored.fatGoal) || DEFAULT_SETTINGS.fatGoal, 20, 200),
-      carbsGoal: clampNumber(Number(stored.carbsGoal) || DEFAULT_SETTINGS.carbsGoal, 50, 500),
-      fiberGoal: clampNumber(Number(stored.fiberGoal) || DEFAULT_SETTINGS.fiberGoal, 10, 80),
-      heightCm: clampNumber(Number(stored.heightCm) || 0, 0, 250),
-      weightGoalKg: clampNumber(Number(stored.weightGoalKg) || 0, 0, 300),
-      weightStartKg: clampNumber(Number(stored.weightStartKg) || 0, 0, 300),
-      activeHabits: Array.isArray(stored.activeHabits) ? stored.activeHabits : DEFAULT_ACTIVE_HABITS,
-      habitSchedules: normalizeHabitSchedules(stored.habitSchedules),
-      dashboardPlusLayout: normalizeDashboardPlusLayout(stored.dashboardPlusLayout),
-      medisRemindersEnabled: Boolean(stored.medisRemindersEnabled),
-      morningGateEnabled: stored.morningGateEnabled !== false,
-      morningRitual: normalizeMorningRitualConfig(
-        (stored as Partial<AppSettings> & { morningRitual?: Partial<MorningRitualConfig> }).morningRitual,
-      ),
-      eveningGate: normalizeEveningGateConfig(
-        (stored as Partial<AppSettings> & { eveningGate?: Partial<EveningGateConfig> }).eveningGate,
-      ),
-      adaptive: readAdaptiveFromSettings(stored),
-    }
-  } catch {
-    return DEFAULT_SETTINGS
-  }
-}
-
-function dateKey(date: Date): string {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function fromDateKey(key: string): Date {
-  return new Date(`${key}T12:00:00`)
-}
-
-function addDays(key: string, amount: number): string {
-  const date = fromDateKey(key)
-  date.setDate(date.getDate() + amount)
-  return dateKey(date)
-}
-
-function daysUntil(targetKey: string, todayKey: string): number {
-  const ms = fromDateKey(targetKey).getTime() - fromDateKey(todayKey).getTime()
-  return Math.round(ms / 86_400_000)
-}
-
-type QuickAddResult =
-  | { kind: 'weight'; value: number }
-  | { kind: 'calories'; value: number }
-  | { kind: 'protein'; value: number }
-  | { kind: 'fat'; value: number }
-  | { kind: 'carbs'; value: number }
-  | { kind: 'fiber'; value: number }
-  | { kind: 'water'; value: number }
-  | { kind: 'steps'; value: number }
-  | { kind: 'task'; title: string }
-
-/** Deliberately simple pattern matching, no NLP/AI ‚Äî a handful of unit
- * suffixes route straight into the matching daily metric, everything else
- * becomes a new task. */
-function parseQuickAdd(raw: string): QuickAddResult {
-  const text = raw.trim()
-  const toNumber = (match: string) => Number(match.replace(',', '.'))
-
-  const weight = text.match(/(\d+(?:[.,]\d+)?)\s*kg\b/i)
-  if (weight) return { kind: 'weight', value: toNumber(weight[1]) }
-
-  const calories = text.match(/(\d+(?:[.,]\d+)?)\s*kcal\b/i)
-  if (calories) return { kind: 'calories', value: toNumber(calories[1]) }
-
-  const protein = text.match(/(\d+(?:[.,]\d+)?)\s*(?:g\s*)?(?:protein|eiwei[s√ü])\b/i)
-    ?? text.match(/(\d+(?:[.,]\d+)?)\s*g\s*p\b/i)
-  if (protein) return { kind: 'protein', value: toNumber(protein[1]) }
-
-  const fat = text.match(/(\d+(?:[.,]\d+)?)\s*(?:g\s*)?(?:fett|fat)\b/i)
-  if (fat) return { kind: 'fat', value: toNumber(fat[1]) }
-
-  const carbs = text.match(/(\d+(?:[.,]\d+)?)\s*(?:g\s*)?(?:kh|kohlenhydrate|carbs?)\b/i)
-  if (carbs) return { kind: 'carbs', value: toNumber(carbs[1]) }
-
-  const fiber = text.match(/(\d+(?:[.,]\d+)?)\s*(?:g\s*)?(?:ballaststoffe?|fiber)\b/i)
-  if (fiber) return { kind: 'fiber', value: toNumber(fiber[1]) }
-
-  const water = text.match(/(\d+(?:[.,]\d+)?)\s*(?:l|liter)\b/i)
-  if (water) return { kind: 'water', value: toNumber(water[1]) }
-
-  const steps = text.match(/(\d+(?:[.,]\d+)?)\s*(?:schritte|steps)\b/i)
-  if (steps) return { kind: 'steps', value: Math.round(toNumber(steps[1])) }
-
-  return { kind: 'task', title: text }
-}
-
-function describeQuickAdd(parsed: QuickAddResult): string {
-  switch (parsed.kind) {
-    case 'weight':
-      return `‚Üí Gewicht: ${parsed.value} kg`
-    case 'calories':
-      return `‚Üí Kalorien: ${parsed.value} kcal`
-    case 'protein':
-      return `‚Üí Protein: ${parsed.value} g`
-    case 'fat':
-      return `‚Üí Fett: ${parsed.value} g`
-    case 'carbs':
-      return `‚Üí Kohlenhydrate: ${parsed.value} g`
-    case 'fiber':
-      return `‚Üí Ballaststoffe: ${parsed.value} g`
-    case 'water':
-      return `‚Üí Wasser: ${parsed.value} L`
-    case 'steps':
-      return `‚Üí Schritte: ${parsed.value}`
-    case 'task':
-      return `‚Üí Neue Aufgabe: ‚Äû${parsed.title}‚Äú`
-    default: {
-      const _exhaustive: never = parsed
-      return _exhaustive
-    }
-  }
-}
-
-function formatLongDate(key: string): string {
-  return new Intl.DateTimeFormat('de-DE', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  }).format(fromDateKey(key))
-}
-
-function formatShortDate(key: string): string {
-  return new Intl.DateTimeFormat('de-DE', {
-    day: '2-digit',
-    month: '2-digit',
-  }).format(fromDateKey(key))
-}
-
-function formatShortWeekday(key: string): string {
-  return new Intl.DateTimeFormat('de-DE', { weekday: 'short' })
-    .format(fromDateKey(key))
-    .replace('.', '')
-}
-
-function greeting(): string {
-  const hour = new Date().getHours()
-  if (hour < 11) return 'Guten Morgen'
-  if (hour < 18) return 'Guten Tag'
-  return 'Guten Abend'
-}
-
-function clampNumber(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
-}
-
-const TASK_FOCUS_DURATIONS = [10, 15, 25, 45, 60] as const
-
-function normalizeAnchorMinutes(
-  minutes: unknown,
-  length: number,
-  fallback: number,
-): number[] {
-  const raw = Array.isArray(minutes) ? minutes : []
-  const safeFallback = clampNumber(Number(fallback) || 25, 5, 120)
-  return Array.from({ length }, (_, index) => {
-    const value = Number(raw[index])
-    return Number.isFinite(value) && value >= 5 ? clampNumber(value, 5, 120) : safeFallback
-  })
-}
-
-function plural(count: number, singular: string, pluralWord: string): string {
-  return count === 1 ? singular : pluralWord
-}
-
-function useModalBehavior(onClose: () => void) {
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-
-    document.body.style.overflow = 'hidden'
-    window.addEventListener('keydown', closeOnEscape)
-
-    return () => {
-      document.body.style.overflow = previousOverflow
-      window.removeEventListener('keydown', closeOnEscape)
-    }
-  }, [onClose])
-}
-
-function IconButton({
-  label,
-  children,
-  onClick,
-  disabled,
-  className = '',
-}: {
-  label: string
-  children: ReactNode
-  onClick: () => void
-  disabled?: boolean
-  className?: string
-}) {
-  return (
-    <button
-      type="button"
-      className={`icon-button ${className}`}
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      disabled={disabled}
-    >
-      {children}
-    </button>
-  )
-}
-
-function ProgressRing({ value, size = 72 }: { value: number; size?: number }) {
-  const safeValue = clampNumber(Math.round(value), 0, 100)
-  return (
-    <div
-      className="progress-ring"
-      style={{
-        width: size,
-        height: size,
-        background: `conic-gradient(var(--accent-strong) ${safeValue * 3.6}deg, var(--track) 0deg)`,
-      }}
-      aria-label={`${safeValue} Prozent Fortschritt`}
-      role="img"
-    >
-      <div className="progress-ring__inner">
-        <strong>{safeValue}%</strong>
-        <span>heute</span>
-      </div>
-    </div>
-  )
-}
-
-function SectionTitle({
-  eyebrow,
-  title,
-  action,
-}: {
-  eyebrow?: string
-  title: string
-  action?: ReactNode
-}) {
-  return (
-    <div className="section-title">
-      <div>
-        {eyebrow && <span className="eyebrow">{eyebrow}</span>}
-        <h2>{title}</h2>
-      </div>
-      {action}
-    </div>
-  )
-}
-
-function PriorityBadge({ priority, onCycle }: { priority: DashboardPlusPriority; onCycle: () => void }) {
-  const meta = PRIORITY_META[priority] ?? PRIORITY_META.p3
-  return (
-    <button
-      type="button"
-      className="priority-badge"
-      style={{ '--priority-color': meta.color } as CSSProperties}
-      onClick={onCycle}
-      aria-label={`Priorit√§t ${meta.label} ‚Äî klicken zum √Ñndern`}
-      title={`Priorit√§t ${meta.label}`}
-    >
-      {meta.label}
-    </button>
-  )
-}
-
-function EmptyState({
-  title,
-  text,
-  action,
-}: {
-  title: string
-  text: string
-  action?: ReactNode
-}) {
-  return (
-    <div className="empty-state">
-      <div className="empty-state__icon">
-        <Leaf size={22} />
-      </div>
-      <h3>{title}</h3>
-      <p>{text}</p>
-      {action}
-    </div>
-  )
-}
-
-function App() {
-  const { entries, syncStatus, isOnline, saveEntry, reloadAll, syncNow } = useEntries()
-  const [view, setView] = useState<View>(() => viewFromHash())
-  const [selectedDate, setSelectedDate] = useState(() => dateKey(new Date()))
-  const [settings, setSettings] = useState<AppSettings>(loadSettings)
-  const [dashboardPlus, setDashboardPlus] = useState<DashboardPlusState>(loadDashboardPlusState)
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [taskEditor, setTaskEditor] = useState<{ index: number | null; value: string; minutes: number } | null>(null)
-  const [quickAddOpen, setQuickAddOpen] = useState(false)
-  const [focusSession, setFocusSession] = useState<FocusSession | null>(null)
-  const [toast, setToast] = useState<ToastState>(null)
-  const [deviceSyncCreds, setDeviceSyncCreds] = useState<DeviceSyncCredentials | null>(() => loadSyncCredentials())
-  const actionBridgeRef = useRef<{
-    applyAction: (action: AppAction) => void
-  } | null>(null)
-  const [lastBackupAt, setLastBackupAt] = useState<string | null>(() => getLastBackupAt())
-  const [splashPhase, setSplashPhase] = useState<'visible' | 'leaving' | 'done'>(() => {
-    try {
-      return localStorage.getItem(SPLASH_KEY) === dateKey(new Date()) ? 'done' : 'visible'
-    } catch {
-      return 'visible'
-    }
-  })
-  const [gatePreview, setGatePreview] = useState(false)
-  const [previewIndex, setPreviewIndex] = useState(0)
-  const [gateBypass, setGateBypass] = useState(() => shouldBypassMorningGate(peekAppAction()))
-  const [gateSkipped, setGateSkipped] = useState(() => loadMorningGateSkip(dateKey(new Date())))
-  const [ritualProgress, setRitualProgress] = useState<MorningRitualProgress>(() => loadMorningRitualProgress(dateKey(new Date())))
-  const [dailyEvents, setDailyEvents] = useState<DailyEvent[]>(() => loadDailyEvents())
-  const lifeOs = useLifeOs()
-  const [paletteOpen, setPaletteOpen] = useState(false)
-  const [captureOpen, setCaptureOpen] = useState(false)
-  const [capturePreset, setCapturePreset] = useState('')
-  const [captureClassifyAs, setCaptureClassifyAs] = useState<CaptureTargetType | undefined>(undefined)
-  const [captureMode, setCaptureMode] = useState<'default' | 'shopping' | 'stock' | 'med-log' | 'goal' | 'finance' | 'list'>('default')
-  const [labDataSection, setLabDataSection] = useState<LabDataSection>(() => labDataSectionFromHash())
-  const [joChangeSession, setJoChangeSession] = useState<JoChangeSession>(null)
-  const [joChangePhase, setJoChangePhase] = useState<'preview' | 'applied' | 'code' | 'error'>('preview')
-  const [joKnowledgeAnswer, setJoKnowledgeAnswer] = useState<{ question: string; answer: KnowledgeQueryAnswer } | null>(null)
-  const [lastAppliedHistoryId, setLastAppliedHistoryId] = useState<string | null>(null)
-  const [adaptiveDevMode] = useState(() => {
-    try {
-      return localStorage.getItem('life-os-adaptive-dev') === '1'
-        || new URLSearchParams(window.location.search).get('adaptiveDev') === '1'
-    } catch {
-      return false
-    }
-  })
-  const [routineSelectorOpen, setRoutineSelectorOpen] = useState(false)
-  const [eveningGateOpen, setEveningGateOpen] = useState(false)
-  const [privateNotesOpen, setPrivateNotesOpen] = useState(false)
-  const [privateNotePreset, setPrivateNotePreset] = useState('')
-  const privateNoteSavedRef = useRef<(() => void) | null>(null)
-  const lastCaptureBatchRef = useRef<DecisionBatch | null>(null)
-  const [lifeOsEntityId, setLifeOsEntityId] = useState<string | undefined>(() => entityIdFromHash())
-  const [reviewType, setReviewType] = useState<ReviewType>('weekly')
-  const [reviewDraft, setReviewDraft] = useState<Review | null>(null)
-
-  const today = dateKey(new Date())
-  const nowHour = new Date().getHours()
-  const entry = useMemo(
-    () => entries.find(item => item.date === selectedDate) ?? createDefaultEntry(selectedDate),
-    [entries, selectedDate],
-  )
-
-  const scoreGoals = useMemo(
-    () => ({ proteinGoal: settings.proteinGoal, activeHabits: settings.activeHabits }),
-    [settings.proteinGoal, settings.activeHabits],
-  )
-  const score = clampNumber(calculateScore(entry, scoreGoals), 0, 100)
-  const anchors = entry.anchors ?? []
-  const anchorsDone = entry.anchorsDone ?? []
-  const anchorMinutes = normalizeAnchorMinutes(entry.anchorMinutes, anchors.length, settings.focusMinutes)
-  const completedAnchors = anchors.filter((_, index) => Boolean(anchorsDone[index])).length
-  const habitsDueToday = useMemo(
-    () => filterHabitsForDate(settings.activeHabits, selectedDate, settings.habitSchedules),
-    [settings.activeHabits, settings.habitSchedules, selectedDate],
-  )
-  const dayPolicy = useMemo(
-    () => getDayPolicy({
-      energy: entry.energyLevel,
-      activeHabits: habitsDueToday,
-      baseFocusMinutes: settings.focusMinutes,
-      hour: selectedDate === today ? nowHour : 12,
-    }),
-    [entry.energyLevel, habitsDueToday, settings.focusMinutes, selectedDate, today, nowHour],
-  )
-
-  const morningGateMeds = useMemo(
-    () => dashboardPlus.medications.map(item => ({
-      id: item.id,
-      name: item.name,
-      dosage: item.dosage,
-      time: item.time,
-      taken: isMedicationTakenToday(item, today),
-    })),
-    [dashboardPlus.medications, today],
-  )
-
-  const ritualSteps = useMemo(
-    () => ritualSequence(settings.morningRitual),
-    [settings.morningRitual],
-  )
-  const ritualNext = useMemo(
-    () => nextMorningRitualStep({
-      enabled: settings.morningGateEnabled,
-      skipped: gateSkipped,
-      preview: false,
-      progress: ritualProgress,
-      medications: morningGateMeds,
-      proteinShake: Boolean(entry.proteinShake),
-      gratitudeDone: Boolean(entry.gratitudeDone),
-      energySet: Boolean(entry.energyLevel),
-      headRecoveryDone: isHeadRecoveryDone(entry),
-      weightSet: typeof entry.weightKg === 'number' && entry.weightKg > 0,
-      pushupsDone: Boolean(entry.pushupsDone),
-      coldShowerDone: Boolean(entry.coldShower),
-      winnerModeDone: Boolean(entry.winnerModeDone),
-      config: settings.morningRitual,
-    }),
-    [
-      settings.morningGateEnabled,
-      settings.morningRitual,
-      gateSkipped,
-      ritualProgress,
-      morningGateMeds,
-      entry.proteinShake,
-      entry.gratitudeDone,
-      entry.energyLevel,
-      entry.weightKg,
-      entry.mood,
-      entry.sleepQuality,
-      entry.sleepDuration,
-      entry.bedTime,
-      entry.wakeTime,
-      entry.pushupsDone,
-      entry.coldShower,
-      entry.winnerModeDone,
-    ],
-  )
-
-  const ritualStep = gatePreview
-    ? ritualSteps[Math.min(previewIndex, Math.max(0, ritualSteps.length - 1))]
-    : ritualNext
-  const ritualPhase = ritualStep ? morningRitualPhase(ritualStep) : null
-  const showMorningGate = splashPhase === 'done'
-    && !gateBypass
-    && Boolean(ritualStep)
-    && (gatePreview || (ritualStep ? FULLSCREEN_STEP_IDS.includes(ritualStep) : false))
-  const ritualHeuteLock = !gatePreview && !gateBypass && splashPhase === 'done' && (ritualPhase === 'heute')
-    ? ritualStep
-    : null
-
-  const streakByKey = useMemo(() => {
-    const map: Record<string, number> = {}
-    for (const key of STREAK_HABIT_KEYS) {
-      map[key] = calculateStreakForHabit(entries, key, today)
-    }
-    return map
-  }, [entries, today])
-
-  const laborOpenBoards = useMemo(
-    () => dashboardPlus.boards.filter(board => board.tasks.some(task => !task.done)).length,
-    [dashboardPlus.boards],
-  )
-
-  const laborLive = useMemo(
-    () => deriveLaborOverview({
-      entries,
-      today,
-      activeHabits: filterHabitsForDate(settings.activeHabits, today, settings.habitSchedules),
-      openBoardCount: laborOpenBoards,
-      goals: scoreGoals,
-      syncLabel: storageStatusLabel(syncStatus, isOnline, Boolean(deviceSyncCreds)),
-      syncTime: '',
-    }),
-    [entries, today, settings.activeHabits, settings.habitSchedules, laborOpenBoards, scoreGoals, syncStatus, isOnline, deviceSyncCreds],
-  )
-
-  const laborStats = useMemo(
-    () => deriveLaborStats({ entries, today, goals: scoreGoals }),
-    [entries, today, scoreGoals],
-  )
-
-  useEffect(() => {
-    const consumeAction = () => {
-      const action = takeAppActionFromLocation()
-      if (!action) return
-      if (shouldBypassMorningGate(action)) setGateBypass(true)
-      window.setTimeout(() => actionBridgeRef.current?.applyAction(action), 0)
-    }
-
-    const onHash = () => {
-      setView(viewFromHash())
-      setLifeOsEntityId(entityIdFromHash())
-      setLabDataSection(labDataSectionFromHash())
-      consumeAction()
-    }
-
-    window.addEventListener('hashchange', onHash)
-    if (!window.location.hash) navigateHash(view, true)
-    else consumeAction()
-    return () => window.removeEventListener('hashchange', onHash)
-  }, [])
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
-        event.preventDefault()
-        setPaletteOpen(true)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
-
-  useEffect(() => {
-    const onChange = () => {
-      window.setTimeout(() => { void pushDeviceSync().catch(() => {}) }, 600)
-    }
-    window.addEventListener(LIFE_OS_CHANGE_EVENT, onChange)
-    return () => window.removeEventListener(LIFE_OS_CHANGE_EVENT, onChange)
-  }, [])
-
-  useEffect(() => {
-    if (hashPathOnly(window.location.hash) !== hashFromView(view)) navigateHash(view, true)
-  }, [view])
-
-  const settingsHydrated = useRef(false)
-  const laborHydrated = useRef(false)
-  const ritualProgressHydrated = useRef(false)
-  const lastRemoteGenSettings = useRef(0)
-  const lastRemoteGenLabor = useRef(0)
-  const lastRemoteGenRitual = useRef(0)
-
-  useEffect(() => {
-    safeLocalStorageSetItem(SETTINGS_KEY, JSON.stringify(settings))
-    if (!settingsHydrated.current) {
-      settingsHydrated.current = true
-      return
-    }
-    const gen = remoteApplyGenerationNow()
-    if (gen !== lastRemoteGenSettings.current) {
-      lastRemoteGenSettings.current = gen
-      return
-    }
-    if (isDeviceSyncEnabled()) {
-      window.setTimeout(() => {
-        void pushDeviceSync().catch(() => {})
-      }, 500)
-    }
-  }, [settings])
-
-  useEffect(() => {
-    safeLocalStorageSetItem(DASHBOARD_PLUS_KEY, JSON.stringify(dashboardPlus))
-    if (!laborHydrated.current) {
-      laborHydrated.current = true
-      return
-    }
-    const gen = remoteApplyGenerationNow()
-    if (gen !== lastRemoteGenLabor.current) {
-      lastRemoteGenLabor.current = gen
-      return
-    }
-    if (isDeviceSyncEnabled()) {
-      window.setTimeout(() => {
-        void pushDeviceSync().catch(() => {})
-      }, 500)
-    }
-  }, [dashboardPlus])
-
-  useEffect(() => {
-    saveMorningRitualProgress(ritualProgress)
-    if (!ritualProgressHydrated.current) {
-      ritualProgressHydrated.current = true
-      return
-    }
-    const gen = remoteApplyGenerationNow()
-    if (gen !== lastRemoteGenRitual.current) {
-      lastRemoteGenRitual.current = gen
-      return
-    }
-    if (isDeviceSyncEnabled()) {
-      window.setTimeout(() => {
-        void pushDeviceSync().catch(() => {})
-      }, 500)
-    }
-  }, [ritualProgress])
-
-  useEffect(() => {
-    const reloadExtras = () => {
-      setSettings(loadSettings())
-      setDashboardPlus(loadDashboardPlusState())
-      setDeviceSyncCreds(loadSyncCredentials())
-      setRitualProgress(loadMorningRitualProgress(today))
-      setDailyEvents(loadDailyEvents())
-    }
-    const reloadEvents = () => setDailyEvents(loadDailyEvents())
-    window.addEventListener(LIFE_OS_SYNC_EXTRAS_EVENT, reloadExtras)
-    window.addEventListener(LIFE_OS_DAILY_EVENTS_EVENT, reloadEvents)
-    const onStorage = (event: StorageEvent) => {
-      if (
-        event.key === SETTINGS_KEY
-        || event.key === DASHBOARD_PLUS_KEY
-        || event.key === MORNING_RITUAL_PROGRESS_KEY
-        || event.key === DAILY_EVENTS_KEY
-        || event.key === null
-      ) {
-        reloadExtras()
-      }
-    }
-    window.addEventListener('storage', onStorage)
-    return () => {
-      window.removeEventListener(LIFE_OS_SYNC_EXTRAS_EVENT, reloadExtras)
-      window.removeEventListener(LIFE_OS_DAILY_EVENTS_EVENT, reloadEvents)
-      window.removeEventListener('storage', onStorage)
-    }
-  }, [today])
-
-  useEffect(() => {
-    const root = document.documentElement
-    const media = window.matchMedia('(prefers-color-scheme: dark)')
-
-    const applyTheme = () => {
-      const resolved = settings.theme === 'system' ? (media.matches ? 'dark' : 'light') : settings.theme
-      root.dataset.theme = resolved
-      root.style.colorScheme = resolved
-    }
-
-    applyTheme()
-    media.addEventListener('change', applyTheme)
-    return () => media.removeEventListener('change', applyTheme)
-  }, [settings.theme])
-
-  useEffect(() => {
-    document.documentElement.dataset.accent = settings.accent
-  }, [settings.accent])
-
-  useEffect(() => {
-    if (splashPhase === 'visible') {
-      const timer = window.setTimeout(() => setSplashPhase('leaving'), 2100)
-      return () => window.clearTimeout(timer)
-    }
-    if (splashPhase === 'leaving') {
-      const timer = window.setTimeout(() => {
-        setSplashPhase('done')
-        safeLocalStorageSetItem(SPLASH_KEY, today)
-      }, 550)
-      return () => window.clearTimeout(timer)
-    }
-  }, [splashPhase, today])
-
-  const dismissSplash = () => {
-    if (splashPhase === 'visible') setSplashPhase('leaving')
-  }
-
-  useEffect(() => {
-    setGateSkipped(loadMorningGateSkip(today))
-    setRitualProgress(loadMorningRitualProgress(today))
-  }, [today])
-
-  useEffect(() => {
-    if (!toast) return
-    const timer = window.setTimeout(() => setToast(null), toast.actionLabel ? 6000 : 4200)
-    return () => window.clearTimeout(timer)
-  }, [toast])
-
-  const showToast = (message: string, actionLabel?: string, onAction?: () => void) => {
-    setToast({ message, actionLabel, onAction })
-  }
-
-  useEffect(() => {
-    if (!settings.medisRemindersEnabled) return
-
-    const tick = () => {
-      const due = dueMedicationReminders(dashboardPlus.medications, today)
-        .filter(item => {
-          try {
-            return !localStorage.getItem(reminderStorageKey(item.id, today))
-          } catch {
-            return true
-          }
-        })
-      if (due.length === 0) return
-
-      for (const item of due) {
-        try {
-          localStorage.setItem(reminderStorageKey(item.id, today), '1')
-        } catch { /* ignore */ }
-      }
-
-      const label = due.length === 1
-        ? `Medikament: ${due[0].name} (${due[0].time})`
-        : `Medikamente: ${due.map(item => item.name).join(', ')}`
-      setToast({ message: label })
-
-      if ('Notification' in window && Notification.permission === 'granted') {
-        try {
-          new Notification(due.length === 1 ? 'Medikament' : 'Medikamente', { body: label })
-        } catch { /* ignore */ }
-      }
-    }
-
-    tick()
-    const timer = window.setInterval(tick, 60_000)
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') tick()
-    }
-    document.addEventListener('visibilitychange', onVisible)
-    return () => {
-      window.clearInterval(timer)
-      document.removeEventListener('visibilitychange', onVisible)
-    }
-  }, [settings.medisRemindersEnabled, dashboardPlus.medications, today])
-
-  const updateEntry = (
-    patch: Partial<DashboardEntry>,
-    source: DailyEventSource = 'ui',
-    options?: { undoOf?: string; offerUndo?: boolean; toastMessage?: string },
-  ) => {
-    const nextPatch = 'proteinShake' in patch
-      ? {
-          ...patch,
-          ...syncProteinShakeNutrition(
-            entry,
-            Boolean(patch.proteinShake),
-            settings.morningRitual.shakeMeal,
-            settings.proteinGoal,
-          ),
-        }
-      : patch
-    const before = loadXP()
-    const previous = capturePreviousValues(
-      entry as unknown as Record<string, unknown>,
-      nextPatch as Record<string, unknown>,
-    )
-    void saveEntry({ ...entry, ...nextPatch }).then(ok => {
-      if (!ok) {
-        showToast('Speichern fehlgeschlagen ‚Äî Speicher voll oder blockiert.')
-        return
-      }
-      const event = createEntryPatchEvent({
-        date: entry.date,
-        changes: nextPatch as Record<string, unknown>,
-        previous,
-        source,
-        undoOf: options?.undoOf,
-      })
-      appendDailyEvent(event)
-      const after = loadXP()
-      const gained = after.totalXP - before.totalXP
-      if (options?.undoOf) {
-        showToast('√Ñnderung r√ºckg√§ngig gemacht.')
-        return
-      }
-      if (after.level > before.level) {
-        showToast(`Level ${after.level} ¬∑ +${gained} XP`)
-        return
-      }
-      if (gained > 0) {
-        showToast(`+${gained} XP`)
-        return
-      }
-      if (options?.offerUndo && event && Object.keys(previous).length > 0) {
-        showToast(options.toastMessage ?? 'Gespeichert.', 'R√ºckg√§ngig', () => {
-          undoDailyEvent(event)
-        })
-        return
-      }
-      if (options?.toastMessage) showToast(options.toastMessage)
-    })
-  }
-
-  useEffect(() => {
-    if (!entry.proteinShake || entryHasMeal(entry, SHAKE_MEAL_ID)) return
-    updateEntry({ proteinShake: true }, 'morning_gate')
-  }, [entry.date, entry.proteinShake, entry.appliedMeals])
-
-  const saveEntryForDate = async (
-    date: string,
-    patch: Partial<DashboardEntry>,
-    source: DailyEventSource = 'ui',
-    options?: { undoOf?: string },
-  ) => {
-    const base = entries.find(item => item.date === date) ?? createDefaultEntry(date)
-    const previous = capturePreviousValues(
-      base as unknown as Record<string, unknown>,
-      patch as Record<string, unknown>,
-    )
-    const ok = await saveEntry({ ...base, ...patch })
-    if (!ok) {
-      showToast('Speichern fehlgeschlagen ‚Äî Speicher voll oder blockiert.')
-    } else {
-      appendDailyEvent(createEntryPatchEvent({
-        date,
-        changes: patch as Record<string, unknown>,
-        previous,
-        source,
-        undoOf: options?.undoOf,
-      }))
-    }
-    return ok
-  }
-
-  const undoDailyEvent = (event: EntryPatchEvent) => {
-    if (!canUndoEntryPatch(event, loadDailyEvents())) {
-      showToast('Bereits r√ºckg√§ngig oder nicht mehr m√∂glich.')
-      return
-    }
-    const patch = buildUndoPatch(event)
-    if (!patch) {
-      showToast('Diese √Ñnderung l√§sst sich nicht r√ºckg√§ngig machen.')
-      return
-    }
-    if (event.date === entry.date) {
-      updateEntry(patch as Partial<DashboardEntry>, 'ui', { undoOf: event.id })
-      return
-    }
-    void saveEntryForDate(event.date, patch as Partial<DashboardEntry>, 'ui', { undoOf: event.id }).then(ok => {
-      if (ok) showToast('√Ñnderung r√ºckg√§ngig gemacht.')
-    })
-  }
-
-  const undoRitualEvent = (event: DailyEvent) => {
-    if (!canUndoRitualStep(event, loadDailyEvents())) {
-      showToast('Bereits r√ºckg√§ngig oder nicht mehr m√∂glich.')
-      return
-    }
-    appendDailyEvent(createRitualStepEvent({
-      date: event.date,
-      stepId: event.stepId,
-      status: 'reopened',
-    }))
-    if (event.date === today) {
-      setRitualProgress(current => {
-        const next = {
-          ...current,
-          done: current.done.filter(step => step !== event.stepId),
-        }
-        saveMorningRitualProgress(next)
-        return next
-      })
-    }
-    showToast('Ritualschritt wieder ge√∂ffnet.')
-  }
-
-  const handleExport = () => {
-    exportBackupBundle({
-      entries,
-      settings,
-      dashboardPlus,
-    })
-    setLastBackupAt(new Date().toISOString())
-    showToast('Vollst√§ndiges Backup exportiert.')
-  }
-
-  const handleImport = async (file: File) => {
-    try {
-      const imported = await importBackupFile(file)
-      const replaceAll = window.confirm(
-        `${imported.entryCount} Tage gefunden (${imported.mode === 'bundle' ? 'Vollbackup' : 'nur Eintr√§ge'}).\n\nOK = alles ersetzen\nAbbrechen = nach Datum mergen`,
-      )
-
-      // Score with imported goals when present ‚Äî don't write settings until user confirmed.
-      const importedSettings = imported.settings as Partial<AppSettings> | undefined
-      const goalsForScore = imported.mode === 'bundle' && importedSettings
-        ? {
-            proteinGoal: clampNumber(Number(importedSettings.proteinGoal) || scoreGoals.proteinGoal, 50, 400),
-            activeHabits: Array.isArray(importedSettings.activeHabits)
-              ? importedSettings.activeHabits.map(String)
-              : scoreGoals.activeHabits,
-          }
-        : scoreGoals
-
-      const normalized = imported.entries.map(item => ({
-        ...item,
-        dailyScore: calculateScore(item, goalsForScore),
-      }))
-      const finalEntries = replaceAll ? normalized : mergeEntriesByDate(entries, normalized)
-
-      if (!saveAllEntries(finalEntries)) throw new Error('localStorage unavailable')
-      if (imported.mode === 'bundle') {
-        applyBackupExtras(imported)
-        if (imported.settings) setSettings(loadSettings())
-        if (imported.dashboardPlus) setDashboardPlus(loadDashboardPlusState())
-      }
-      recomputeXPFromEntries(finalEntries, today)
-      setLastBackupAt(new Date().toISOString())
-      await reloadAll()
-      showToast(imported.mode === 'bundle' ? 'Vollbackup importiert ¬∑ XP neu berechnet.' : 'Eintr√§ge importiert ¬∑ XP neu berechnet.')
-    } catch {
-      showToast('Import fehlgeschlagen.')
-    }
-  }
-
-  const setAnchors = (nextAnchors: string[], nextDone: boolean[], nextMinutes?: number[]) => {
-    const normalizedDone = nextAnchors.map((_, index) => Boolean(nextDone[index]))
-    const sourceMinutes = nextMinutes ?? nextAnchors.map((_, index) => anchorMinutes[index] ?? settings.focusMinutes)
-    updateEntry({
-      anchors: nextAnchors,
-      anchorsDone: normalizedDone,
-      anchorMinutes: normalizeAnchorMinutes(sourceMinutes, nextAnchors.length, settings.focusMinutes),
-      tasksDone: normalizedDone.filter(Boolean).length,
-    })
-  }
-
-  const toggleAnchor = (index: number) => {
-    const nextDone = anchors.map((_, itemIndex) =>
-      itemIndex === index ? !anchorsDone[itemIndex] : !!anchorsDone[itemIndex],
-    )
-    setAnchors(anchors, nextDone, anchorMinutes)
-  }
-
-  const saveTask = (value: string, index: number | null, minutes?: number) => {
-    const clean = value.trim()
-    if (!clean) return
-    const taskMinutes = clampNumber(minutes ?? dayPolicy.focusMinutes, 5, 120)
-
-    if (index === null) {
-      if (anchors.length >= dayPolicy.maxAnchors) {
-        showToast(
-          dayPolicy.energy === 'low'
-            ? 'Bei niedriger Energie reichen maximal zwei Anker.'
-            : dayPolicy.energy === 'okay'
-              ? 'Heute maximal drei Anker ‚Äî h√§lt den Tag machbar.'
-              : 'Maximal f√ºnf Tagesanker halten den Tag √ºbersichtlich.',
-        )
-        return
-      }
-      setAnchors([...anchors, clean], [...anchorsDone, false], [...anchorMinutes, taskMinutes])
-      showToast('Aufgabe hinzugef√ºgt.')
-    } else {
-      const next = anchors.map((item, itemIndex) => (itemIndex === index ? clean : item))
-      const nextMinutes = anchorMinutes.map((item, itemIndex) => (itemIndex === index ? taskMinutes : item))
-      setAnchors(next, anchors.map((_, itemIndex) => Boolean(anchorsDone[itemIndex])), nextMinutes)
-      showToast('Aufgabe aktualisiert.')
-    }
-    setTaskEditor(null)
-  }
-
-  const quickAddTask = (title: string) => {
-    saveTask(title, null)
-    setQuickAddOpen(false)
-  }
-
-  const quickAddWeight = (value: number) => {
-    updateEntry({ weightKg: value }, 'quick_add', {
-      offerUndo: true,
-      toastMessage: `Gewicht gespeichert: ${value} kg`,
-    })
-    setQuickAddOpen(false)
-  }
-
-  const quickAddCalories = (value: number) => {
-    updateEntry({ calories: value, caloriesReached: value >= settings.calorieGoal }, 'quick_add', {
-      offerUndo: true,
-      toastMessage: `Kalorien gespeichert: ${value} kcal`,
-    })
-    setQuickAddOpen(false)
-  }
-
-  const quickAddWater = (value: number) => {
-    updateEntry({ waterLiters: value }, 'quick_add', {
-      offerUndo: true,
-      toastMessage: `Wasser gespeichert: ${value} L`,
-    })
-    setQuickAddOpen(false)
-  }
-
-  const quickAddProtein = (value: number) => {
-    updateEntry({ proteinGrams: value, proteinReached: value >= settings.proteinGoal }, 'quick_add', {
-      offerUndo: true,
-      toastMessage: `Protein gespeichert: ${value} g`,
-    })
-    setQuickAddOpen(false)
-  }
-
-  const quickAddFat = (value: number) => {
-    updateEntry({ fatGrams: value }, 'quick_add', {
-      offerUndo: true,
-      toastMessage: `Fett gespeichert: ${value} g`,
-    })
-    setQuickAddOpen(false)
-  }
-
-  const quickAddCarbs = (value: number) => {
-    updateEntry({ carbsGrams: value }, 'quick_add', {
-      offerUndo: true,
-      toastMessage: `Kohlenhydrate gespeichert: ${value} g`,
-    })
-    setQuickAddOpen(false)
-  }
-
-  const quickAddFiber = (value: number) => {
-    updateEntry({ fiberGrams: value }, 'quick_add', {
-      offerUndo: true,
-      toastMessage: `Ballaststoffe gespeichert: ${value} g`,
-    })
-    setQuickAddOpen(false)
-  }
-
-  const quickAddSteps = (value: number) => {
-    updateEntry({ steps: value }, 'quick_add', {
-      offerUndo: true,
-      toastMessage: `Schritte gespeichert: ${value}`,
-    })
-    setQuickAddOpen(false)
-  }
-
-  const deleteTask = (index: number) => {
-    const deleted = anchors[index]
-    const wasDone = Boolean(anchorsDone[index])
-    const deletedMinutes = anchorMinutes[index] ?? settings.focusMinutes
-    const nextAnchors = anchors.filter((_, itemIndex) => itemIndex !== index)
-    const nextDone = anchorsDone.filter((_, itemIndex) => itemIndex !== index)
-    const nextMinutes = anchorMinutes.filter((_, itemIndex) => itemIndex !== index)
-    setAnchors(nextAnchors, nextDone, nextMinutes)
-    showToast('Aufgabe entfernt.', 'R√ºckg√§ngig', () => {
-      const restoredAnchors = [...nextAnchors]
-      const restoredDone = [...nextDone]
-      const restoredMinutes = [...nextMinutes]
-      restoredAnchors.splice(index, 0, deleted)
-      restoredDone.splice(index, 0, wasDone)
-      restoredMinutes.splice(index, 0, deletedMinutes)
-      setAnchors(restoredAnchors, restoredDone, restoredMinutes)
-    })
-  }
-
-  const moveTask = (index: number, direction: -1 | 1) => {
-    const target = index + direction
-    if (target < 0 || target >= anchors.length) return
-    const nextAnchors = [...anchors]
-    const nextDone = anchors.map((_, itemIndex) => Boolean(anchorsDone[itemIndex]))
-    const nextMinutes = [...anchorMinutes]
-    ;[nextAnchors[index], nextAnchors[target]] = [nextAnchors[target], nextAnchors[index]]
-    ;[nextDone[index], nextDone[target]] = [nextDone[target], nextDone[index]]
-    ;[nextMinutes[index], nextMinutes[target]] = [nextMinutes[target], nextMinutes[index]]
-    setAnchors(nextAnchors, nextDone, nextMinutes)
-  }
-
-  const openFocus = (title: string, taskIndex?: number, routineKey?: RoutineKey, overrideMinutes?: number) => {
-    setFocusSession({
-      title,
-      minutes: clampNumber(overrideMinutes ?? dayPolicy.focusMinutes, 5, 120),
-      taskIndex,
-      routineKey,
-    })
-  }
-
-  const finishFocus = () => {
-    if (!focusSession) return
-    if (typeof focusSession.taskIndex === 'number') {
-      const index = focusSession.taskIndex
-      const nextDone = anchors.map((_, itemIndex) =>
-        itemIndex === index ? true : Boolean(anchorsDone[itemIndex]),
-      )
-      setAnchors(anchors, nextDone, anchorMinutes)
-      updateEntry({ focusDone: true } as Partial<DashboardEntry>, 'focus')
-    } else if (focusSession.routineKey) {
-      updateEntry({
-        [focusSession.routineKey]: true,
-      } as Partial<DashboardEntry>, 'focus')
-    } else {
-      updateEntry({ focusDone: true } as Partial<DashboardEntry>, 'focus')
-    }
-    setFocusSession(null)
-    lifeOs.addActivity({
-      title: focusSession.title,
-      date: today,
-      kind: 'focus',
-      plannedDurationMin: focusSession.minutes,
-      actualDurationMin: focusSession.minutes,
-      source: 'timer',
-    })
-    showToast('Fokusblock abgeschlossen ‚Äî erledigt.')
-  }
-
-  const resolvedTheme = document.documentElement.dataset.theme ?? 'light'
-  const quickToggleTheme = () => {
-    setSettings(current => ({
-      ...current,
-      theme: resolvedTheme === 'dark' ? 'light' : 'dark',
-    }))
-  }
-
-  const currentViewLabel = VIEW_LABELS[view] ?? NAV_ITEMS.find(item => item.id === view)?.label ?? 'Heute'
-  const navigateTo = (nextView: View, entityId?: string) => {
-    setView(nextView)
-    setLifeOsEntityId(entityId)
-    if (entityId) navigateHashWithId(nextView, entityId)
-    else navigateHash(nextView)
-    if (nextView === 'today' || nextView === 'dashboardPlus') setSelectedDate(today)
-    if (nextView === 'checkin' && selectedDate > today) setSelectedDate(today)
-  }
-
-  const openUniversalCapture = (options?: {
-    raw?: string
-    classifyAs?: CaptureTargetType
-    mode?: typeof captureMode
-  }) => {
-    setCapturePreset(options?.raw ?? '')
-    setCaptureClassifyAs(options?.classifyAs)
-    setCaptureMode(options?.mode ?? 'default')
-    setCaptureOpen(true)
-  }
-
-  const handleLabQuickAction = (action: LabDataQuickAction) => {
-    switch (action) {
-      case 'capture-task':
-        openUniversalCapture({ classifyAs: 'task', mode: 'default', raw: '' })
-        return
-      case 'capture-shopping':
-        openUniversalCapture({ mode: 'shopping' })
-        return
-      case 'capture-stock':
-        openUniversalCapture({ mode: 'stock', classifyAs: 'note' })
-        return
-      case 'capture-med-log':
-        openUniversalCapture({ mode: 'med-log', classifyAs: 'note', raw: 'Eingenommen: ' })
-        return
-      case 'capture-goal':
-        openUniversalCapture({ mode: 'goal', classifyAs: 'goal' })
-        return
-      case 'capture-finance':
-        openUniversalCapture({ mode: 'finance', classifyAs: 'note' })
-        return
-      case 'capture-list':
-        openUniversalCapture({ mode: 'list', classifyAs: 'note' })
-        return
-      default: {
-        const _exhaustive: never = action
-        return _exhaustive
-      }
-    }
-  }
-
-  const captureDecisionContext = () => ({
-    routineMeals: [{
-      ...settings.morningRitual.shakeMeal,
-      id: settings.morningRitual.shakeMeal.id || SHAKE_MEAL_ID,
-      aliases: defaultRoutineMeals()[0]?.aliases,
-    }],
-    projects: dashboardPlus.boards.map(board => ({ id: board.id, label: board.label })),
-  })
-
-  const commitLifeOsCapture = async (input: {
-    raw: string
-    url?: string
-    fileName?: string
-    fileKind?: 'file' | 'screenshot'
-    fileDataUrl?: string
-    fileObjectId?: string
-    fileStorageKey?: string
-    fileContentType?: string
-    fileSize?: number
-    classifyAs?: CaptureTargetType
-    lifeArea?: LifeAreaKey
-    source?: string
-    audioRef?: string
-    transcriptId?: string
-    decisionPreview?: ReturnType<typeof previewFromBatch>
-    applyConfirmedDecisions?: boolean
-    captureMode?: 'default' | 'shopping' | 'stock' | 'med-log' | 'goal' | 'finance' | 'list'
-  }, openInbox = true) => {
-    const mode = input.captureMode ?? 'default'
-    if (mode === 'shopping') {
-      const title = input.raw.trim()
-      if (!title) return
-      const itemId = crypto.randomUUID()
-      setDashboardPlus(current => ({
-        ...current,
-        shopping: {
-          ...current.shopping,
-          items: [
-            ...current.shopping.items,
-            {
-              id: itemId,
-              icon: 'bag',
-              name: title,
-              note: '',
-              price: 0,
-              done: false,
-            },
-          ],
-        },
-      }))
-      setCapturePreset('')
-      setCaptureMode('default')
-      setCaptureClassifyAs(undefined)
-      navigateLabDataSection('shopping')
-      setView('dashboardPlus')
-      showToast('Artikel hinzugef√ºgt', 'R√ºckg√§ngig', () => {
-        setDashboardPlus(current => ({
-          ...current,
-          shopping: {
-            ...current.shopping,
-            items: current.shopping.items.filter(item => item.id !== itemId),
-          },
-        }))
-      })
-      return
-    }
-    if (mode === 'list') {
-      const title = input.raw.trim() || 'Neue Liste'
-      setDashboardPlus(current => ({
-        ...current,
-        lists: [
-          ...current.lists,
-          {
-            id: crypto.randomUUID(),
-            title,
-            kind: 'custom' as const,
-            items: [],
-          },
-        ],
-      }))
-      setCapturePreset('')
-      setCaptureMode('default')
-      setCaptureClassifyAs(undefined)
-      navigateLabDataSection('lists')
-      setView('dashboardPlus')
-      showToast('Liste angelegt')
-      return
-    }
-    if (mode === 'stock') {
-      const name = input.raw.trim() || 'Neues Produkt'
-      setDashboardPlus(current => ({
-        ...current,
-        supplements: [
-          ...current.supplements,
-          { id: crypto.randomUUID(), name, brand: '', stock: 0, unit: 'g', dailyUse: 0, dailyUnit: 'g' },
-        ],
-      }))
-      setCapturePreset('')
-      setCaptureMode('default')
-      setCaptureClassifyAs(undefined)
-      navigateLabDataSection('stock')
-      setView('dashboardPlus')
-      showToast('Bestand erfasst')
-      return
-    }
-    if (mode === 'goal') {
-      const title = input.raw.trim() || 'Neues Ziel'
-      setDashboardPlus(current => ({
-        ...current,
-        goals: [
-          ...current.goals,
-          {
-            id: crypto.randomUUID(),
-            title,
-            timeframe: 'Monat',
-            percent: 0,
-            dueDate: today,
-            color: 'var(--accent)',
-            lifeArea: input.lifeArea,
-          },
-        ],
-      }))
-      setCapturePreset('')
-      setCaptureMode('default')
-      setCaptureClassifyAs(undefined)
-      navigateLabDataSection('goals')
-      setView('dashboardPlus')
-      showToast('Ziel angelegt')
-      return
-    }
-    if (mode === 'finance') {
-      const name = input.raw.trim() || 'Neuer Eintrag'
-      setDashboardPlus(current => ({
-        ...current,
-        finances: {
-          ...current.finances,
-          openBills: [
-            ...current.finances.openBills,
-            { ...createBillDraft('open', today, current.finances.openBills.length), name },
-          ],
-        },
-      }))
-      setCapturePreset('')
-      setCaptureMode('default')
-      setCaptureClassifyAs(undefined)
-      navigateLabDataSection('finance')
-      setView('dashboardPlus')
-      showToast('Finanzeintrag erfasst')
-      return
-    }
-    if (mode === 'med-log') {
-      input = { ...input, classifyAs: 'note', captureMode: 'default' }
-    }
-
-    const capture = createCapture(input)
-    const classified = input.classifyAs && input.classifyAs !== 'inbox'
-      ? { ...capture, targetType: input.classifyAs, status: 'classified' as const }
-      : capture
-    let nextCapture = classified
-    let appliedFromConfirm = false
-    try {
-      const flags = resolveDecisionFlags()
-      const confirmedIds = new Set((input.decisionPreview?.items ?? []).map(item => item.actionId))
-      const sourceBatch = lastCaptureBatchRef.current
-      let confirmedBatch = input.applyConfirmedDecisions && sourceBatch && confirmedIds.size > 0
-        ? {
-          ...sourceBatch,
-          proposedActions: sourceBatch.proposedActions.filter(action => confirmedIds.has(action.actionId)),
-          decisions: sourceBatch.decisions.filter((_decision, index) => {
-            const action = sourceBatch.proposedActions[index]
-            return action ? confirmedIds.has(action.actionId) : false
-          }),
-        }
-        : null
-      if (confirmedBatch && confirmedBatch.proposedActions.length === 0) confirmedBatch = null
-      // Preview already has the Umsetzungen ‚Äî rebuild apply payload if the in-memory batch was lost.
-      if (!confirmedBatch && input.applyConfirmedDecisions && input.decisionPreview?.items.length) {
-        confirmedBatch = batchFromPreview(input.decisionPreview, {
-          id: classified.id,
-          source: input.source === 'voice' ? 'voice' : 'quick_add',
-          content: classified.raw,
-          timestamp: classified.createdAt,
-        })
-      }
-      // Keep due/meal overrides from the sheet preview on the live batch.
-      if (confirmedBatch && input.decisionPreview?.items.length) {
-        const overrides = new Map(input.decisionPreview.items.map(item => [item.actionId, item]))
-        confirmedBatch = {
-          ...confirmedBatch,
-          proposedActions: confirmedBatch.proposedActions.map(action => {
-            const item = overrides.get(action.actionId)
-            if (!item) return action
-            return {
-              ...action,
-              entities: {
-                ...action.entities,
-                ...(item.due !== undefined ? { due: item.due } : {}),
-                ...(item.mealId ? { mealId: item.mealId } : {}),
-                ...(item.mealLabel ? { mealLabel: item.mealLabel } : {}),
-                ...(item.routineId ? { routineId: item.routineId } : {}),
-                ...(item.quantity ? { quantity: item.quantity } : {}),
-                ...(item.content ? { title: item.content } : {}),
-              },
-            }
-          }),
-        }
-      }
-
-      const batch = confirmedBatch || input.decisionPreview
-        ? null
-        : await decideCaptureInput({
-          id: classified.id,
-          source: input.source === 'voice' ? 'voice' : 'quick_add',
-          content: classified.raw,
-          timestamp: classified.createdAt,
-          context: { currentModule: 'capture' },
-        }, {
-          flags,
-          context: captureDecisionContext(),
-        })
-      if (batch) lastCaptureBatchRef.current = batch
-      nextCapture = {
-        ...classified,
-        source: input.source ?? 'quick_add',
-        audioRef: input.audioRef,
-        transcriptId: input.transcriptId,
-        decisionPreview: input.decisionPreview ?? (batch ? previewFromBatch(batch) : undefined),
-      }
-      if (batch) recordDecisionAudits(batch.audits)
-
-      const applyBatch = confirmedBatch ?? (batch && flags.autoActionsEnabled ? batch : null)
-      if (applyBatch) {
-        const applied = applyDecisionBatch({
-          batch: applyBatch,
-          lifeOs: lifeOs.state,
-          dashboard: {
-            focusTodos: dashboardPlus.focusTodos,
-            boards: dashboardPlus.boards,
-            goals: dashboardPlus.goals,
-          },
-          entry,
-          routineMeals: captureDecisionContext().routineMeals,
-          autoActionsEnabled: flags.autoActionsEnabled || Boolean(confirmedBatch),
-          confirmedByUser: Boolean(confirmedBatch),
-          today,
-        })
-        const meaningful = applied.applied.filter(action => (
-          action.intent === 'CREATE_TASK'
-          || action.intent === 'CREATE_NOTE'
-          || action.intent === 'ADD_SHOPPING_ITEM'
-          || action.intent === 'LOG_MEAL'
-          || action.intent === 'COMPLETE_ROUTINE'
-        ))
-        if (meaningful.length > 0) {
-          appliedFromConfirm = Boolean(confirmedBatch)
-          lifeOs.commit(() => applied.lifeOs)
-          setDashboardPlus(current => ({
-            ...current,
-            focusTodos: applied.dashboard.focusTodos,
-            boards: applied.dashboard.boards,
-            goals: applied.dashboard.goals,
-            shopping: applied.shoppingAdds.length > 0
-              ? {
-                ...current.shopping,
-                items: [
-                  ...current.shopping.items,
-                  ...applied.shoppingAdds,
-                ],
-              }
-              : current.shopping,
-          }))
-          if (applied.entry) updateEntry(applied.entry, 'quick_add')
-          if (applied.ritualUpdates) {
-            setRitualProgress(current => {
-              const next = {
-                ...current,
-                pushups: Math.max(current.pushups, applied.ritualUpdates?.pushups ?? current.pushups),
-                ko: Math.max(current.ko, applied.ritualUpdates?.ko ?? current.ko),
-                done: applied.ritualUpdates?.markWorkoutDone && !current.done.includes('workout')
-                  ? ([...current.done, 'workout'] as typeof current.done)
-                  : current.done,
-              }
-              saveMorningRitualProgress(next)
-              return next
-            })
-          }
-          rememberExecutedKeys(applied.executedKeys)
-        } else if (confirmedBatch && classified.targetType !== 'inbox') {
-          // User confirmed Speichern but policy produced no entity ‚Äî convert by chosen type.
-          const converted = convertCapture(classified)
-          if (converted.task || converted.goal || converted.knowledge || converted.decision) {
-            appliedFromConfirm = true
-            lifeOs.commit(current => applyConvertResult({
-              ...current,
-              captures: [converted.capture, ...current.captures],
-            }, converted))
-            if (converted.task || converted.goal) {
-              setDashboardPlus(current => {
-                const next = applyConvertToDashboard(current, converted, today)
-                return { ...current, ...next }
-              })
-            }
-          }
-        }
-      }
-      if (confirmedBatch) lastCaptureBatchRef.current = null
-    } catch {
-      nextCapture = classified
-    }
-    if (!appliedFromConfirm) {
-      lifeOs.commit(current => ({
-        ...current,
-        captures: [nextCapture, ...current.captures],
-        events: [...current.events, emitDomainEvent('capture.created', { title: nextCapture.title }, { kind: 'capture', id: nextCapture.id })],
-      }))
-    }
-    if (openInbox) {
-      const captureId = nextCapture.id
-      navigateTo(appliedFromConfirm ? 'today' : 'inbox', appliedFromConfirm ? undefined : captureId)
-      if (appliedFromConfirm) {
-        showToast('Gespeichert')
-      } else {
-        showToast('Gespeichert', 'R√ºckg√§ngig', () => {
-          lifeOs.commit(current => ({
-            ...current,
-            captures: current.captures.filter(item => item.id !== captureId),
-          }))
-          showToast('Capture entfernt')
-        })
-      }
-    } else {
-      showToast('Als Universal Memo gespeichert.')
-    }
-  }
-
-  const handleLifeOsCapture = (input: Parameters<typeof commitLifeOsCapture>[0]) => (
-    commitLifeOsCapture(input)
-  )
-
-  const openPrivateNotes = (text = '', onSaved?: () => void) => {
-    setPrivateNotePreset(text)
-    privateNoteSavedRef.current = onSaved ?? null
-    setPrivateNotesOpen(true)
-  }
-
-  const handleConvertCapture = (id: string) => {
-    const result = lifeOs.convert(id)
-    if (!result) {
-      showToast('Umwandeln braucht zuerst einen Typ.')
-      return
-    }
-    if (result.task || result.goal) {
-      setDashboardPlus(current => {
-        const next = applyConvertToDashboard(current, result, today)
-        return { ...current, ...next }
-      })
-    }
-    if (result.decision) navigateTo('decisions', result.decision.id)
-    else if (result.knowledge) navigateTo('knowledge', result.knowledge.id)
-    else if (result.goal) navigateTo('goal', result.goal.id)
-    else if (result.task?.projectId) navigateTo('project', result.task.projectId)
-    showToast('Capture umgewandelt')
-  }
-
-  const startReview = (type: ReviewType = reviewType) => {
-    const period = periodForReviewType(type, today)
-    const completedTasks = dashboardPlus.boards.reduce((sum, board) => sum + board.tasks.filter(task => task.done).length, 0)
-      + dashboardPlus.focusTodos.filter(task => task.done).length
-    const openTasks = dashboardPlus.boards.reduce((sum, board) => sum + board.tasks.filter(task => !task.done).length, 0)
-      + dashboardPlus.focusTodos.filter(task => !task.done).length
-    const draft = createReviewDraft(type, {
-      today,
-      periodStart: period.start,
-      periodEnd: period.end,
-      completedTasks,
-      openTasks,
-      projects: dashboardPlus.boards,
-      goals: dashboardPlus.goals,
-      captures: lifeOs.state.captures,
-      knowledge: lifeOs.state.knowledge,
-      decisions: lifeOs.state.decisions,
-      signals: lifeOs.state.signals,
-      activities: lifeOs.state.activities,
-      focusMinutes: lifeOs.state.activities
-        .filter(item => item.kind === 'focus' && item.date >= period.start && item.date <= period.end)
-        .reduce((sum, item) => sum + (item.actualDurationMin ?? 0), 0),
-    })
-    setReviewDraft(draft)
-    setReviewType(type)
-  }
-
-  const refreshInsights = (): Insight[] => {
-    const computed = buildDeterministicInsights({
-      today,
-      inboxCount: lifeOs.inboxCount,
-      projects: dashboardPlus.boards,
-      goals: dashboardPlus.goals,
-      decisions: lifeOs.state.decisions.map(item => refreshDecisionStatus(item, today)),
-      activities: lifeOs.state.activities,
-      signals: lifeOs.state.signals,
-    })
-    const story = interpretInsights(computed)
-    const next = story ? [...computed, story] : computed
-    lifeOs.commit(current => ({ ...current, insights: next }))
-    return next
-  }
-
-  const exportTaskToCalendar = async (title: string, minutes: number) => {
-    const result = await shareOrDownloadIcs({
-      title,
-      minutes,
-      description: `Tagesanker aus Life OS ¬∑ ${minutes} Min. Fokus`,
-    })
-    if (result === 'shared') showToast('Kalender-Share ge√∂ffnet ‚Äî in Kalender sichern.')
-    else if (result === 'downloaded') showToast('Kalenderdatei gespeichert (.ics).')
-    else showToast('Kalender-Export abgebrochen.')
-  }
-
-  actionBridgeRef.current = {
-    applyAction: (action: AppAction) => {
-      switch (action.kind) {
-        case 'today':
-          navigateTo('today')
-          showToast('Kurzbefehl: Heute')
-          break
-        case 'checkin':
-          navigateTo('today')
-          setRoutineSelectorOpen(true)
-          showToast('Check-in l√§uft √ºber deinen Routine Mode.')
-          break
-        case 'plan':
-          navigateTo('plan')
-          showToast('Kurzbefehl: Plan')
-          break
-        case 'note': {
-          const text = action.text?.trim()
-          navigateTo('today')
-          if (text) {
-            const line = formatNoteLine(text)
-            const entryForNote = entries.find(item => item.date === today) ?? createDefaultEntry(today)
-            void saveEntryForDate(today, {
-              journalText: appendJournal(entryForNote.journalText ?? '', line),
-              journalDone: true,
-            })
-            const nextNote = mergeQuickNote(parseQuickNote(loadQuickNote()), line)
-            safeLocalStorageSetItem(QUICK_NOTE_KEY, JSON.stringify(nextNote))
-            window.dispatchEvent(new CustomEvent(LIFE_OS_SYNC_EXTRAS_EVENT))
-            if (isDeviceSyncEnabled()) {
-              window.setTimeout(() => {
-                void pushDeviceSync().catch(() => {})
-              }, 400)
-            }
-          }
-          showToast(text ? 'Notiz geparkt.' : 'Kurzbefehl: Kurznotiz')
-          break
-        }
-        case 'add-task':
-          navigateTo('dashboardPlus')
-          navigateLabDataSection('todos')
-          window.setTimeout(() => {
-            openUniversalCapture({
-              raw: action.title?.trim() ?? '',
-              classifyAs: 'task',
-            })
-          }, 60)
-          showToast(action.title?.trim() ? 'Kurzbefehl: Aufgabe erfassen' : 'Kurzbefehl: Aufgabe')
-          break
-        case 'log': {
-          navigateTo('today')
-          const patch: Partial<DashboardEntry> = {}
-          const parsed = action.text ? parseQuickAdd(action.text) : null
-          if (parsed?.kind === 'protein') patch.proteinGrams = parsed.value
-          else if (parsed?.kind === 'calories') patch.calories = parsed.value
-          else if (parsed?.kind === 'fat') patch.fatGrams = parsed.value
-          else if (parsed?.kind === 'carbs') patch.carbsGrams = parsed.value
-          else if (parsed?.kind === 'fiber') patch.fiberGrams = parsed.value
-          else if (parsed?.kind === 'water') patch.waterLiters = parsed.value
-          else if (parsed?.kind === 'steps') patch.steps = parsed.value
-          else if (parsed?.kind === 'weight') patch.weightKg = parsed.value
-          else if (parsed?.kind === 'task' && parsed.title) {
-            openUniversalCapture({ raw: parsed.title, classifyAs: 'task' })
-          }
-          if (action.protein !== undefined) patch.proteinGrams = action.protein
-          if (action.calories !== undefined) patch.calories = action.calories
-          if (action.water !== undefined) patch.waterLiters = action.water
-          if (action.steps !== undefined) patch.steps = action.steps
-          if (action.weight !== undefined) patch.weightKg = action.weight
-          if (action.energy) patch.energyLevel = action.energy
-          if (action.habit && STREAK_HABIT_KEYS.includes(action.habit as HabitKey)) {
-            patch[action.habit as HabitKey] = true
-          }
-          if (patch.proteinGrams !== undefined) {
-            patch.proteinReached = patch.proteinGrams >= settings.proteinGoal
-          }
-          if (patch.calories !== undefined) {
-            patch.caloriesReached = patch.calories >= settings.calorieGoal
-          }
-          if (Object.keys(patch).length > 0) updateEntry(patch, 'quick_add')
-          showToast('Kurzbefehl: Wert gespeichert')
-          break
-        }
-        case 'capture': {
-          if (action.text?.trim()) {
-            lifeOs.captureQuick(action.text.trim())
-            showToast('Capture in Inbox')
-          }
-          navigateTo('inbox')
-          if (!action.text?.trim()) openUniversalCapture()
-          break
-        }
-        case 'focus': {
-          navigateTo('today')
-          const nextIndex = anchors.findIndex((_, index) => !anchorsDone[index])
-          const title = action.title?.trim()
-            || (nextIndex >= 0 ? anchors[nextIndex] : 'Fokusblock')
-          const minutes = action.minutes
-            ?? (nextIndex >= 0 ? anchorMinutes[nextIndex] : dayPolicy.focusMinutes)
-          openFocus(
-            title,
-            nextIndex >= 0 ? nextIndex : undefined,
-            undefined,
-            minutes,
-          )
-          showToast('Kurzbefehl: Fokus')
-          break
-        }
-        default: {
-          const _exhaustive: never = action.kind
-          void _exhaustive
-          break
-        }
-      }
-    },
-  }
-
-  return (
-    <div className={view === 'today' ? 'life-app life-app--heute' : 'life-app'}>
-      <aside className="sidebar" aria-label="Hauptnavigation" inert={showMorningGate || eveningGateOpen || privateNotesOpen || undefined}>
-        <div className="brand">
-          <div className="brand__mark" aria-hidden="true">
-            <span />
-          </div>
-          <div>
-            <strong>Life OS</strong>
-            <span>Version 1</span>
-          </div>
-        </div>
-
-        <nav className="sidebar-nav">
-          <span className="nav-group-label">√úbersicht</span>
-          {NAV_ITEMS.map(item => {
-            const Icon = item.icon
-            return (
-              <button
-                type="button"
-                key={item.id}
-                className={(item.id === 'today' ? view === 'today' : isProgressHubView(view)) ? 'nav-item is-active' : 'nav-item'}
-                onClick={() => navigateTo(item.id)}
-              >
-                <Icon size={18} />
-                <span>{item.label}</span>
-              </button>
-            )
-          })}
-        </nav>
-        <nav className="sidebar-nav" aria-label="Inbox">
-          <span className="nav-group-label">System</span>
-          <button
-            type="button"
-            className={view === 'inbox' ? 'nav-item is-active' : 'nav-item'}
-            onClick={() => navigateTo('inbox')}
-          >
-            <Inbox size={18} />
-            <span>Inbox{lifeOs.inboxCount > 0 ? ` (${lifeOs.inboxCount})` : ''}</span>
-          </button>
-          <button
-            type="button"
-            className={view === 'run' ? 'nav-item is-active' : 'nav-item'}
-            onClick={() => navigateTo('run')}
-          >
-            <Compass size={18} />
-            <span>Run</span>
-          </button>
-        </nav>
-
-        <div className="sidebar-spacer" />
-
-        <div className="sidebar-status">
-          <div className="sidebar-status__top">
-            <span>Heute</span>
-            <strong>{score}%</strong>
-          </div>
-          <div className="mini-progress" aria-hidden="true">
-            <span style={{ width: `${score}%` }} />
-          </div>
-          <p>
-            {completedAnchors} von {anchors.length} {plural(anchors.length, 'Anker', 'Ankern')} erledigt
-          </p>
-        </div>
-
-        <div className="sidebar-actions">
-          <button type="button" className="nav-item" onClick={quickToggleTheme}>
-            {resolvedTheme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-            <span>{resolvedTheme === 'dark' ? 'Heller Modus' : 'Dunkler Modus'}</span>
-          </button>
-          <button type="button" className="nav-item" onClick={() => setSettingsOpen(true)}>
-            <Settings size={18} />
-            <span>Einstellungen</span>
-          </button>
-        </div>
-      </aside>
-
-      <div className="app-stage" inert={showMorningGate || eveningGateOpen || privateNotesOpen || undefined}>
-        <header className="mobile-header">
-          <div className="brand brand--mobile">
-            <div className="brand__mark" aria-hidden="true"><span /></div>
-            <strong>Life OS</strong>
-          </div>
-          <div className="mobile-header__actions">
-            <IconButton label="Theme wechseln" onClick={quickToggleTheme}>
-              {resolvedTheme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-            </IconButton>
-            <IconButton label="Einstellungen √∂ffnen" onClick={() => setSettingsOpen(true)}>
-              <Settings size={18} />
-            </IconButton>
-          </div>
-        </header>
-
-        <main className="app-main" id="main-content">
-          <div className="desktop-topbar">
-            <div>
-              <span className="eyebrow">{currentViewLabel}</span>
-              <h1>{greeting()}{settings.name.trim() ? `, ${settings.name.trim()}` : ''}.</h1>
-            </div>
-            <div className="topbar-actions">
-              <span
-                className={`sync-pill sync-pill--${syncStatus}`}
-                title={deviceSyncCreds ? 'Automatischer Sync zwischen gekoppelten Ger√§ten' : 'Daten bleiben in diesem Browser'}
-              >
-                <Cloud size={14} />
-                {storageStatusLabel(syncStatus, isOnline, Boolean(deviceSyncCreds))}
-              </span>
-              <IconButton label="Suchen oder erfassen" onClick={() => setPaletteOpen(true)}>
-                <Search size={18} />
-              </IconButton>
-              <IconButton label="Einstellungen √∂ffnen" onClick={() => setSettingsOpen(true)}>
-                <Settings size={18} />
-              </IconButton>
-            </div>
-          </div>
-
-          {isProgressHubView(view) && (
-            <ProgressHubNav view={view} onNavigate={navigateTo} />
-          )}
-
-          {view === 'today' && (
-            <TodayView
-              entry={entry}
-              entries={entries}
-              date={selectedDate}
-              today={today}
-              settings={settings}
-              anchors={anchors}
-              anchorsDone={anchorsDone}
-              anchorMinutes={anchorMinutes}
-              streakByKey={streakByKey}
-              onDateChange={setSelectedDate}
-              onUpdate={updateEntry}
-              onToggleAnchor={toggleAnchor}
-              onEditTask={(index, value) => setTaskEditor({
-                index,
-                value,
-                minutes: anchorMinutes[index] ?? dayPolicy.focusMinutes,
-              })}
-              onAddTask={() => openUniversalCapture({ classifyAs: 'task' })}
-              onOpenFocus={openFocus}
-              onExportToCalendar={exportTaskToCalendar}
-              onReorderHabits={ids => setSettings(current => ({ ...current, activeHabits: ids }))}
-              ritualEnabled={settings.morningGateEnabled}
-              ritualSkipped={gateSkipped}
-              ritualSteps={ritualSteps}
-              ritualDoneSteps={completedRitualSteps({
-                progress: ritualProgress,
-                entry,
-                config: settings.morningRitual,
-              })}
-              onOpenRoutineMode={() => setRoutineSelectorOpen(true)}
-              syncLabel={storageStatusLabel(syncStatus, isOnline, Boolean(deviceSyncCreds))}
-              syncStatus={syncStatus}
-              ritualLock={ritualHeuteLock === 'todos' ? 'todos' : null}
-              onReopenMorningGate={() => {
-                const done = completedRitualSteps({
-                  progress: ritualProgress,
-                  entry,
-                  config: settings.morningRitual,
-                })
-                const nextIndex = ritualSteps.findIndex(id => !done.includes(id))
-                setGatePreview(true)
-                setPreviewIndex(nextIndex >= 0 ? nextIndex : Math.max(0, ritualSteps.length - 1))
-              }}
-              onOpenEveningGate={() => setEveningGateOpen(true)}
-              dailyEvents={dailyEvents}
-              onUndoDailyEvent={undoDailyEvent}
-              onUndoRitualEvent={undoRitualEvent}
-              onContinueRitualTodos={() => {
-                setRitualProgress(current => markRitualStepDone(current, 'todos'))
-                appendDailyEvent(createRitualStepEvent({ date: today, stepId: 'todos' }))
-              }}
-              runHint={{
-                reason: localPriority(lifeOs.state.run).reason,
-                onOpen: () => navigateTo('run'),
-              }}
-            />
-          )}
-
-          {view === 'plan' && (
-            <PlanView
-              date={selectedDate}
-              today={today}
-              anchors={anchors}
-              anchorsDone={anchorsDone}
-              anchorMinutes={anchorMinutes}
-              focusMinutes={dayPolicy.focusMinutes}
-              maxAnchors={dayPolicy.maxAnchors}
-              energy={entry.energyLevel}
-              onDateChange={setSelectedDate}
-              onAddTask={() => openUniversalCapture({ classifyAs: 'task' })}
-              onAddSuggestion={text => openUniversalCapture({ raw: text, classifyAs: 'task' })}
-              onEditTask={(index, value) => setTaskEditor({
-                index,
-                value,
-                minutes: anchorMinutes[index] ?? dayPolicy.focusMinutes,
-              })}
-              onDeleteTask={deleteTask}
-              onMoveTask={moveTask}
-              onToggleTask={toggleAnchor}
-              onOpenFocus={openFocus}
-              onExportToCalendar={exportTaskToCalendar}
-            />
-          )}
-
-          {view === 'checkin' && (
-            <CheckinView
-              entry={entry}
-              date={selectedDate}
-              today={today}
-              settings={settings}
-              onDateChange={setSelectedDate}
-              onUpdate={updateEntry}
-              showToast={showToast}
-            />
-          )}
-
-          {view === 'progress' && (
-            <ProgressView
-              entries={entries}
-              today={today}
-              selectedDate={selectedDate}
-              scoreGoals={scoreGoals}
-              heightCm={settings.heightCm}
-              labClassName={labUiClassNames(settings.adaptive ?? defaultAdaptiveLifeConfig())}
-              onSelectDate={date => {
-                setSelectedDate(date)
-                navigateTo('today')
-              }}
-            />
-          )}
-
-          {view === 'dashboardPlus' && (
-            <DashboardPlusView
-              dashboard={dashboardPlus}
-              onChange={setDashboardPlus}
-              onBackToToday={() => navigateTo('today')}
-              today={today}
-              liveOverview={laborLive}
-              liveStats={laborStats}
-              layout={settings.dashboardPlusLayout}
-              medisRemindersEnabled={settings.medisRemindersEnabled}
-              onOpenSettings={() => setSettingsOpen(true)}
-              onOpenProject={id => navigateTo('project', id)}
-              onOpenGoal={id => navigateTo('goal', id)}
-              showToast={showToast}
-              section={labDataSection}
-              onSectionChange={section => {
-                setLabDataSection(section)
-                navigateLabDataSection(section)
-              }}
-              onQuickAction={handleLabQuickAction}
-            />
-          )}
-          {view === 'run' && (
-            <GenerationalRunView
-              life={lifeOs.state}
-              commit={lifeOs.commit}
-              commitments={dashboardPlus.medications
-                .filter(item => item.name.trim())
-                .map(item => ({
-                  id: item.id,
-                  label: item.name.trim(),
-                  time: item.time.trim(),
-                  taken: isMedicationTakenToday(item, today),
-                }))}
-              onOpenLabor={() => navigateTo('dashboardPlus')}
-              onOpenCheckin={() => navigateTo('checkin')}
-            />
-          )}
-
-          {view === 'inbox' && (
-            <InboxView
-              items={lifeOs.inbox}
-              projects={dashboardPlus.boards.map(board => ({ id: board.id, label: board.label }))}
-              goals={dashboardPlus.goals.map(goal => ({ id: goal.id, title: goal.title }))}
-              onCapture={() => openUniversalCapture()}
-              onOpen={id => setLifeOsEntityId(id)}
-              onClassify={lifeOs.classify}
-              onConvert={handleConvertCapture}
-              onArchive={lifeOs.archive}
-              onDelete={lifeOs.removeCapture}
-              onLink={(id, links) => lifeOs.updateCapture(id, links)}
-            />
-          )}
-          {view === 'project' && (
-            <ProjectDetailView
-              project={dashboardPlus.boards.find(board => board.id === lifeOsEntityId) ?? dashboardPlus.boards[0] ?? null}
-              goals={dashboardPlus.goals}
-              knowledge={lifeOs.state.knowledge.filter(item => relatedIds(lifeOs.state, 'knowledge', item.id, 'project').includes(lifeOsEntityId ?? '') || lifeOs.state.captures.some(capture => capture.converted?.id === item.id && capture.projectId === lifeOsEntityId))}
-              decisions={lifeOs.state.decisions.filter(item => item.projectId === lifeOsEntityId)}
-              activities={lifeOs.state.activities.filter(item => item.projectId === lifeOsEntityId)}
-              notes={lifeOs.state.captures.filter(item => item.projectId === lifeOsEntityId && item.status === 'converted' && item.converted?.kind === 'knowledge').map(item => item.title)}
-              onBack={() => navigateTo('dashboardPlus')}
-              onChange={patch => {
-                const id = lifeOsEntityId ?? dashboardPlus.boards[0]?.id
-                if (!id) return
-                setDashboardPlus(current => ({
-                  ...current,
-                  boards: current.boards.map(board => board.id === id
-                    ? {
-                      ...board,
-                      label: patch.label ?? board.label,
-                      description: patch.description ?? board.description,
-                      outcome: patch.outcome ?? board.outcome,
-                      status: patch.status ?? board.status,
-                      priority: patch.priority ?? board.priority,
-                      startDate: patch.startDate ?? board.startDate,
-                      targetDate: patch.targetDate ?? board.targetDate,
-                      nextAction: patch.nextAction ?? board.nextAction,
-                      nextActionTaskId: patch.nextActionTaskId ?? board.nextActionTaskId,
-                      milestones: patch.milestones ?? board.milestones,
-                      goalId: patch.goalId ?? board.goalId,
-                      lifeArea: 'lifeArea' in patch ? patch.lifeArea : board.lifeArea,
-                      lastActivityAt: nowIso(),
-                    }
-                    : board),
-                }))
-                const previous = dashboardPlus.boards.find(board => board.id === id)
-                const nextArea = 'lifeArea' in patch ? patch.lifeArea : previous?.lifeArea
-                lifeOs.commit(current => ({
-                  ...current,
-                  events: [
-                    ...current.events,
-                    emitDomainEvent('project.updated', { id, ...(nextArea ? { lifeArea: nextArea } : {}) }, { kind: 'project', id }),
-                    ...lifeAreaTransitionEvents(previous?.lifeArea, nextArea, { kind: 'project', id }),
-                  ],
-                }))
-              }}
-              onAddTask={() => {
-                openUniversalCapture({ classifyAs: 'task' })
-              }}
-              onToggleTask={taskId => {
-                const id = lifeOsEntityId ?? dashboardPlus.boards[0]?.id
-                if (!id) return
-                setDashboardPlus(current => ({
-                  ...current,
-                  boards: current.boards.map(board => board.id === id
-                    ? {
-                      ...board,
-                      lastActivityAt: nowIso(),
-                      tasks: board.tasks.map(task => {
-                        if (task.id !== taskId) return task
-                        const done = !task.done
-                        if (done) {
-                          lifeOs.commit(state => ({
-                            ...state,
-                            events: [...state.events, emitDomainEvent('task.completed', { title: task.title }, { kind: 'task', id: task.id })],
-                          }))
-                        }
-                        return { ...task, done }
-                      }),
-                    }
-                    : board),
-                }))
-              }}
-              onPatchTask={(taskId, patch) => {
-                const id = lifeOsEntityId ?? dashboardPlus.boards[0]?.id
-                if (!id) return
-                const previous = dashboardPlus.boards.find(board => board.id === id)?.tasks.find(task => task.id === taskId)
-                setDashboardPlus(current => ({
-                  ...current,
-                  boards: current.boards.map(board => board.id === id
-                    ? {
-                      ...board,
-                      lastActivityAt: nowIso(),
-                      tasks: board.tasks.map(task => task.id === taskId
-                        ? { ...task, lifeArea: 'lifeArea' in patch ? patch.lifeArea : task.lifeArea }
-                        : task),
-                    }
-                    : board),
-                }))
-                lifeOs.commit(current => ({
-                  ...current,
-                  events: [
-                    ...current.events,
-                    ...lifeAreaTransitionEvents(previous?.lifeArea, patch.lifeArea, { kind: 'task', id: taskId }),
-                  ],
-                }))
-              }}
-              onOpenDecision={id => navigateTo('decisions', id)}
-              onOpenKnowledge={id => navigateTo('knowledge', id)}
-            />
-          )}
-          {view === 'goal' && (
-            <GoalDetailView
-              goal={dashboardPlus.goals.find(item => item.id === lifeOsEntityId) ?? dashboardPlus.goals[0] ?? null}
-              projects={dashboardPlus.boards}
-              onBack={() => navigateTo('dashboardPlus')}
-              onChange={patch => {
-                const id = lifeOsEntityId ?? dashboardPlus.goals[0]?.id
-                if (!id) return
-                setDashboardPlus(current => ({
-                  ...current,
-                  goals: current.goals.map(goal => {
-                    if (goal.id !== id) return goal
-                    const timeframe = patch.timeframe
-                    const nextTimeframe = timeframe === 'Jahr' || timeframe === 'Quartal' || timeframe === 'Monat' || timeframe === 'Woche'
-                      ? timeframe
-                      : goal.timeframe
-                    return { ...goal, ...patch, timeframe: nextTimeframe }
-                  }),
-                }))
-                const previous = dashboardPlus.goals.find(goal => goal.id === id)
-                const nextArea = 'lifeArea' in patch ? patch.lifeArea : previous?.lifeArea
-                lifeOs.commit(current => ({
-                  ...current,
-                  events: [
-                    ...current.events,
-                    emitDomainEvent('goal.updated', { id, ...(nextArea ? { lifeArea: nextArea } : {}) }, { kind: 'goal', id }),
-                    ...lifeAreaTransitionEvents(previous?.lifeArea, nextArea, { kind: 'goal', id }),
-                  ],
-                }))
-              }}
-              onAddCheckIn={(note, value) => {
-                const id = lifeOsEntityId ?? dashboardPlus.goals[0]?.id
-                if (!id) return
-                setDashboardPlus(current => ({
-                  ...current,
-                  goals: current.goals.map(goal => goal.id === id
-                    ? { ...goal, checkIns: [...(goal.checkIns ?? []), { id: crypto.randomUUID(), at: today, note, value }] }
-                    : goal),
-                }))
-              }}
-            />
-          )}
-          {view === 'knowledge' && (
-            <KnowledgeView
-              items={lifeOs.state.knowledge}
-              relations={lifeOs.state.relations}
-              reviews={lifeOs.state.knowledgeReviews}
-              goals={dashboardPlus.goals.map(goal => ({ id: goal.id, title: goal.title }))}
-              projects={dashboardPlus.boards.map(board => ({ id: board.id, title: board.label }))}
-              decisions={lifeOs.state.decisions.map(decision => ({ id: decision.id, title: decision.title }))}
-              selectedId={lifeOsEntityId}
-              related={(lifeOsEntityId ? relatedIds(lifeOs.state, 'knowledge', lifeOsEntityId, 'project') : []).map(id => ({
-                id,
-                kind: 'project',
-                title: dashboardPlus.boards.find(board => board.id === id)?.label ?? id,
-              }))}
-              onSelect={id => setLifeOsEntityId(id)}
-              onCreate={() => {
-                const id = createId()
-                const now = nowIso()
-                const item: KnowledgeItem = {
-                  id, title: 'Neuer Eintrag', content: '', summary: '', source: '', type: 'thought', topics: [], tags: [], createdAt: now, updatedAt: now,
-                }
-                lifeOs.commit(current => ({
-                  ...current,
-                  knowledge: [item, ...current.knowledge],
-                  events: [...current.events, emitDomainEvent('knowledge.created', { title: item.title }, { kind: 'knowledge', id })],
-                }))
-                setLifeOsEntityId(id)
-                return id
-              }}
-              onChange={(id, patch) => {
-                lifeOs.commit(current => ({
-                  ...current,
-                  knowledge: current.knowledge.map(item => item.id === id ? { ...item, ...patch, updatedAt: nowIso() } : item),
-                }))
-              }}
-              onDelete={id => lifeOs.commit(current => ({ ...current, knowledge: current.knowledge.filter(item => item.id !== id) }))}
-              onPublished={drafts => {
-                let created = 0
-                lifeOs.commit(current => {
-                  const applied = applyPublishedKnowledge(current, drafts)
-                  created = applied.createdIds.length
-                  return applied.state
-                })
-                return created
-              }}
-              onLink={(id, target) => {
-                lifeOs.commit(current => upsertRelation(current, {
-                  fromKind: 'knowledge',
-                  fromId: id,
-                  toKind: target.kind,
-                  toId: target.targetId,
-                  role: target.role,
-                }))
-              }}
-              onReviewsChange={next => lifeOs.commit(current => ({ ...current, knowledgeReviews: next }))}
-              onOpenEntity={(kind, id) => {
-                if (kind === 'knowledge') navigateTo('knowledge', id)
-                else if (kind === 'goal') navigateTo('goal', id)
-                else if (kind === 'project') navigateTo('dashboardPlus', id)
-                else navigateTo('decisions', id)
-              }}
-            />
-          )}
-          {view === 'decisions' && (
-            <DecisionView
-              decisions={lifeOs.state.decisions.map(item => refreshDecisionStatus(item, today))}
-              projects={dashboardPlus.boards.map(board => ({ id: board.id, label: board.label }))}
-              goals={dashboardPlus.goals}
-              selectedId={lifeOsEntityId}
-              onSelect={id => setLifeOsEntityId(id)}
-              onCreate={() => {
-                const id = createId()
-                const now = nowIso()
-                const decision: Decision = {
-                  id,
-                  title: 'Neue Entscheidung',
-                  decision: '',
-                  context: '',
-                  reasoning: '',
-                  alternatives: '',
-                  expectedOutcome: '',
-                  decidedAt: today,
-                  status: 'active',
-                  createdAt: now,
-                  updatedAt: now,
-                }
-                lifeOs.commit(current => ({
-                  ...current,
-                  decisions: [decision, ...current.decisions],
-                  events: [...current.events, emitDomainEvent('decision.created', { title: decision.title }, { kind: 'decision', id })],
-                }))
-                setLifeOsEntityId(id)
-                return id
-              }}
-              onChange={(id, patch) => {
-                lifeOs.commit(current => ({
-                  ...current,
-                  decisions: current.decisions.map(item => item.id === id ? refreshDecisionStatus({ ...item, ...patch, updatedAt: nowIso() }, today) : item),
-                }))
-              }}
-              onDelete={id => lifeOs.commit(current => ({ ...current, decisions: current.decisions.filter(item => item.id !== id) }))}
-            />
-          )}
-          {view === 'reviews' && (
-            <ReviewView
-              reviews={[...lifeOs.state.reviews].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))}
-              draft={reviewDraft}
-              onType={type => {
-                setReviewType(type)
-                startReview(type)
-              }}
-              onStart={() => startReview(reviewType)}
-              onChange={patch => setReviewDraft(current => current ? { ...current, ...patch, updatedAt: nowIso() } : current)}
-              onComplete={() => {
-                if (!reviewDraft) return
-                const saved = completeReview(reviewDraft, reviewDraft)
-                lifeOs.saveReview(saved)
-                setReviewDraft(saved)
-                showToast('Review gespeichert')
-              }}
-              onSelect={id => {
-                const found = lifeOs.state.reviews.find(item => item.id === id) ?? null
-                setReviewDraft(found)
-                if (found) setReviewType(found.type)
-              }}
-            />
-          )}
-          {view === 'signals' && (
-            <SignalsView
-              signals={lifeOs.state.signals}
-              activities={lifeOs.state.activities}
-              onRecord={lifeOs.addSignal}
-              onActivity={lifeOs.addActivity}
-            />
-          )}
-          {view === 'insights' && (
-            <InsightsView
-              insights={lifeOs.state.insights}
-              onRefresh={() => {
-                refreshInsights()
-                showToast('Insights neu berechnet')
-              }}
-            />
-          )}
-          {view === 'integrations' && (
-            <IntegrationsView
-              instances={lifeOs.state.connectors}
-              outbound={lifeOs.state.outboundWebhooks}
-              logs={lifeOs.state.webhookLogs}
-              onConnect={async (connectorId, secret) => {
-                const configuration: Record<string, string> = {}
-                if (secret) configuration.secretHash = await hashSecret(secret)
-                const instance = createConnectorInstance(connectorId, configuration)
-                instance.status = 'connected'
-                lifeOs.commit(current => ({
-                  ...current,
-                  connectors: [
-                    ...current.connectors.filter(item => item.connectorId !== connectorId),
-                    instance,
-                  ],
-                }))
-                showToast(secret ? 'Verbunden. Secret wird nur als Hash gespeichert.' : 'Verbunden')
-              }}
-              onDisconnect={id => {
-                lifeOs.commit(current => ({
-                  ...current,
-                  connectors: current.connectors.map(item => item.id === id
-                    ? { ...item, status: 'disconnected', configuration: {}, updatedAt: nowIso() }
-                    : item),
-                }))
-              }}
-              onConfigure={(id, configuration) => {
-                lifeOs.commit(current => ({
-                  ...current,
-                  connectors: current.connectors.map(item => item.id === id
-                    ? { ...item, configuration: { ...item.configuration, ...configuration }, updatedAt: nowIso() }
-                    : item),
-                }))
-              }}
-              onAddOutbound={(url, events) => {
-                lifeOs.commit(current => ({
-                  ...current,
-                  outboundWebhooks: [...current.outboundWebhooks, {
-                    id: createId(),
-                    url,
-                    events: events as DomainEventType[],
-                    enabled: true,
-                    createdAt: nowIso(),
-                    updatedAt: nowIso(),
-                  }],
-                }))
-              }}
-              onToggleOutbound={(id, enabled) => {
-                lifeOs.commit(current => ({
-                  ...current,
-                  outboundWebhooks: current.outboundWebhooks.map(item => item.id === id ? { ...item, enabled, updatedAt: nowIso() } : item),
-                }))
-              }}
-            />
-          )}
-        </main>
-
-        <nav className="mobile-nav" aria-label="Mobile Navigation">
-          <button
-            type="button"
-            className={view === 'today' ? 'mobile-nav__item is-active' : 'mobile-nav__item'}
-            aria-current={view === 'today' ? 'page' : undefined}
-            onClick={() => navigateTo('today')}
-          >
-            <Home size={20} />
-            <span>Heute</span>
-          </button>
-          <button
-            type="button"
-            className={view === 'run' ? 'mobile-nav__item is-active' : 'mobile-nav__item'}
-            aria-current={view === 'run' ? 'page' : undefined}
-            onClick={() => navigateTo('run')}
-          >
-            <Compass size={20} />
-            <span>Run</span>
-          </button>
-          <button
-            type="button"
-            className="mobile-nav__item mobile-nav__capture"
-            aria-label="Mit Jo AI erfassen"
-            onClick={() => openUniversalCapture()}
-          >
-            <span className="mobile-nav__capture-icon" aria-hidden="true">
-              <Mic size={20} />
-              <Sparkles className="mobile-nav__capture-spark" size={10} />
-            </span>
-            <span>Jo AI</span>
-          </button>
-          <button
-            type="button"
-            className={isProgressHubView(view) ? 'mobile-nav__item is-active' : 'mobile-nav__item'}
-            aria-current={isProgressHubView(view) ? 'page' : undefined}
-            onClick={() => navigateTo('progress')}
-          >
-            <FlaskConical size={20} />
-            <span>Lab</span>
-          </button>
-        </nav>
-
-        {view !== 'dashboardPlus' && view !== 'today' && view !== 'checkin' && view !== 'plan' && view !== 'progress' && view !== 'run' && !showMorningGate && (
-          <button type="button" className="fab" onClick={() => openUniversalCapture()} aria-label="Schnell hinzuf√ºgen">
-            <Plus size={22} />
-          </button>
-        )}
-      </div>
-
-      {taskEditor && (
-        <TaskEditor
-          initialValue={taskEditor.value}
-          initialMinutes={taskEditor.minutes}
-          isEditing={taskEditor.index !== null}
-          onClose={() => setTaskEditor(null)}
-          onSave={(value, minutes) => saveTask(value, taskEditor.index, minutes)}
-        />
-      )}
-
-      {quickAddOpen && (
-        <QuickAddModal
-          onClose={() => setQuickAddOpen(false)}
-          onSubmitTask={quickAddTask}
-          onSubmitWeight={quickAddWeight}
-          onSubmitCalories={quickAddCalories}
-          onSubmitProtein={quickAddProtein}
-          onSubmitFat={quickAddFat}
-          onSubmitCarbs={quickAddCarbs}
-          onSubmitFiber={quickAddFiber}
-          onSubmitWater={quickAddWater}
-          onSubmitSteps={quickAddSteps}
-        />
-      )}
-
-      {paletteOpen && (
-        <CommandPalette
-          state={lifeOs.state}
-          projects={dashboardPlus.boards}
-          goals={dashboardPlus.goals}
-          tasks={[
-            ...dashboardPlus.focusTodos.map(task => ({ id: task.id, title: task.title, project: 'Fokus', lifeArea: task.lifeArea })),
-            ...dashboardPlus.boards.flatMap(board => board.tasks.map(task => ({ id: task.id, title: task.title, project: board.label, lifeArea: task.lifeArea ?? board.lifeArea }))),
-          ]}
-          onClose={() => setPaletteOpen(false)}
-          onNavigate={(next, id) => {
-            setPaletteOpen(false)
-            navigateTo(next, id)
-          }}
-          onOpenCapture={preset => {
-            setPaletteOpen(false)
-            openUniversalCapture({ raw: preset ?? '' })
-          }}
-          onOpenHit={hit => {
-            setPaletteOpen(false)
-            if (hit.kind === 'project') navigateTo('project', hit.id)
-            else if (hit.kind === 'goal') navigateTo('goal', hit.id)
-            else if (hit.kind === 'decision') navigateTo('decisions', hit.id)
-            else if (hit.kind === 'knowledge' || hit.kind === 'note') navigateTo('knowledge', hit.id)
-            else if (hit.kind === 'capture') navigateTo('inbox', hit.id)
-            else navigateTo('inbox')
-          }}
-        />
-      )}
-
-      {routineSelectorOpen && (
-        <RoutineModeSelector
-          onClose={() => setRoutineSelectorOpen(false)}
-          onSelectMorning={() => {
-            setRoutineSelectorOpen(false)
-            const done = completedRitualSteps({
-              progress: ritualProgress,
-              entry,
-              config: settings.morningRitual,
-            })
-            const nextIndex = ritualSteps.findIndex(id => !done.includes(id))
-            setGatePreview(true)
-            setPreviewIndex(nextIndex >= 0 ? nextIndex : Math.max(0, ritualSteps.length - 1))
-          }}
-          onSelectEvening={() => {
-            setRoutineSelectorOpen(false)
-            setEveningGateOpen(true)
-          }}
-        />
-      )}
-
-      {captureOpen && (
-        <CaptureSheet
-          initialRaw={capturePreset}
-          initialClassifyAs={captureClassifyAs}
-          initialMode={captureMode}
-          inactive={privateNotesOpen}
-          onClose={() => {
-            setCaptureOpen(false)
-            setCapturePreset('')
-            setCaptureClassifyAs(undefined)
-            setCaptureMode('default')
-          }}
-          onDecide={async input => {
-            const changeSession = tryOpenSystemChange(input.content, settings)
-            if (changeSession) {
-              setJoChangeSession(changeSession)
-              setJoChangePhase(
-                changeSession.kind === 'code'
-                  ? 'code'
-                  : changeSession.kind === 'error'
-                    ? 'error'
-                    : 'preview',
-              )
-              setCaptureOpen(false)
-              setCapturePreset('')
-              return undefined
-            }
-            const knowledgeSession = tryAnswerKnowledgeQuery({
-              text: input.content,
-              knowledge: lifeOs.state.knowledge.map(item => ({
-                id: item.id,
-                title: item.title,
-                summary: item.summary,
-                content: item.content,
-                topics: item.topics,
-                tags: item.tags,
-                source: item.source,
-                lifeArea: item.lifeArea,
-                areaLocked: item.areaLocked,
-                updatedAt: item.updatedAt,
-                evidenceStatus: item.evidenceStatus,
-              })),
-              goals: dashboardPlus.goals.map(goal => ({ id: goal.id, title: goal.title })),
-            })
-            if (knowledgeSession) {
-              setJoKnowledgeAnswer({ question: input.content, answer: knowledgeSession.answer })
-              setCaptureOpen(false)
-              setCapturePreset('')
-              return undefined
-            }
-            const batch = await decideCaptureInput({
-              source: input.source,
-              content: input.content,
-              timestamp: new Date().toISOString(),
-              context: { currentModule: 'capture' },
-            }, {
-              flags: resolveDecisionFlags(),
-              context: captureDecisionContext(),
-            })
-            lastCaptureBatchRef.current = batch
-            recordDecisionAudits(batch.audits)
-            return previewFromBatch(batch)
-          }}
-          onCapture={input => {
-            // Don't steal a confirmed Capture save into Adaptive Core CHANGE.
-            if (!input.applyConfirmedDecisions && !input.decisionPreview) {
-              const changeSession = tryOpenSystemChange(input.raw, settings)
-              if (changeSession) {
-                setJoChangeSession(changeSession)
-                setJoChangePhase(
-                  changeSession.kind === 'code'
-                    ? 'code'
-                    : changeSession.kind === 'error'
-                      ? 'error'
-                      : 'preview',
-                )
-                setCaptureOpen(false)
-                setCapturePreset('')
-                return
-              }
-              const knowledgeSession = tryAnswerKnowledgeQuery({
-                text: input.raw,
-                knowledge: lifeOs.state.knowledge.map(item => ({
-                  id: item.id,
-                  title: item.title,
-                  summary: item.summary,
-                  content: item.content,
-                  topics: item.topics,
-                  tags: item.tags,
-                  source: item.source,
-                  lifeArea: item.lifeArea,
-                  areaLocked: item.areaLocked,
-                  updatedAt: item.updatedAt,
-                  evidenceStatus: item.evidenceStatus,
-                })),
-                goals: dashboardPlus.goals.map(goal => ({ id: goal.id, title: goal.title })),
-              })
-              if (knowledgeSession) {
-                setJoKnowledgeAnswer({ question: input.raw, answer: knowledgeSession.answer })
-                setCaptureOpen(false)
-                setCapturePreset('')
-                return
-              }
-            }
-            return handleLifeOsCapture(input)
-          }}
-          onOpenPrivateNotes={text => {
-            openPrivateNotes(text, () => {
-              setCaptureOpen(false)
-              setCapturePreset('')
-              setCaptureClassifyAs(undefined)
-              setCaptureMode('default')
-            })
-          }}
-        />
-      )}
-
-      {joChangeSession && (
-        <ChangePreviewSheet
-          phase={joChangePhase}
-          preview={joChangeSession.kind === 'config' ? joChangeSession.pending.preview : null}
-          implementationSpec={joChangeSession.kind === 'code' ? joChangeSession.spec : null}
-          error={joChangeSession.kind === 'error' ? joChangeSession.message : undefined}
-          developerMode={adaptiveDevMode}
-          onApply={() => {
-            if (joChangeSession.kind !== 'config') return
-            const result = commitSystemChange({
-              settings,
-              proposal: joChangeSession.pending.proposal,
-            })
-            if (!result.ok) {
-              setJoChangeSession({ kind: 'error', message: result.error })
-              setJoChangePhase('error')
-              return
-            }
-            const historyId = result.history.id
-            const nextSettings: AppSettings = {
-              ...settings,
-              ...(result.settings.morningRitual
-                ? { morningRitual: normalizeMorningRitualConfig(result.settings.morningRitual as Partial<MorningRitualConfig>) }
-                : {}),
-              ...(result.settings.eveningGate
-                ? { eveningGate: normalizeEveningGateConfig(result.settings.eveningGate) }
-                : {}),
-              adaptive: readAdaptiveFromSettings(result.settings),
-            }
-            setSettings(nextSettings)
-            setLastAppliedHistoryId(historyId)
-            setJoChangePhase('applied')
-            showToast('LifeOS aktualisiert', 'R√ºckg√§ngig', () => {
-              const undone = undoSystemChange({ settings: nextSettings, historyId })
-              if (!undone.ok) {
-                showToast(undone.error ?? 'R√ºckg√§ngig fehlgeschlagen')
-                return
-              }
-              setSettings(current => ({
-                ...current,
-                ...(undone.settings.morningRitual
-                  ? { morningRitual: normalizeMorningRitualConfig(undone.settings.morningRitual as Partial<MorningRitualConfig>) }
-                  : {}),
-                ...(undone.settings.eveningGate
-                  ? { eveningGate: normalizeEveningGateConfig(undone.settings.eveningGate) }
-                  : {}),
-                adaptive: readAdaptiveFromSettings(undone.settings),
-              }))
-              setLastAppliedHistoryId(null)
-              setJoChangeSession(null)
-              setJoChangePhase('preview')
-              showToast('√Ñnderung r√ºckg√§ngig gemacht')
-            })
-          }}
-          onCancel={() => {
-            setJoChangeSession(null)
-            setJoChangePhase('preview')
-          }}
-          onUndo={() => {
-            if (!lastAppliedHistoryId) return
-            const result = undoSystemChange({ settings, historyId: lastAppliedHistoryId })
-            if (!result.ok) {
-              showToast(result.error ?? 'R√ºckg√§ngig fehlgeschlagen')
-              return
-            }
-            setSettings(current => ({
-              ...current,
-              ...(result.settings.morningRitual
-                ? { morningRitual: normalizeMorningRitualConfig(result.settings.morningRitual as Partial<MorningRitualConfig>) }
-                : {}),
-              ...(result.settings.eveningGate
-                ? { eveningGate: normalizeEveningGateConfig(result.settings.eveningGate) }
-                : {}),
-              adaptive: readAdaptiveFromSettings(result.settings),
-            }))
-            setLastAppliedHistoryId(null)
-            setJoChangeSession(null)
-            setJoChangePhase('preview')
-            showToast('√Ñnderung r√ºckg√§ngig gemacht')
-          }}
-        />
-      )}
-
-      {joKnowledgeAnswer && (
-        <KnowledgeAnswerSheet
-          question={joKnowledgeAnswer.question}
-          answer={joKnowledgeAnswer.answer}
-          onClose={() => setJoKnowledgeAnswer(null)}
-          onOpenSource={id => {
-            setJoKnowledgeAnswer(null)
-            navigateTo('knowledge', id)
-          }}
-        />
-      )}
-
-      {focusSession && (
-        <FocusModal
-          session={focusSession}
-          onChangeMinutes={minutes => setFocusSession(current => current ? { ...current, minutes } : current)}
-          onClose={() => setFocusSession(null)}
-          onFinish={finishFocus}
-          onExportToCalendar={() => {
-            void exportTaskToCalendar(focusSession.title, focusSession.minutes)
-          }}
-        />
-      )}
-
-      {settingsOpen && (
-        <SettingsModal
-          settings={settings}
-          lastBackupAt={lastBackupAt}
-          deviceSync={deviceSyncCreds}
-          onChange={setSettings}
-          onExport={handleExport}
-          onImport={handleImport}
-          onResetLabor={() => {
-            if (!window.confirm('Lab-Daten auf leeren Start zur√ºcksetzen? Todos, Medis, Boards und Finanzen gehen verloren.')) return
-            setDashboardPlus(createDashboardPlusSeed())
-            showToast('Lab-Daten zur√ºckgesetzt.')
-          }}
-          onDeviceSyncChange={creds => {
-            setDeviceSyncCreds(creds)
-            if (creds) void syncNow()
-          }}
-          onSyncNow={() => {
-            void syncNow().then(() => showToast('Sync aktualisiert.'))
-          }}
-          showToast={showToast}
-          onClose={() => setSettingsOpen(false)}
-          onPreviewMorningGate={() => {
-            setSettingsOpen(false)
-            setPreviewIndex(0)
-            setGatePreview(true)
-            setGateBypass(false)
-          }}
-          onOpenIntegrations={() => {
-            setSettingsOpen(false)
-            navigateTo('integrations')
-          }}
-        />
-      )}
-
-      {toast && (
-        <div className="toast" role="status" aria-live="polite">
-          <span>{toast.message}</span>
-          {toast.actionLabel && toast.onAction && (
-            <button
-              type="button"
-              onClick={() => {
-                toast.onAction?.()
-                setToast(null)
-              }}
-            >
-              {toast.actionLabel}
-            </button>
-          )}
-        </div>
-      )}
-
-      {showMorningGate && ritualStep && (
-        <MorningGate
-          step={ritualStep}
-          stepIndex={gatePreview ? previewIndex : Math.max(0, ritualSteps.indexOf(ritualStep))}
-          stepCount={Math.max(1, ritualSteps.length)}
-          steps={ritualSteps.map(id => ({ id, label: morningRitualMeta(id, settings.morningRitual).label }))}
-          doneSteps={completedRitualSteps({
-            progress: ritualProgress,
-            entry,
-            config: settings.morningRitual,
-          })}
-          name={settings.name}
-          medications={morningGateMeds}
-          proteinShake={Boolean(entry.proteinShake)}
-          gratitudeText={settings.morningRitual.gratitudeText}
-          mood={entry.mood}
-          sleepQuality={entry.sleepQuality}
-          sleepDuration={entry.sleepDuration}
-          dreamed={entry.dreamed}
-          onHeadRecovery={patch => updateEntry(patch, 'morning_gate')}
-          config={settings.morningRitual}
-          anchors={anchors}
-          anchorsDone={anchorsDone}
-          pushups={ritualProgress.pushups}
-          ko={ritualProgress.ko}
-          selfcareChecked={ritualProgress.selfcareChecked}
-          onToggleMed={id => {
-            const medication = dashboardPlus.medications.find(item => item.id === id)
-            const nextTaken = medication ? !isMedicationTakenToday(medication, today) : true
-            setDashboardPlus(current => ({
-              ...current,
-              medications: current.medications.map(item => {
-                if (item.id !== id) return item
-                const taken = isMedicationTakenToday(item, today)
-                return {
-                  ...item,
-                  takenDate: taken ? undefined : today,
-                  taken: !taken,
-                }
-              }),
-            }))
-            appendDailyEvent(createRitualStepEvent({
-              date: today,
-              stepId: 'medsShake',
-              status: 'updated',
-              details: { medicationId: id, taken: nextTaken },
-            }))
-          }}
-          onConfirmAllMeds={() => {
-            setDashboardPlus(current => ({
-              ...current,
-              medications: current.medications.map(item => ({
-                ...item,
-                takenDate: today,
-                taken: true,
-              })),
-            }))
-            appendDailyEvent(createRitualStepEvent({
-              date: today,
-              stepId: 'medsShake',
-              status: 'updated',
-              details: { allMedicationsTaken: true },
-            }))
-          }}
-          onToggleProtein={() => updateEntry({ proteinShake: !entry.proteinShake }, 'morning_gate')}
-          onCompleteGratitude={() => {
-            const time = new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' }).format(new Date())
-            const line = `${time} ‚Äî Dankbarkeit vorgelesen`
-            updateEntry({
-              gratitudeDone: true,
-              journalText: entry.journalText ? `${entry.journalText}\n${line}` : line,
-            }, 'morning_gate')
-          }}
-          onPickEnergy={energy => {
-            updateEntry({ energyLevel: energy }, 'morning_gate')
-            setRitualProgress(current => markRitualStepDone(current, 'energy'))
-            appendDailyEvent(createRitualStepEvent({ date: today, stepId: 'energy' }))
-            emitAdaptiveEvent('routine_step.completed', { entityId: 'energy', surface: 'morning_gate', date: today })
-            if (gatePreview) setPreviewIndex(value => value + 1)
-          }}
-          onPickWeight={kg => {
-            updateEntry({ weightKg: kg }, 'morning_gate', {
-              toastMessage: `Gewicht gespeichert: ${kg} kg`,
-            })
-            setRitualProgress(current => markRitualStepDone(current, 'weight'))
-            appendDailyEvent(createRitualStepEvent({
-              date: today,
-              stepId: 'weight',
-              status: 'updated',
-              details: { weightKg: kg },
-            }))
-            emitAdaptiveEvent('metric.recorded', {
-              entityId: 'weight',
-              surface: 'morning_gate',
-              date: today,
-              payload: { value: kg },
-            })
-            if (gatePreview) setPreviewIndex(value => value + 1)
-          }}
-          onCompleteTimer={kind => {
-            if (kind === 'coldShower') updateEntry({ coldShower: true }, 'morning_gate')
-            if (kind === 'winnerPose') updateEntry({ winnerModeDone: true }, 'morning_gate')
-            setRitualProgress(current => markRitualStepDone(current, kind))
-            appendDailyEvent(createRitualStepEvent({ date: today, stepId: kind }))
-            if (kind === 'prayer') navigateTo('today')
-            if (gatePreview) setPreviewIndex(value => Math.min(ritualSteps.length - 1, value + 1))
-          }}
-          onSetPushups={value => {
-            appendDailyEvent(createRitualStepEvent({
-              date: today,
-              stepId: 'workout',
-              status: 'updated',
-              details: { pushups: value },
-            }))
-            setRitualProgress(current => {
-              const next = { ...current, pushups: value }
-              saveMorningRitualProgress(next)
-              return next
-            })
-          }}
-          onSetKo={value => {
-            appendDailyEvent(createRitualStepEvent({
-              date: today,
-              stepId: 'workout',
-              status: 'updated',
-              details: { knockouts: value },
-            }))
-            setRitualProgress(current => {
-              const next = { ...current, ko: value }
-              saveMorningRitualProgress(next)
-              return next
-            })
-          }}
-          onToggleSelfcare={id => {
-            appendDailyEvent(createRitualStepEvent({
-              date: today,
-              stepId: 'selfcare',
-              status: 'updated',
-              details: {
-                itemId: id,
-                checked: !ritualProgress.selfcareChecked.includes(id),
-              },
-            }))
-            setRitualProgress(current => {
-              const checked = current.selfcareChecked.includes(id)
-                ? current.selfcareChecked.filter(item => item !== id)
-                : [...current.selfcareChecked, id]
-              const next = { ...current, selfcareChecked: checked }
-              saveMorningRitualProgress(next)
-              return next
-            })
-          }}
-          onCompleteStep={step => {
-            if (step === 'medsShake' && !entry.proteinShake) updateEntry({ proteinShake: true }, 'morning_gate')
-            if (step === 'workout') updateEntry({ pushupsDone: true }, 'morning_gate')
-            setRitualProgress(current => markRitualStepDone(current, step))
-            appendDailyEvent(createRitualStepEvent({ date: today, stepId: step }))
-            if (gatePreview) {
-              if (previewIndex >= ritualSteps.length - 1) {
-                setGatePreview(false)
-                setPreviewIndex(0)
-                return
-              }
-              setPreviewIndex(value => value + 1)
-            }
-            if (step === 'letsGo') {
-              setGatePreview(false)
-              showToast('LETS GO ‚Äî ready.')
-            }
-          }}
-          onSkipToday={() => {
-            saveMorningGateSkip(today)
-            setGateSkipped(true)
-            setGatePreview(false)
-            showToast('Morgen-Ritual f√ºr heute √ºbersprungen.')
-          }}
-          onOpenSettings={() => setSettingsOpen(true)}
-          onClosePreview={gatePreview ? () => setGatePreview(false) : undefined}
-        />
-      )}
-
-      {eveningGateOpen && (
-        <EveningGate
-          initialState={entry.eveningGate}
-          date={entry.date}
-          inactive={privateNotesOpen}
-          onPersist={state => updateEntry({
-            eveningGate: state,
-            ...(state.done.includes('breathing') ? { breathingDone: true } : {}),
-          }, 'evening_gate')}
-          onCaptureMemo={text => commitLifeOsCapture({ raw: text, classifyAs: 'note' }, false)}
-          onOpenPrivateNotes={openPrivateNotes}
-          onFinish={state => {
-            updateEntry({
-              eveningGate: state,
-              breathingDone: true,
-              dayClosedAt: state.completedAt ?? new Date().toISOString(),
-            }, 'evening_gate', {
-              toastMessage: 'Tag abgeschlossen ¬∑ No Screen.',
-            })
-            setEveningGateOpen(false)
-          }}
-          onClose={() => setEveningGateOpen(false)}
-        />
-      )}
-
-      {privateNotesOpen && (
-        <PrivateNotesSheet
-          initialText={privateNotePreset}
-          onSaved={() => {
-            const afterSave = privateNoteSavedRef.current
-            privateNoteSavedRef.current = null
-            setPrivateNotePreset('')
-            afterSave?.()
-            void pushDeviceSync().catch(() => undefined)
-            showToast('Privater Bereich verschl√ºsselt aktualisiert.')
-          }}
-          onClose={() => {
-            setPrivateNotesOpen(false)
-            setPrivateNotePreset('')
-            privateNoteSavedRef.current = null
-          }}
-        />
-      )}
-
-      {splashPhase !== 'done' && (
-        <div
-          className={splashPhase === 'leaving' ? 'splash-screen is-leaving' : 'splash-screen'}
-          role="presentation"
-          aria-hidden="true"
-          onClick={dismissSplash}
-        >
-          <div className="splash-screen__orbs">
-            <span className="splash-screen__orb splash-screen__orb--one" />
-            <span className="splash-screen__orb splash-screen__orb--two" />
-            <span className="splash-screen__orb splash-screen__orb--three" />
-          </div>
-          <div className="splash-screen__content">
-            <div className="brand__mark splash-screen__mark"><span /></div>
-            <strong className="splash-screen__title">Life OS</strong>
-            <p className="splash-screen__greeting">
-              {greeting()}{settings.name.trim() ? `, ${settings.name.trim()}` : ''}.
-            </p>
-            <span className="splash-screen__date">{formatLongDate(today)}</span>
-            <div className="splash-screen__loader"><span /></div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function DateStrip({
-  selected,
-  today,
-  maxDate,
-  onChange,
-}: {
-  selected: string
-  today: string
-  maxDate?: string
-  onChange: (date: string) => void
-}) {
-  const days = Array.from({ length: 7 }, (_, index) => addDays(selected, index - 3))
-  return (
-    <div className="date-strip-wrap">
-      <IconButton label="Vorheriger Tag" onClick={() => onChange(addDays(selected, -1))}>
-        <ChevronLeft size={18} />
-      </IconButton>
-      <div className="date-strip" role="list" aria-label="Wochenauswahl">
-        {days.map(day => {
-          const date = fromDateKey(day)
-          const isSelected = day === selected
-          const isToday = day === today
-          const isDisabled = Boolean(maxDate && day > maxDate)
-          return (
-            <button
-              type="button"
-              role="listitem"
-              key={day}
-              className={`date-chip${isSelected ? ' is-selected' : ''}${isToday ? ' is-today' : ''}`}
-              onClick={() => onChange(day)}
-              aria-pressed={isSelected}
-              aria-label={formatLongDate(day)}
-              disabled={isDisabled}
-            >
-              <span>{new Intl.DateTimeFormat('de-DE', { weekday: 'short' }).format(date).replace('.', '')}</span>
-              <strong>{date.getDate()}</strong>
-            </button>
-          )
-        })}
-      </div>
-      <IconButton
-        label="N√§chster Tag"
-        onClick={() => onChange(addDays(selected, 1))}
-        disabled={Boolean(maxDate && selected >= maxDate)}
-      >
-        <ChevronRight size={18} />
-      </IconButton>
-    </div>
-  )
-}
-
-type QuickNoteState = { text: string; updatedAt: string | null }
-
-function loadQuickNote(): QuickNoteState {
-  try {
-    const stored = JSON.parse(localStorage.getItem(QUICK_NOTE_KEY) ?? 'null') as Partial<QuickNoteState> | null
-    if (!stored || typeof stored.text !== 'string') return { text: '', updatedAt: null }
-    return {
-      text: stored.text.slice(0, 600),
-      updatedAt: typeof stored.updatedAt === 'string' ? stored.updatedAt : null,
-    }
-  } catch {
-    return { text: '', updatedAt: null }
-  }
-}
-
-function TodayView({
-  entry,
-  entries,
-  date,
-  today,
-  settings,
-  anchors,
-  anchorsDone,
-  anchorMinutes,
-  onDateChange,
-  onUpdate,
-  onToggleAnchor,
-  onOpenFocus,
-  ritualLock = null,
-  onContinueRitualTodos,
-  onReopenMorningGate,
-  onOpenRoutineMode,
-  ritualEnabled = false,
-  ritualSkipped = false,
-  ritualSteps = [],
-  ritualDoneSteps = [],
-  onOpenEveningGate,
-  dailyEvents = [],
-  onUndoDailyEvent,
-  onUndoRitualEvent,
-  runHint,
-}: {
-  entry: DashboardEntry
-  entries: DashboardEntry[]
-  date: string
-  today: string
-  settings: AppSettings
-  anchors: string[]
-  anchorsDone: boolean[]
-  anchorMinutes: number[]
-  streakByKey: Record<string, number>
-  onDateChange: (date: string) => void
-  onUpdate: (patch: Partial<DashboardEntry>) => void
-  onToggleAnchor: (index: number) => void
-  onEditTask: (index: number, value: string) => void
-  onAddTask: () => void
-  onOpenFocus: (title: string, taskIndex?: number, routineKey?: RoutineKey, overrideMinutes?: number) => void
-  onReorderHabits: (ids: string[]) => void
-  highlightQuickNote?: boolean
-  onQuickNoteHighlightHandled?: () => void
-  onExportToCalendar: (title: string, minutes: number) => Promise<void>
-  ritualLock?: 'todos' | null
-  onContinueRitualTodos?: () => void
-  onReopenMorningGate?: () => void
-  onOpenRoutineMode?: () => void
-  ritualEnabled?: boolean
-  ritualSkipped?: boolean
-  ritualSteps?: MorningRitualStepId[]
-  ritualDoneSteps?: MorningRitualStepId[]
-  onOpenEveningGate?: () => void
-  dailyEvents?: DailyEvent[]
-  onUndoDailyEvent?: (event: EntryPatchEvent) => void
-  onUndoRitualEvent?: (event: DailyEvent) => void
-  syncLabel?: string
-  syncStatus?: string
-  runHint?: { reason: string; onOpen: () => void }
-}) {
-  const [timelineOpen, setTimelineOpen] = useState(false)
-  const [overviewOpen, setOverviewOpen] = useState(false)
-  const [overviewRange, setOverviewRange] = useState<'today' | 'week' | 'month'>('today')
-  const [rangeOpen, setRangeOpen] = useState(false)
-  const [protocolOpen, setProtocolOpen] = useState(false)
-  const rangeRef = useRef<HTMLDivElement>(null)
-  const energy = entry.energyLevel
-
-  useEffect(() => {
-    if (!rangeOpen) return
-    const onPointer = (event: PointerEvent) => {
-      if (rangeRef.current && !rangeRef.current.contains(event.target as Node)) {
-        setRangeOpen(false)
-      }
-    }
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setRangeOpen(false)
-    }
-    document.addEventListener('pointerdown', onPointer)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('pointerdown', onPointer)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [rangeOpen])
-  const dayEvents = eventsForDate(dailyEvents, date).slice(0, 12)
-  const completeness = assessDayCompleteness({
-    entry,
-    activeHabits: settings.activeHabits,
-    habitSchedules: settings.habitSchedules,
-    focusMinutes: settings.focusMinutes,
-    hour: date === today ? new Date().getHours() : 20,
-    hiddenChecks: settings.eveningGate.hiddenChecks,
-  })
-  const habitGoals = {
-    proteinGoal: settings.proteinGoal,
-    focusMinutes: settings.focusMinutes,
-    softMinutes: energy === 'low' ? 2 : undefined,
-  }
-  const hour = date === today ? new Date().getHours() : 12
-  const showDailyClose = shouldShowDailyClose(
-    date === today ? hour : Math.max(hour, settings.eveningGate.fromHour),
-    completeness.closed,
-    settings.eveningGate,
-  )
-  const habitsDue = filterHabitsForDate(settings.activeHabits, date, settings.habitSchedules)
-
-  const allRoutineItems = habitsDue
-    .map(id => DAILY_HABITS.find(h => h.id === id))
-    .filter((h): h is HabitDef => h !== undefined)
-    .map(h => ({
-      key: h.id,
-      label: h.label.replace(/^\d+(?:[.,]\d+)?\s*(?:Min\.?|Minuten|s)\s+/i, '').trim() || h.label,
-      icon: h.icon,
-      minutes: energy === 'low' ? 2 : (h.minutes ?? 11),
-      done: isHabitKey(h.id)
-        ? isHabitComplete(entry, h.id, defaultHabitKind(h.id, habitGoals))
-        : Boolean(entry[h.id as keyof DashboardEntry]),
-    }))
-
-  const dailyProgress = assessDailyProgress({
-    entry,
-    activeHabits: habitsDue,
-    habitDone: Object.fromEntries(allRoutineItems.map(item => [item.key, item.done])),
-    hour,
-  })
-  const eveningCount = eveningRemaining(entry.eveningGate?.done)
-  const eveningComplete = Boolean(entry.eveningGate?.completedAt || completeness.closed)
-  const ownedHabitKeys = [
-    ...ritualOwnedHabitKeys({
-      enabled: ritualEnabled,
-      skipped: ritualSkipped,
-      steps: ritualSteps,
-      doneSteps: ritualDoneSteps,
-    }),
-    ...eveningOwnedHabitKeys({
-      enabled: Boolean(settings.eveningGate.enabled && showDailyClose),
-      completed: eveningComplete,
-      doneSteps: entry.eveningGate?.done,
-    }),
-  ]
-  const adaptive = settings.adaptive ?? defaultAdaptiveLifeConfig()
-  const nowDedupe = applyNowDedupePolicy({
-    surface: adaptive.surfaces.now,
-    gateOwnedKeys: ownedHabitKeys,
-    gateOwnedEntities: [
-      ...(ritualEnabled && !ritualSkipped && ritualSteps.includes('energy') ? ['energy' as const] : []),
-      ...(ritualEnabled && !ritualSkipped && ritualSteps.includes('headRecovery') ? ['mood' as const, 'sleep' as const] : []),
-      ...(ritualEnabled && !ritualSkipped && ritualSteps.includes('weight') ? ['weight' as const] : []),
-    ],
-    habitKeys: allRoutineItems.map(item => item.key),
-  })
-  const excludeHabitKeys = [...new Set([...ownedHabitKeys, ...nowDedupe.excludeHabitKeys])]
-  const ritualCount = ritualRemaining({ steps: ritualSteps, doneSteps: ritualDoneSteps })
-  const nowItems = selectNowItems({
-    anchors,
-    anchorsDone,
-    anchorMinutes,
-    habits: allRoutineItems.map(item => ({
-      key: item.key,
-      label: item.label,
-      done: item.done,
-      minutes: item.minutes,
-    })),
-    energy,
-    hour,
-    excludeHabitKeys,
-  })
-  const overviewItems = selectOverviewItems({
-    anchors,
-    anchorsDone,
-    anchorMinutes,
-    habits: allRoutineItems.map(item => ({
-      key: item.key,
-      label: item.label,
-      done: item.done,
-      minutes: item.minutes,
-    })),
-    excludeHabitKeys,
-  })
-  const laterItem = overviewItems.find(item => {
-    if (item.done || nowItems.some(now => now.id === item.id)) return false
-    if (ownedHabitKeys.includes(item.habitKey ?? '')) return false
-    if (item.kind === 'habit' && item.habitKey && !isHabitRelevantNow(item.habitKey, hour)) return false
-    return true
-  })
-  const laterChip = laterItem ? nowChipLabel(laterItem) : undefined
-  const overviewGroups: Array<{ slot: DaySlot; title: string; items: NowItem[] }> = [
-    { slot: 'morning', title: 'Morgen', items: [] },
-    { slot: 'day', title: 'Tag', items: [] },
-    { slot: 'evening', title: 'Abend', items: [] },
-  ]
-  for (const item of overviewItems) {
-    const group = overviewGroups.find(entry => entry.slot === overviewSlot(item))
-    group?.items.push(item)
-  }
-  const todayWeight = selectTodayWeight({
-    date,
-    entry,
-    measurements: loadBodyMeasurements(),
-  })
-  const toggleFlowItem = (item: NowItem) => {
-    if (item.kind === 'anchor' && item.index != null) onToggleAnchor(item.index)
-    if (item.kind === 'habit' && item.habitKey && isHabitKey(item.habitKey)) {
-      onUpdate({ [item.habitKey]: !item.done } as Partial<DashboardEntry>)
-    }
-  }
-
-  const openFlowItem = (item: NowItem) => {
-    onOpenFocus(
-      item.title,
-      item.kind === 'anchor' ? item.index : undefined,
-      item.kind === 'habit' && item.habitKey ? item.habitKey as RoutineKey : undefined,
-      item.minutes,
-    )
-  }
-
-  return (
-    <div className="view-stack heute-page">
-      <header className="heute-head">
-        <div className="heute-head__top">
-          <span className="heute-head__date">{formatLongDate(date)}</span>
-          <button
-            type="button"
-            className={overviewOpen ? 'heute-overview-toggle is-open' : 'heute-overview-toggle'}
-            aria-expanded={overviewOpen}
-            onClick={() => setOverviewOpen(open => !open)}
-          >
-            <LayoutGrid size={15} />
-            {overviewOpen ? 'Schlie√üen' : 'Tages√ºbersicht'}
-          </button>
-        </div>
-        <h2>Now.</h2>
-        <p className="heute-head__context">
-          {overviewOpen
-            ? 'Dein Tageskern auf einen Blick.'
-            : ritualEnabled && !ritualSkipped && ritualCount.remaining > 0
-              ? 'Morning Gate ist bereit.'
-              : showDailyClose && !eveningComplete && eveningCount.remaining > 0
-                ? 'Evening Gate ist bereit.'
-                : dailyProgress.meaning}
-        </p>
-        {!overviewOpen && (
-          <>
-            <div className="heute-head__stats">
-              <div>
-                <strong>{dailyProgress.total > 0 ? `${dailyProgress.percent}%` : 'Frei'}</strong>
-                <span>Tageskern</span>
-              </div>
-              {todayWeight && (
-                <div>
-                  <strong>{todayWeight.value.toFixed(1).replace('.', ',')} kg</strong>
-                  <span>Gewicht</span>
-                </div>
-              )}
-            </div>
-            <div
-              className="heute-head__bar"
-              role="progressbar"
-              aria-label="Tagesfortschritt"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={dailyProgress.percent}
-              aria-valuetext={dailyProgress.total > 0
-                ? `${dailyProgress.percent} Prozent des Tageskerns erledigt`
-                : 'Keine regul√§ren Tagesaufgaben'}
-            >
-              <span style={{ width: `${dailyProgress.percent}%` }} />
-            </div>
-          </>
-        )}
-      </header>
-
-      {!overviewOpen && runHint && (
-        <section className="card" aria-labelledby="run-now">
-          <h3 id="run-now">Generational Run</h3>
-          <p>{runHint.reason}</p>
-          <button type="button" className="primary-button" onClick={runHint.onOpen}>Im Run √∂ffnen</button>
-        </section>
-      )}
-
-      {ritualLock === 'todos' && energy && (
-        <section className="card morning-todos-card">
-          <SectionTitle eyebrow="Morgen-Ritual" title="Was heute z√§hlt" />
-          <p className="policy-note">Das sind deine Anker. Danach kommt Workout.</p>
-          {anchors.length === 0 ? (
-            <EmptyState title="Noch keine Todos" text="Lege ein bis drei Anker fest, oder geh weiter zum Workout." />
-          ) : (
-            <ul className="morning-gate__meds">
-              {anchors.map((task, index) => (
-                <li key={`${task}-${index}`}>
-                  <div className={anchorsDone[index] ? 'morning-gate__med is-taken' : 'morning-gate__med'}>
-                    <span className="morning-gate__check">{anchorsDone[index] ? <Check size={16} /> : <span />}</span>
-                    <span><strong>{task}</strong></span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-          <button type="button" className="primary-button morning-gate__cta" onClick={onContinueRitualTodos}>
-            <Check size={17} />
-            Gesehen ¬∑ Workout
-          </button>
-        </section>
-      )}
-
-      {ritualLock !== 'todos' && !overviewOpen && (
-        <section className="heute-now">
-          {ritualEnabled && !ritualSkipped && ritualCount.remaining > 0 && (
-            <button type="button" className="heute-routine-card" onClick={onReopenMorningGate}>
-              <span className="eyebrow">Morning Gate</span>
-              <strong>{ritualCount.remaining} {ritualCount.remaining === 1 ? 'Schritt' : 'Schritte'} offen</strong>
-              <span>Fortsetzen</span>
-            </button>
-          )}
-          {showDailyClose && !eveningComplete && eveningCount.remaining > 0 && onOpenEveningGate && (
-            <button type="button" className="heute-routine-card is-night" onClick={onOpenEveningGate}>
-              <span className="eyebrow">Evening Gate</span>
-              <strong>{eveningCount.remaining} {eveningCount.remaining === 1 ? 'Schritt' : 'Schritte'} offen</strong>
-              <span>{entry.eveningGate?.startedAt ? 'Fortsetzen' : 'Starten'}</span>
-            </button>
-          )}
-          {nowItems.length === 0 && !(ritualEnabled && !ritualSkipped && ritualCount.remaining > 0) && !(showDailyClose && !eveningComplete && eveningCount.remaining > 0) ? (
-            <p className="heute-empty">Alles klar. Dein Tageskern ist frei.</p>
-          ) : nowItems.length > 0 ? (
-            <div className="heute-now__list">
-              {nowItems.slice(0, 3).map(item => {
-                const chip = nowChipLabel(item)
-                return (
-                  <div key={item.id} className="heute-pill">
-                    <button
-                      type="button"
-                      className="heute-pill__copy"
-                      onClick={() => openFlowItem(item)}
-                    >
-                      {chip && <em>{chip}</em>}
-                      <strong>{item.title}</strong>
-                      {item.minutes ? <span>{item.minutes} minuten</span> : null}
-                    </button>
-                    <button
-                      type="button"
-                      className="heute-pill__check"
-                      onClick={() => toggleFlowItem(item)}
-                      aria-label={`${item.title} erledigen`}
-                    >
-                      <Circle size={20} />
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-          ) : null}
-          {laterItem && !ownedHabitKeys.includes(laterItem.habitKey ?? '') && (
-            <div className="heute-next">
-              <span className="eyebrow">Als n√§chstes</span>
-              <button type="button" className="heute-next__row" onClick={() => openFlowItem(laterItem)}>
-                <span>
-                  {laterChip && <em>{laterChip}</em>}
-                  <strong>
-                    {laterItem.minutes ? `${laterItem.minutes} Minuten ${laterItem.title}` : laterItem.title}
-                  </strong>
-                </span>
-                <ChevronRight size={18} />
-              </button>
-            </div>
-          )}
-          {onOpenRoutineMode && (
-            <button type="button" className="heute-routine" onClick={onOpenRoutineMode}>
-              <Sun size={16} />
-              Routine Mode
-            </button>
-          )}
-        </section>
-      )}
-
-      {ritualLock !== 'todos' && overviewOpen && (
-        <div className="heute-overview">
-          <div className="heute-range" ref={rangeRef}>
-            <button
-              type="button"
-              className="heute-range__btn"
-              aria-expanded={rangeOpen}
-              onClick={() => setRangeOpen(open => !open)}
-            >
-              {overviewRange === 'today' ? 'Heute' : overviewRange === 'week' ? 'Woche' : 'Monat'}
-              <ChevronDown size={15} />
-            </button>
-            {rangeOpen && (
-              <div className="heute-range__menu" role="listbox" aria-label="Zeitraum">
-                {(['today', 'week', 'month'] as const).map(range => (
-                  <button
-                    key={range}
-                    type="button"
-                    role="option"
-                    aria-selected={overviewRange === range}
-                    onClick={() => {
-                      setOverviewRange(range)
-                      setRangeOpen(false)
-                    }}
-                  >
-                    {range === 'today' ? 'Heute' : range === 'week' ? 'Woche' : 'Monat'}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {overviewRange === 'today' && overviewGroups.map(group => (
-            group.items.length === 0 ? null : (
-              <section key={group.slot} className="heute-slot">
-                <span className="eyebrow">{group.title}</span>
-                <div className="heute-checks">
-                  {group.items.map(item => (
-                    <div key={item.id} className={item.done ? 'heute-check is-done' : 'heute-check'}>
-                      <button
-                        type="button"
-                        className="heute-check__box"
-                        onClick={() => toggleFlowItem(item)}
-                        aria-label={`${item.title} ${item.done ? 'als offen markieren' : 'erledigen'}`}
-                        aria-pressed={item.done}
-                      >
-                        {item.done ? <Check size={12} /> : <span />}
-                      </button>
-                      <button type="button" className="heute-check__copy" onClick={() => openFlowItem(item)}>
-                        <strong>{item.title}</strong>
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )
-          ))}
-
-          {overviewRange === 'week' && (
-            <section className="heute-slot">
-              <span className="eyebrow">Woche</span>
-              <ul className="overview-week">
-                {weekDateKeys(date).map(day => {
-                  const dayEntry = entries.find(item => item.date === day)
-                  const dayAnchors = dayEntry?.anchors ?? []
-                  const dayDone = dayEntry?.anchorsDone ?? []
-                  return (
-                    <li key={day}>
-                      <button type="button" className="overview-week__row" onClick={() => onDateChange(day)}>
-                        <strong>{new Intl.DateTimeFormat('de-DE', { weekday: 'short', day: 'numeric' }).format(new Date(`${day}T12:00:00`))}</strong>
-                        <span>
-                          {dayAnchors.length === 0
-                            ? 'Keine Anker'
-                            : `${dayDone.filter(Boolean).length}/${dayAnchors.length} Anker`}
-                        </span>
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
-            </section>
-          )}
-
-          {overviewRange === 'month' && (
-            <section className="heute-slot">
-              <span className="eyebrow">Monat</span>
-              <div className="month-grid month-grid--compact">
-                {buildMonthGrid({
-                  year: new Date(`${date}T12:00:00`).getFullYear(),
-                  monthIndex: new Date(`${date}T12:00:00`).getMonth(),
-                  today,
-                  selected: date,
-                  entryDates: new Set(entries.map(item => item.date)),
-                  scoresByDate: Object.fromEntries(entries.map(item => [item.date, item.dailyScore])),
-                }).map(cell => (
-                  <button
-                    key={cell.date}
-                    type="button"
-                    className={[
-                      'month-cell',
-                      cell.inMonth ? '' : 'is-outside',
-                      cell.isToday ? 'is-today' : '',
-                      cell.isSelected ? 'is-selected' : '',
-                      cell.hasEntry ? 'has-entry' : '',
-                    ].filter(Boolean).join(' ')}
-                    onClick={() => onDateChange(cell.date)}
-                  >
-                    {Number(cell.date.slice(-2))}
-                  </button>
-                ))}
-              </div>
-            </section>
-          )}
-
-          <button
-            type="button"
-            className={protocolOpen ? 'heute-protocol is-open' : 'heute-protocol'}
-            onClick={() => setProtocolOpen(open => !open)}
-            aria-expanded={protocolOpen}
-          >
-            Protokoll
-            <ChevronDown size={16} />
-          </button>
-          {protocolOpen && dayEvents.length === 0 && (
-            <p className="heute-empty">Noch keine Ereignisse f√ºr diesen Tag.</p>
-          )}
-          {protocolOpen && dayEvents.length > 0 && (
-            <>
-              <ul className="daily-timeline">
-                {(timelineOpen ? dayEvents : dayEvents.slice(0, 3)).map(event => {
-                  const undoEntry = onUndoDailyEvent != null && canUndoEntryPatch(event, dailyEvents)
-                  const undoRitual = onUndoRitualEvent != null && canUndoRitualStep(event, dailyEvents)
-                  return (
-                    <li key={event.id} className="daily-timeline__row">
-                      <div className="daily-timeline__copy">
-                        <strong>{summarizeDailyEvent(event)}</strong>
-                        <span>
-                          {formatEventTime(event.occurredAt)}
-                          {' ¬∑ '}
-                          {sourceLabel(event.source)}
-                          {event.type === 'entry_patch' && event.undoOf ? ' ¬∑ r√ºckg√§ngig' : ''}
-                          {event.type === 'ritual_step' && event.status === 'reopened' ? ' ¬∑ wieder ge√∂ffnet' : ''}
-                        </span>
-                      </div>
-                      {(undoEntry || undoRitual) && (
-                        <button
-                          type="button"
-                          className="text-button"
-                          onClick={() => {
-                            if (undoEntry && canUndoEntryPatch(event, dailyEvents)) onUndoDailyEvent(event)
-                            else if (undoRitual && canUndoRitualStep(event, dailyEvents)) onUndoRitualEvent(event)
-                          }}
-                        >
-                          <RotateCcw size={14} />
-                          Undo
-                        </button>
-                      )}
-                    </li>
-                  )
-                })}
-              </ul>
-              {dayEvents.length > 3 && (
-                <button
-                  type="button"
-                  className="card-link"
-                  onClick={() => setTimelineOpen(open => !open)}
-                >
-                  {timelineOpen ? 'Weniger zeigen' : `Alle ${dayEvents.length} Eintr√§ge`}
-                  <ChevronRight size={16} />
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function PlanView({
-  date,
-  today,
-  anchors,
-  anchorsDone,
-  anchorMinutes,
-  focusMinutes,
-  maxAnchors,
-  energy,
-  onDateChange,
-  onAddTask,
-  onAddSuggestion,
-  onEditTask,
-  onDeleteTask,
-  onMoveTask,
-  onToggleTask,
-  onOpenFocus,
-  onExportToCalendar,
-}: {
-  date: string
-  today: string
-  anchors: string[]
-  anchorsDone: boolean[]
-  anchorMinutes: number[]
-  focusMinutes: number
-  maxAnchors: number
-  energy?: EnergyLevel
-  onDateChange: (date: string) => void
-  onAddTask: () => void
-  onAddSuggestion: (text: string) => void
-  onEditTask: (index: number, value: string) => void
-  onDeleteTask: (index: number) => void
-  onMoveTask: (index: number, direction: -1 | 1) => void
-  onToggleTask: (index: number) => void
-  onOpenFocus: (title: string, taskIndex?: number, routineKey?: RoutineKey, overrideMinutes?: number) => void
-  onExportToCalendar: (title: string, minutes: number) => Promise<void>
-}) {
-  const done = anchors.filter((_, index) => Boolean(anchorsDone[index])).length
-  const availableSuggestions = DEF_TASKS.filter(t => !anchors.includes(t))
-  return (
-    <div className="view-stack">
-      <DateStrip selected={date} today={today} onChange={onDateChange} />
-      <section className="page-intro">
-        <div>
-          <span className="eyebrow">Plan</span>
-          <h2>Ein klarer Tag braucht wenig.</h2>
-          <p>
-            {energy === 'low'
-              ? `Bei niedriger Energie maximal ${maxAnchors} Anker.`
-              : energy === 'okay'
-                ? `Machbarer Tag: maximal ${maxAnchors} Anker.`
-                : `Ordne nur die Aufgaben, die heute wirklich z√§hlen. Maximal ${maxAnchors}.`}
-          </p>
-        </div>
-        <button type="button" className="primary-button" onClick={onAddTask} disabled={anchors.length >= maxAnchors}>
-          <Plus size={17} /> Neue Aufgabe
-        </button>
-      </section>
-
-      <div className="plan-layout">
-        <section className="card plan-list-card">
-          <SectionTitle
-            eyebrow={formatLongDate(date)}
-            title="Tagesanker"
-            action={<span className="counter-pill">{done}/{anchors.length}</span>}
-          />
-          {anchors.length === 0 ? (
-            <EmptyState
-              title="Der Plan ist noch leer"
-              text="Beginne mit einer einzigen Aufgabe, die den Tag sp√ºrbar besser macht."
-              action={
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 400 }}>
-                  <button type="button" className="primary-button" onClick={onAddTask} disabled={anchors.length >= maxAnchors}><Plus size={16} /> Eigene Aufgabe</button>
-                  <p style={{ margin: '8px 0 6px', fontSize: 11, color: 'var(--text-muted)', textAlign: 'left' }}>Schnell hinzuf√ºgen:</p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {availableSuggestions.slice(0, 5 - anchors.length).map(t => (
-                      <button key={t} type="button" className="small-button" onClick={() => onAddSuggestion(t)}>
-                        <Plus size={12} /> {t}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              }
-            />
-          ) : (
-            <div className="editable-task-list">
-              {anchors.map((task, index) => {
-                const isDone = Boolean(anchorsDone[index])
-                const taskMinutes = anchorMinutes[index] ?? focusMinutes
-                return (
-                  <SwipeableRow
-                    key={`${task}-${index}`}
-                    leftLabel={isDone ? 'Offen' : 'Erledigt'}
-                    rightLabel="Nach unten"
-                    onSwipeLeft={() => onToggleTask(index)}
-                    onSwipeRight={index < anchors.length - 1 ? () => onMoveTask(index, 1) : undefined}
-                  >
-                    <div className={isDone ? 'editable-task is-done' : 'editable-task'}>
-                      <button
-                        type="button"
-                        className="task-check"
-                        onClick={() => onToggleTask(index)}
-                        aria-pressed={isDone}
-                        aria-label={isDone ? `${task} als offen markieren` : `${task} erledigen`}
-                      >
-                        {isDone ? <Check size={17} /> : <Circle size={17} />}
-                      </button>
-                      <div className="editable-task__content">
-                        <strong>{task}</strong>
-                        <span>{taskMinutes} Min. Fokus ¬∑ Position {index + 1}</span>
-                      </div>
-                      <div className="editable-task__actions">
-                        <IconButton label="Nach oben" onClick={() => onMoveTask(index, -1)} disabled={index === 0}>
-                          <ChevronUp size={15} />
-                        </IconButton>
-                        <IconButton label="Nach unten" onClick={() => onMoveTask(index, 1)} disabled={index === anchors.length - 1}>
-                          <ChevronDown size={15} />
-                        </IconButton>
-                        <IconButton label="Fokus starten" onClick={() => onOpenFocus(task, index, undefined, taskMinutes)}>
-                          <Play size={15} />
-                        </IconButton>
-                        {!isDone && (
-                          <IconButton
-                            label="In Kalender"
-                            onClick={() => { void onExportToCalendar(task, taskMinutes) }}
-                          >
-                            <CalendarPlus size={15} />
-                          </IconButton>
-                        )}
-                        <IconButton label="Bearbeiten" onClick={() => onEditTask(index, task)}>
-                          <Pencil size={15} />
-                        </IconButton>
-                        <IconButton label="L√∂schen" onClick={() => onDeleteTask(index)} className="icon-button--danger">
-                          <Trash2 size={15} />
-                        </IconButton>
-                      </div>
-                    </div>
-                  </SwipeableRow>
-                )
-              })}
-            </div>
-          )}
-        </section>
-
-        <aside className="plan-side">
-          <section className="card calming-note">
-            <div className="calming-note__art" aria-hidden="true"><span /></div>
-            <h3>Weniger Reibung</h3>
-            <p>Eine Aufgabe darf klein formuliert sein. ‚Äû10 Minuten anfangen‚Äú z√§hlt. Standard-Fokus stellst du in den Einstellungen ein.</p>
-          </section>
-        </aside>
-      </div>
-    </div>
-  )
-}
-
-function NumberField({
-  label,
-  value,
-  unit,
-  step,
-  min = 0,
-  max,
-  placeholder,
-  onChange,
-}: {
-  label: string
-  value: number
-  unit?: string
-  step?: number
-  min?: number
-  max?: number
-  placeholder?: string
-  onChange: (value: number) => void
-}) {
-  return (
-    <label className="number-field">
-      <span>{label}</span>
-      <div>
-        <input
-          type="number"
-          value={value || ''}
-          min={min}
-          max={max}
-          step={step}
-          placeholder={placeholder}
-          onChange={event => onChange(Number(event.target.value) || 0)}
-        />
-        {unit && <strong>{unit}</strong>}
-      </div>
-    </label>
-  )
-}
-
-function CheckinView({
-  entry,
-  date,
-  today,
-  settings,
-  onDateChange,
-  onUpdate,
-  showToast,
-}: {
-  entry: DashboardEntry
-  date: string
-  today: string
-  settings: AppSettings
-  onDateChange: (date: string) => void
-  onUpdate: (patch: Partial<DashboardEntry>) => void
-  showToast: (message: string) => void
-}) {
-  const [journal, setJournal] = useState(entry.journalText ?? '')
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setJournal(entry.journalText ?? '')
-  }, [entry.date, entry.journalText])
-
-  useEffect(() => {
-    if (date > today) onDateChange(today)
-  }, [date, today, onDateChange])
-
-  const saveJournal = () => {
-    onUpdate({ journalText: journal, journalDone: Boolean(journal.trim()) })
-    showToast('Notiz gespeichert.')
-  }
-
-  return (
-    <div className="view-stack">
-      <DateStrip selected={date} today={today} maxDate={today} onChange={onDateChange} />
-      <section className="page-intro">
-        <div>
-          <span className="eyebrow">Check-in</span>
-          <h2>Kurz wahrnehmen, nicht bewerten.</h2>
-          <p>Nur die Daten, die dir sp√§ter wirklich helfen.</p>
-        </div>
-      </section>
-
-      <div className="checkin-layout">
-        <section className="card checkin-card">
-          <SectionTitle eyebrow="Stimmung" title="Wie geht es dir?" />
-          <div className="choice-grid choice-grid--mood">
-            {MOODS.map(mood => (
-              <button
-                type="button"
-                key={mood}
-                className={entry.mood === mood ? 'choice-button is-active' : 'choice-button'}
-                onClick={() => onUpdate({ mood })}
-                aria-pressed={entry.mood === mood}
-              >
-                {mood}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="card checkin-card">
-          <SectionTitle eyebrow="Erholung" title="Schlaf" />
-
-          {/* Sleep quality */}
-          <p className="field-hint" style={{ marginBottom: 8 }}>Qualit√§t</p>
-          <div className="choice-grid" style={{ marginBottom: 16 }}>
-            {SLEEP_QUALITY.map(opt => (
-              <button
-                type="button"
-                key={opt}
-                className={entry.sleepQuality === opt ? 'choice-button is-active' : 'choice-button'}
-                onClick={() => onUpdate({ sleepQuality: entry.sleepQuality === opt ? '' : opt })}
-                aria-pressed={entry.sleepQuality === opt}
-              >
-                {opt}
-              </button>
-            ))}
-          </div>
-
-          {/* Sleep duration ‚Äî CollectUI soft duration interaction */}
-          <p className="field-hint" style={{ marginBottom: 8 }}>Bettzeit & Aufstehen</p>
-          <div className="sleep-times">
-            <label className="text-field">
-              <span>Bett</span>
-              <input
-                type="time"
-                value={entry.bedTime ?? ''}
-                onChange={event => {
-                  const bedTime = event.target.value || undefined
-                  const wakeTime = entry.wakeTime
-                  const hours = bedTime && wakeTime ? hoursBetweenTimes(bedTime, wakeTime) : null
-                  onUpdate({
-                    bedTime,
-                    ...(hours !== null ? { sleepDuration: formatSleepHoursLabel(hours) } : {}),
-                  })
-                }}
-              />
-            </label>
-            <label className="text-field">
-              <span>Aufstehen</span>
-              <input
-                type="time"
-                value={entry.wakeTime ?? ''}
-                onChange={event => {
-                  const wakeTime = event.target.value || undefined
-                  const bedTime = entry.bedTime
-                  const hours = bedTime && wakeTime ? hoursBetweenTimes(bedTime, wakeTime) : null
-                  onUpdate({
-                    wakeTime,
-                    ...(hours !== null ? { sleepDuration: formatSleepHoursLabel(hours) } : {}),
-                  })
-                }}
-              />
-            </label>
-          </div>
-
-          <p className="field-hint" style={{ margin: '14px 0 8px' }}>Dauer</p>
-          <SoftDurationInput
-            value={entry.sleepDuration}
-            onChange={next => onUpdate({ sleepDuration: next })}
-          />
-          <div className="choice-grid soft-duration-presets" style={{ marginTop: 10, marginBottom: 16 }}>
-            {SLEEP_DURATION_PRESETS.map(opt => (
-              <button
-                type="button"
-                key={opt}
-                className={entry.sleepDuration === opt ? 'choice-button is-active' : 'choice-button'}
-                onClick={() => onUpdate({ sleepDuration: entry.sleepDuration === opt ? '' : opt })}
-                aria-pressed={entry.sleepDuration === opt}
-              >
-                {opt}
-              </button>
-            ))}
-          </div>
-
-          {/* Dreamed */}
-          <p className="field-hint" style={{ marginBottom: 8 }}>Getr√§umt?</p>
-          <div className="choice-grid" style={{ marginBottom: entry.dreamed ? 12 : 0 }}>
-            {(['Ja', 'Nein'] as const).map(opt => {
-              const active = opt === 'Ja' ? entry.dreamed === true : entry.dreamed === false
-              return (
-                <button
-                  type="button"
-                  key={opt}
-                  className={active ? 'choice-button is-active' : 'choice-button'}
-                  onClick={() => onUpdate({
-                    dreamed: opt === 'Ja',
-                    dreamQuality: opt === 'Nein' ? undefined : entry.dreamQuality,
-                  })}
-                  aria-pressed={active}
-                >
-                  {opt}
-                </button>
-              )
-            })}
-          </div>
-          {entry.dreamed === true && (
-            <div className="choice-grid">
-              {(['Gut', 'Schlecht'] as const).map(opt => {
-                const val = opt.toLowerCase() as 'gut' | 'schlecht'
-                return (
-                  <button
-                    type="button"
-                    key={opt}
-                    className={entry.dreamQuality === val ? 'choice-button is-active' : 'choice-button'}
-                    onClick={() => onUpdate({ dreamQuality: entry.dreamQuality === val ? undefined : val })}
-                    aria-pressed={entry.dreamQuality === val}
-                  >
-                    {opt}
-                  </button>
-                )
-              })}
-            </div>
-          )}
-        </section>
-
-        <section className="card checkin-card checkin-card--wide">
-                <SectionTitle
-                  eyebrow="Werte"
-                  title="K√∂rper & Fokus"
-                />
-                <div className="form-grid">
-                  <NumberField
-                    label="Gewicht"
-                    value={entry.weightKg}
-                    unit="kg"
-                    step={0.1}
-                    min={35}
-                    max={200}
-                    placeholder="z. B. 65,0"
-                    onChange={weightKg => onUpdate({ weightKg })}
-                  />
-                  <NumberField
-                    label="Protein"
-                    value={entry.proteinGrams}
-                    unit="g"
-                    step={5}
-                    min={0}
-                    max={400}
-                    placeholder="z. B. 140"
-                    onChange={proteinGrams => onUpdate({
-                      proteinGrams,
-                      proteinReached: proteinGrams >= settings.proteinGoal,
-                    })}
-                  />
-                  <NumberField
-                    label="Kalorien"
-                    value={entry.calories}
-                    unit="kcal"
-                    step={50}
-                    min={0}
-                    max={8000}
-                    placeholder="z. B. 2400"
-                    onChange={calories => onUpdate({
-                      calories,
-                      caloriesReached: calories >= settings.calorieGoal,
-                    })}
-                  />
-                  <NumberField
-                    label="Fett"
-                    value={entry.fatGrams}
-                    unit="g"
-                    step={5}
-                    min={0}
-                    max={300}
-                    placeholder="z. B. 70"
-                    onChange={fatGrams => onUpdate({ fatGrams })}
-                  />
-                  <NumberField
-                    label="Kohlenhydrate"
-                    value={entry.carbsGrams}
-                    unit="g"
-                    step={5}
-                    min={0}
-                    max={800}
-                    placeholder="z. B. 250"
-                    onChange={carbsGrams => onUpdate({ carbsGrams })}
-                  />
-                  <NumberField
-                    label="Ballaststoffe"
-                    value={entry.fiberGrams}
-                    unit="g"
-                    step={1}
-                    min={0}
-                    max={100}
-                    placeholder="z. B. 30"
-                    onChange={fiberGrams => onUpdate({ fiberGrams })}
-                  />
-                  <NumberField
-                    label="Wasser"
-                    value={entry.waterLiters}
-                    unit="L"
-                    step={0.1}
-                    min={0}
-                    max={8}
-                    placeholder="z. B. 2,5"
-                    onChange={waterLiters => onUpdate({ waterLiters })}
-                  />
-                  <NumberField
-                    label="Schritte"
-                    value={entry.steps}
-                    step={500}
-                    min={0}
-                    max={100000}
-                    placeholder="z. B. 8000"
-                    onChange={steps => onUpdate({ steps })}
-                  />
-                </div>
-                <div className="macro-rings" aria-label="Tagesziele">
-                  {[
-                    { label: 'Protein', value: entry.proteinGrams, goal: settings.proteinGoal, unit: 'g' },
-                    { label: 'Kalorien', value: entry.calories, goal: settings.calorieGoal, unit: 'kcal' },
-                    { label: 'Fett', value: entry.fatGrams, goal: settings.fatGoal, unit: 'g' },
-                    { label: 'KH', value: entry.carbsGrams, goal: settings.carbsGoal, unit: 'g' },
-                    { label: 'Faser', value: entry.fiberGrams, goal: settings.fiberGoal, unit: 'g' },
-                    { label: 'Wasser', value: entry.waterLiters, goal: 2.5, unit: 'L' },
-                  ].map(ring => {
-                    const percent = macroProgress(ring.value, ring.goal)
-                    return (
-                      <div className="macro-ring" key={ring.label}>
-                        <strong>{percent}%</strong>
-                        <small>{ring.label}</small>
-                        <small>{ring.value || 0} / {ring.goal} {ring.unit}</small>
-                      </div>
-                    )
-                  })}
-                </div>
-        </section>
-
-        <section className="card checkin-card checkin-card--wide">
-          <SectionTitle eyebrow="Abschluss" title="Eine kurze Notiz" />
-          <textarea
-            className="journal-field"
-            value={journal}
-            onChange={event => setJournal(event.target.value)}
-            placeholder={eveningPromptForDate(date)}
-            rows={6}
-            maxLength={2000}
-          />
-          <div className="form-actions">
-            <span>{journal.length}/2000</span>
-            <button
-              type="button"
-              className="secondary-button"
-              disabled={!journal.trim()}
-              onClick={async () => {
-                const result = await shareText({
-                  title: 'Life OS Notiz',
-                  text: journal.trim(),
-                })
-                if (result === 'shared') showToast('Share Sheet ge√∂ffnet ‚Äî z. B. Notizen.')
-                else if (result === 'copied') showToast('Notiz kopiert.')
-                else showToast('Teilen nicht verf√ºgbar.')
-              }}
-            >
-              <Share2 size={17} /> Teilen
-            </button>
-            <button type="button" className="primary-button" onClick={saveJournal}>
-              <Check size={17} /> Notiz speichern
-            </button>
-          </div>
-        </section>
-      </div>
-    </div>
-  )
-}
-
-function WeightSparkline({
-  points,
-  insights,
-}: {
-  points: { date: string; kg: number }[]
-  insights: ReturnType<typeof buildWeightInsights>
-}) {
-  if (points.length === 0) {
-    return <p className="field-hint">Noch keine Gewichtseintr√§ge ‚Äî √ºber Jo AI oder eine verbundene Waage erfassen.</p>
-  }
-
-  const latest = points[points.length - 1]
-  const first = points[0]
-  const formatDelta = (value: number | null) => {
-    if (value === null) return null
-    if (value === 0) return '¬±0'
-    return `${value > 0 ? '+' : ''}${value}`
-  }
-
-  const chart = points.length >= 2 ? (() => {
-    const width = 320
-    const height = 72
-    const pad = 6
-    const kgs = points.map(point => point.kg)
-    const min = Math.min(...kgs)
-    const max = Math.max(...kgs)
-    const range = Math.max(max - min, 0.2)
-    const polyline = points
-      .map((point, index) => {
-        const x = pad + (index / (points.length - 1)) * (width - pad * 2)
-        const y = height - pad - ((point.kg - min) / range) * (height - pad * 2)
-        return `${x.toFixed(1)},${y.toFixed(1)}`
-      })
-      .join(' ')
-    return (
-      <svg
-        className="weight-spark__chart"
-        viewBox={`0 0 ${width} ${height}`}
-        role="img"
-        aria-label={`Gewicht von ${first.kg} auf ${latest.kg} kg`}
-      >
-        <polyline
-          fill="none"
-          stroke="var(--accent)"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          points={polyline}
-        />
-      </svg>
-    )
-  })() : null
-
-  return (
-    <div className="weight-spark">
-      <div className="weight-spark__meta">
-        <strong>{latest.kg.toFixed(1)} kg</strong>
-        <span>{insights.trendLabel} ¬∑ {points.length} Eintr√§ge</span>
-      </div>
-      <div className="weight-spark__stats">
-        <span>7T {formatDelta(insights.delta7) ?? '‚Äî'}</span>
-        <span>30T {formatDelta(insights.delta30) ?? '‚Äî'}</span>
-        <span>
-          BMI {insights.bmi !== null ? `${insights.bmi}` : '‚Äî'}
-          {insights.bmiLabel ? ` ¬∑ ${insights.bmiLabel}` : ''}
-        </span>
-      </div>
-      {chart}
-      {insights.bmi === null && (
-        <p className="field-hint">K√∂rpergr√∂√üe in den Einstellungen setzen f√ºr BMI.</p>
-      )}
-    </div>
-  )
-}
-
-function MonthCalendar({
-  today,
-  selected,
-  entries,
-  scoreGoals,
-  onSelect,
-}: {
-  today: string
-  selected: string
-  entries: DashboardEntry[]
-  scoreGoals: { proteinGoal: number; activeHabits: string[] }
-  onSelect: (date: string) => void
-}) {
-  const initial = fromDateKey(selected)
-  const [year, setYear] = useState(initial.getFullYear())
-  const [monthIndex, setMonthIndex] = useState(initial.getMonth())
-
-  useEffect(() => {
-    const date = fromDateKey(selected)
-    setYear(date.getFullYear())
-    setMonthIndex(date.getMonth())
-  }, [selected])
-
-  const entryDates = useMemo(() => new Set(entries.map(entry => entry.date)), [entries])
-  const scoresByDate = useMemo(() => {
-    const map: Record<string, number> = {}
-    for (const entry of entries) {
-      map[entry.date] = Math.round(calculateScore(entry, scoreGoals))
-    }
-    return map
-  }, [entries, scoreGoals])
-
-  const cells = buildMonthGrid({ year, monthIndex, today, selected, entryDates, scoresByDate })
-
-  const shiftMonth = (delta: number) => {
-    const next = new Date(year, monthIndex + delta, 1)
-    setYear(next.getFullYear())
-    setMonthIndex(next.getMonth())
-  }
-
-  return (
-    <section className="card calendar-card">
-      <div className="calendar-card__head">
-        <SectionTitle eyebrow="Kalender" title={monthLabel(year, monthIndex)} />
-        <div className="calendar-card__nav">
-          <IconButton label="Vorheriger Monat" onClick={() => shiftMonth(-1)}>
-            <ChevronLeft size={16} />
-          </IconButton>
-          <IconButton label="N√§chster Monat" onClick={() => shiftMonth(1)}>
-            <ChevronRight size={16} />
-          </IconButton>
-        </div>
-      </div>
-      <div className="month-calendar__weekdays" aria-hidden="true">
-        {['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map(label => (
-          <span key={label}>{label}</span>
-        ))}
-      </div>
-      <div className="month-calendar" role="grid" aria-label="Monatskalender">
-        {cells.map(cell => (
-          <button
-            type="button"
-            key={cell.date}
-            className={[
-              'month-calendar__cell',
-              cell.inMonth ? '' : 'is-outside',
-              cell.isToday ? 'is-today' : '',
-              cell.isSelected ? 'is-selected' : '',
-              cell.hasEntry ? 'has-entry' : '',
-            ].filter(Boolean).join(' ')}
-            onClick={() => onSelect(cell.date)}
-            aria-pressed={cell.isSelected}
-            aria-label={`${formatLongDate(cell.date)}${cell.hasEntry ? `, Score ${cell.score}` : ''}`}
-          >
-            <strong>{fromDateKey(cell.date).getDate()}</strong>
-            {cell.hasEntry && <span className="month-calendar__dot" />}
-          </button>
-        ))}
-      </div>
-      <p className="field-hint">Tippe einen Tag an, um ihn im Tageskern zu √∂ffnen.</p>
-    </section>
-  )
-}
-
-function ProgressView({
-  entries,
-  today,
-  selectedDate,
-  scoreGoals,
-  heightCm,
-  labClassName = '',
-  onSelectDate,
-}: {
-  entries: DashboardEntry[]
-  today: string
-  selectedDate: string
-  scoreGoals: { proteinGoal: number; activeHabits: string[] }
-  heightCm: number
-  labClassName?: string
-  onSelectDate: (date: string) => void
-}) {
-  const [habitDetail, setHabitDetail] = useState<{ key: HabitKey; label: string } | null>(null)
-  const moodLine = moodHabitLine(entries, today, scoreGoals.activeHabits)
-  const lastSeven = Array.from({ length: 7 }, (_, index) => addDays(today, index - 6)).map(date => {
-    const entry = entries.find(item => item.date === date) ?? createDefaultEntry(date)
-    return { date, score: clampNumber(calculateScore(entry, scoreGoals), 0, 100), entry }
-  })
-  const scoredSeven = lastSeven.filter(item => !item.entry.dayShield)
-  const average = scoredSeven.length === 0
-    ? 0
-    : Math.round(scoredSeven.reduce((sum, item) => sum + item.score, 0) / scoredSeven.length)
-  const best = Math.max(...lastSeven.map(item => item.score))
-  const previousSeven = Array.from({ length: 7 }, (_, index) => addDays(today, index - 13)).map(date => {
-    const entry = entries.find(item => item.date === date) ?? createDefaultEntry(date)
-    return clampNumber(calculateScore(entry, scoreGoals), 0, 100)
-  })
-  const previousAverage = Math.round(previousSeven.reduce((sum, value) => sum + value, 0) / previousSeven.length)
-  const weekDelta = average - previousAverage
-  const insights = buildWeekInsights(entries, today)
-
-  const xp = loadXP()
-
-  const movementStreak = (() => {
-    const sorted = [...entries].sort((a, b) => b.date.localeCompare(a.date))
-    let count = 0
-    for (const entry of sorted) {
-      if (entry.pushupsDone || entry.squatsDone) count += 1
-      else break
-    }
-    return count
-  })()
-
-  const habitStats = [
-    { label: 'Proteinshake', count: lastSeven.filter(item => item.entry.proteinShake).length, streak: calculateStreakForHabit(entries, 'proteinShake'), icon: Coffee },
-    { label: 'Dankbarkeit', count: lastSeven.filter(item => item.entry.gratitudeDone).length, streak: calculateStreakForHabit(entries, 'gratitudeDone'), icon: Sparkles },
-    { label: 'Fokus', count: lastSeven.filter(item => item.entry.focusDone).length, streak: calculateStreakForHabit(entries, 'focusDone'), icon: Focus },
-    { label: 'Bewegung', count: lastSeven.filter(item => item.entry.pushupsDone || item.entry.squatsDone).length, streak: movementStreak, icon: Dumbbell },
-  ]
-
-  const todayEntry = entries.find(item => item.date === today) ?? createDefaultEntry(today)
-  const energyLabel = (value: DashboardEntry['energyLevel']) => (
-    value === 'low' ? 'Niedrig' : value === 'okay' ? 'Okay' : value === 'high' ? 'Gut' : '‚Äî'
-  )
-  const breakdown = getScoreBreakdown(todayEntry, scoreGoals)
-  const heatmap = buildYearHeatmap(entries, today, e => (
-    e.dayShield ? 20 : calculateScore(e, scoreGoals)
-  ))
-  const review = buildWeeklyReview(entries, today, scoreGoals)
-  const weightSeries = buildWeightSeries(entries, today, 30)
-  const weightInsights = buildWeightInsights(entries, today, heightCm)
-  const sleepAvg = averageSleepHours(entries, today, 7)
-  const strengthStats = (['proteinShake', 'gratitudeDone', 'focusDone', 'breathingDone'] as const).map(key => {
-    const strength = calculateHabitStrength(entries, key, today)
-    const habit = DAILY_HABITS.find(item => item.id === key)
-    return {
-      key,
-      label: habit?.label ?? key,
-      icon: habit?.icon ?? Sparkles,
-      strength: strength.strength,
-      strengthLabel: habitStrengthLabel(strength.strength),
-      neverMissTwiceOk: strength.neverMissTwiceOk,
-      streak: calculateStreakForHabit(entries, key),
-    }
-  })
-
-  return (
-    <div className={`view-stack lab-page ${labClassName}`.trim()}>
-      <section className="page-intro lab-intro">
-        <div>
-          <span className="eyebrow">Lab</span>
-          <h2>Muster sehen. Klarer steuern.</h2>
-          <p>Signale, Trends und Plan an einem Ort ‚Äî ohne doppelte Eingaben.</p>
-        </div>
-      </section>
-
-      <section className="lab-status" aria-labelledby="lab-status-title">
-        <div className="lab-status__head">
-          <div>
-            <span className="eyebrow">Heute</span>
-            <h3 id="lab-status-title">Deine Signale</h3>
-          </div>
-          <span className="lab-status__date">{formatShortDate(today)}</span>
-        </div>
-        <div className="lab-status__grid">
-          <div><span>Stimmung</span><strong>{todayEntry.mood || '‚Äî'}</strong></div>
-          <div><span>Erholung</span><strong>{todayEntry.sleepQuality || '‚Äî'}</strong></div>
-          <div><span>Morgenenergie</span><strong>{energyLabel(todayEntry.energyLevel)}</strong></div>
-          <div><span>Abendenergie</span><strong>{energyLabel(todayEntry.eveningGate?.energyLevel)}</strong></div>
-        </div>
-      </section>
-
-      <div className="kpi-grid">
-        <div className="kpi-card kpi-card--trend">
-          <span>Wochenschnitt</span>
-          <div className="kpi-card__value-row">
-            <strong>{average}%</strong>
-            {weekDelta !== 0 && (
-              <span className={weekDelta > 0 ? 'trend-chip trend-chip--up' : 'trend-chip trend-chip--down'}>
-                {weekDelta > 0 ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
-                {Math.abs(weekDelta)}%
-              </span>
-            )}
-          </div>
-          <div className="kpi-progress" aria-hidden="true"><span style={{ width: `${average}%` }} /></div>
-          <small>vs. Vorwoche {previousAverage}%</small>
-        </div>
-        <div className="kpi-card">
-          <span>Bester Tag</span>
-          <strong>{best}%</strong>
-          <div className="kpi-progress" aria-hidden="true"><span style={{ width: `${best}%` }} /></div>
-          <small>diese Woche</small>
-        </div>
-        <div className="kpi-card"><span>Rhythmus</span><strong>{xp.streakDays}</strong><small>{plural(xp.streakDays, 'Tag', 'Tage')} ¬∑ {levelName(xp.level)}</small></div>
-      </div>
-
-      <MonthCalendar
-        today={today}
-        selected={selectedDate}
-        entries={entries}
-        scoreGoals={scoreGoals}
-        onSelect={onSelectDate}
-      />
-
-      <section className={`card weekly-review-card${review.isReviewDay ? ' is-review-day' : ''}`}>
-        <SectionTitle
-          eyebrow={review.isReviewDay ? 'Ritual ¬∑ So / Mo' : 'Woche'}
-          title="Weekly Review"
-        />
-        <p className="field-hint" style={{ marginTop: -8, marginBottom: 12 }}>
-          {review.weekLabel} ¬∑ Schnitt {review.averageScore}%
-          {review.bestScore > 0 ? ` ¬∑ Best ${review.bestDay} (${review.bestScore}%)` : ''}
-        </p>
-        <div className="weekly-review-grid">
-          <div className="weekly-review-block">
-            <span className="eyebrow">Win</span>
-            <p>{review.win}</p>
-          </div>
-          <div className="weekly-review-block">
-            <span className="eyebrow">Behalten</span>
-            <p>{review.keep}</p>
-          </div>
-        </div>
-        <div className="weekly-review-anchors">
-          <span className="eyebrow">N√§chste Woche</span>
-          <ul>
-            {review.nextAnchors.map(item => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </div>
-      </section>
-
-      <section className="card insight-card">
-        <SectionTitle eyebrow="Muster" title="Was die Woche dir sagt" />
-        <div className="insight-list">
-          {moodLine && (
-            <div className="insight-row">
-              <strong>Stimmung √ó Habit</strong>
-              <p>{moodLine.text}</p>
-            </div>
-          )}
-          {insights.map(insight => (
-            <div className="insight-row" key={insight.id}>
-              <strong>{insight.title}</strong>
-              <p>{insight.text}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="card heatmap-card">
-        <SectionTitle eyebrow="Jahr" title="Beitrag ohne Streak-Druck" />
-        <p className="field-hint" style={{ marginTop: -8, marginBottom: 14 }}>
-          Helle Felder sind ruhige Tage ‚Äî kein Reset, nur Rhythmus.
-        </p>
-        <div className="year-heatmap" role="img" aria-label="Jahres-Heatmap der Tages-Scores">
-          {heatmap.map(cell => (
-            <span
-              key={cell.date}
-              className={`year-heatmap__cell level-${cell.level}`}
-              title={`${cell.date}: ${cell.score}%`}
-            />
-          ))}
-        </div>
-        <div className="year-heatmap__legend">
-          <span>Weniger</span>
-          <span className="year-heatmap__cell level-0" />
-          <span className="year-heatmap__cell level-1" />
-          <span className="year-heatmap__cell level-2" />
-          <span className="year-heatmap__cell level-3" />
-          <span className="year-heatmap__cell level-4" />
-          <span>Mehr</span>
-        </div>
-      </section>
-
-      <section className="card">
-        <SectionTitle eyebrow="St√§rke" title="Habit Strength" />
-        <div className="strength-list">
-          {strengthStats.map(item => {
-            const Icon = item.icon
-            return (
-              <button
-                type="button"
-                className="strength-row strength-row--button"
-                key={item.key}
-                onClick={() => setHabitDetail({ key: item.key, label: item.label })}
-              >
-                <span className="soft-icon"><Icon size={16} /></span>
-                <div>
-                  <strong>{item.label}</strong>
-                  <span>
-                    {item.strengthLabel} ¬∑ {item.strength}%
-                    {item.neverMissTwiceOk ? ' ¬∑ Nie 2√ó hintereinander' : ''}
-                  </span>
-                </div>
-                <div className="mini-progress" aria-hidden="true">
-                  <span style={{ width: `${item.strength}%` }} />
-                </div>
-              </button>
-            )
-          })}
-        </div>
-      </section>
-
-      <section className="card weight-spark-card">
-        <SectionTitle eyebrow="K√∂rper" title="Gewicht ¬∑ 30 Tage" />
-        <WeightSparkline points={weightSeries} insights={weightInsights} />
-      </section>
-
-      <section className="card">
-        <SectionTitle eyebrow="Schlaf" title="Wochenrhythmus" />
-        <div className="sleep-week-summary">
-          <div>
-            <strong>{sleepAvg !== null ? `${sleepAvg}h` : '‚Äî'}</strong>
-            <span>Schnitt ¬∑ 7 Tage</span>
-          </div>
-          <p className="field-hint">
-            Bettzeit und Aufstehen werden im Morning Gate zusammengef√ºhrt.
-          </p>
-        </div>
-      </section>
-
-      <div className="progress-layout">
-        <section className="card chart-card">
-          <SectionTitle eyebrow="Woche" title="Tagesverlauf" />
-          <div className="bar-chart" role="img" aria-label="Tageswerte der letzten sieben Tage">
-            {lastSeven.map(item => (
-              <div className="bar-column" key={item.date}>
-                <span className="bar-value">{item.score}</span>
-                <div className="bar-track">
-                  <span style={{ height: `${Math.max(item.score, 4)}%` }} />
-                </div>
-                <strong>{formatShortWeekday(item.date)}</strong>
-                <small>{formatShortDate(item.date)}</small>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="card">
-          <SectionTitle eyebrow="Rhythmus" title="Habit-Wochen" />
-          <div className="rhythm-list">
-            {habitStats.map(item => {
-              const Icon = item.icon
-              return (
-                <div className="rhythm-row" key={item.label}>
-                  <div className="rhythm-row__icon"><Icon size={18} /></div>
-                  <div>
-                    <strong>{item.label}</strong>
-                    <span>{item.count}/7 diese Woche ¬∑ Streak {item.streak}</span>
-                  </div>
-                  <div className="radial-mini" style={{ '--value': `${(item.count / 7) * 360}deg` } as CSSProperties}>
-                    <span>{item.count}</span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </section>
-      </div>
-
-      <section className="card">
-        <SectionTitle eyebrow="Gamification" title="Level & Fortschritt" />
-        <div className="progress-ring-wrap">
-          <div>
-            <div className="prog-label">Level {xp.level} ¬∑ {levelName(xp.level)}</div>
-            <div className="prog-sub">{xp.totalXP} XP gesamt</div>
-          </div>
-          <div className="prog-num">{levelProgress(xp)}%</div>
-        </div>
-        <div className="mini-progress" aria-hidden="true">
-          <span style={{ width: `${levelProgress(xp)}%` }} />
-        </div>
-        <p className="level-caption">
-          Noch {xpToNextLevel(xp)} XP bis Level {xp.level + 1}
-          {xp.streakDays > 0 ? ` ¬∑ ${xp.streakDays} ${plural(xp.streakDays, 'Tag', 'Tage')} Serie (Score ‚â• 50)` : ''}
-        </p>
-      </section>
-
-      <section className="card">
-        <SectionTitle eyebrow="Heute" title="Score im Detail" />
-        <div className="breakdown-list">
-          {breakdown.map(category => (
-            <div className="breakdown-row" key={category.category}>
-              <div className="breakdown-row__head">
-                <strong>{category.category}</strong>
-                <span>{category.achieved} / {category.max}</span>
-              </div>
-              <div className="mini-progress" aria-hidden="true">
-                <span style={{ width: `${category.max ? Math.round((category.achieved / category.max) * 100) : 0}%` }} />
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-      {habitDetail && (
-        <HabitDetailSheet
-          habitKey={habitDetail.key}
-          label={habitDetail.label}
-          entries={entries}
-          today={today}
-          onClose={() => setHabitDetail(null)}
-        />
-      )}
-    </div>
-  )
-}
-
-function DashboardPlusView({
-  dashboard,
-  onChange,
-  onBackToToday,
-  today,
-  liveOverview,
-  liveStats,
-  layout,
-  medisRemindersEnabled,
-  onOpenSettings,
-  onOpenProject,
-  onOpenGoal,
-  showToast,
-  section,
-  onSectionChange,
-  onQuickAction,
-}: {
-  dashboard: DashboardPlusState
-  onChange: Dispatch<SetStateAction<DashboardPlusState>>
-  onBackToToday: () => void
-  today: string
-  liveOverview: ReturnType<typeof deriveLaborOverview>
-  liveStats: ReturnType<typeof deriveLaborStats>
-  layout: DashboardPlusLayout
-  medisRemindersEnabled: boolean
-  onOpenSettings: () => void
-  onOpenProject?: (id: string) => void
-  onOpenGoal?: (id: string) => void
-  showToast: (message: string) => void
-  section: LabDataSection
-  onSectionChange: (section: LabDataSection) => void
-  onQuickAction: (action: LabDataQuickAction) => void
-}) {
-  const [headerCollapsed, setHeaderCollapsed] = useState(false)
-  const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
-  const scrollRef = useRef<HTMLDivElement | null>(null)
-  const activeSection = section
-
-  const tabsToRender = useMemo(() => {
-    const visible = layout.order
-      .filter(id => !layout.hidden.includes(id))
-      .map(id => DASHBOARD_PLUS_TABS.find(tab => tab.id === id))
-      .filter((tab): tab is (typeof DASHBOARD_PLUS_TABS)[number] => Boolean(tab))
-    return visible.length > 0 ? visible : [...DASHBOARD_PLUS_TABS]
-  }, [layout])
-
-  const currentSection = tabsToRender.some(tab => tab.id === activeSection)
-    ? activeSection
-    : tabsToRender[0].id
-
-  useEffect(() => {
-    if (tabsToRender.some(tab => tab.id === section)) return
-    onSectionChange(tabsToRender[0].id)
-  }, [section, tabsToRender, onSectionChange])
-
-  const setActiveSection = (next: DashboardPlusSection) => {
-    onSectionChange(next)
-  }
-  const [activeBoardId, setActiveBoardId] = useState(dashboard.boards[0]?.id ?? 'personal')
-  const [activeListId, setActiveListId] = useState(dashboard.lists[0]?.id ?? 'pack')
-  const [searchQuery, setSearchQuery] = useState('')
-  const [todoAreaFilter, setTodoAreaFilter] = useState<AreaFilter>('all')
-  const [groupTodosByArea, setGroupTodosByArea] = useState(false)
-  const [goalAreaFilter, setGoalAreaFilter] = useState<AreaFilter>('all')
-  const [taskMenu, setTaskMenu] = useState<{
-    x: number
-    y: number
-    kind: 'focus' | 'board'
-    index: number
-    title: string
-  } | null>(null)
-  const openFocusTodos = dashboard.focusTodos.filter(task => !task.done).length
-  const lowStockCount = dashboard.supplements.filter(item => item.dailyUse > 0 && item.stock <= item.dailyUse * 7).length
-  const hints = smartLaborHints({
-    openTodos: openFocusTodos,
-    lowStockCount,
-  })
-  const searchHits = useMemo(() => searchLabor({
-    query: searchQuery,
-    focusTodos: dashboard.focusTodos,
-    boards: dashboard.boards,
-    shopping: dashboard.shopping.items,
-    lists: dashboard.lists,
-    supplements: dashboard.supplements,
-    medications: dashboard.medications,
-    goals: dashboard.goals,
-    bills: [...dashboard.finances.recurring, ...dashboard.finances.openBills],
-  }), [searchQuery, dashboard])
-  const laborSearching = searchQuery.trim().length > 0
-
-  useEffect(() => {
-    if (!dashboard.boards.some(board => board.id === activeBoardId)) {
-      setActiveBoardId(dashboard.boards[0]?.id ?? 'personal')
-    }
-  }, [activeBoardId, dashboard.boards])
-
-  useEffect(() => {
-    if (!dashboard.lists.some(list => list.id === activeListId)) {
-      setActiveListId(dashboard.lists[0]?.id ?? 'pack')
-    }
-  }, [activeListId, dashboard.lists])
-
-  const activeBoard = dashboard.boards.find(board => board.id === activeBoardId) ?? dashboard.boards[0]
-  const activeList = dashboard.lists.find(list => list.id === activeListId) ?? dashboard.lists[0]
-  const financeSummary = useMemo(() => deriveFinanceSummary(dashboard.finances), [dashboard.finances])
-  const formatMoney = (value: number) => value.toLocaleString('de-DE', { maximumFractionDigits: 2, minimumFractionDigits: 0 })
-
-  const updateFocusTask = (index: number, patch: Partial<DashboardPlusTask>) => {
-    onChange(current => ({
-      ...current,
-      focusTodos: current.focusTodos.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
-    }))
-  }
-
-  const removeFocusTask = (index: number) => {
-    onChange(current => ({
-      ...current,
-      focusTodos: current.focusTodos.filter((_, itemIndex) => itemIndex !== index),
-    }))
-  }
-
-  const moveFocusToBoard = (index: number) => {
-    onChange(current => {
-      const task = current.focusTodos[index]
-      if (!task) return current
-      return {
-        ...current,
-        focusTodos: current.focusTodos.filter((_, itemIndex) => itemIndex !== index),
-        boards: syncBoardCounts(current.boards.map(board => (
-          board.id === activeBoardId
-            ? { ...board, tasks: [...board.tasks, task] }
-            : board
-        ))),
-      }
-    })
-  }
-
-  const moveBoardToFocus = (boardId: string, index: number) => {
-    onChange(current => {
-      const board = current.boards.find(item => item.id === boardId)
-      const task = board?.tasks[index]
-      if (!task) return current
-      return {
-        ...current,
-        focusTodos: [...current.focusTodos, task],
-        boards: syncBoardCounts(current.boards.map(item => (
-          item.id === boardId
-            ? { ...item, tasks: item.tasks.filter((_, itemIndex) => itemIndex !== index) }
-            : item
-        ))),
-      }
-    })
-  }
-
-  const updateSupplement = (index: number, patch: Partial<DashboardPlusSupplement>) => {
-    onChange(current => ({
-      ...current,
-      supplements: current.supplements.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
-    }))
-  }
-
-  const removeSupplement = (index: number) => {
-    onChange(current => ({
-      ...current,
-      supplements: current.supplements.filter((_, itemIndex) => itemIndex !== index),
-    }))
-  }
-
-  const updateMedication = (index: number, patch: Partial<DashboardPlusMedication>) => {
-    onChange(current => ({
-      ...current,
-      medications: current.medications.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
-    }))
-  }
-
-  const removeMedication = (index: number) => {
-    onChange(current => ({
-      ...current,
-      medications: current.medications.filter((_, itemIndex) => itemIndex !== index),
-    }))
-  }
-
-  const updateGoal = (index: number, patch: Partial<DashboardPlusGoal>) => {
-    onChange(current => ({
-      ...current,
-      goals: current.goals.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
-    }))
-  }
-
-  const removeGoal = (index: number) => {
-    onChange(current => ({
-      ...current,
-      goals: current.goals.filter((_, itemIndex) => itemIndex !== index),
-    }))
-  }
-
-  const updateBoard = (boardId: string, patch: Partial<DashboardPlusBoard>) => {
-    onChange(current => ({
-      ...current,
-      boards: current.boards.map(board => (board.id === boardId ? { ...board, ...patch } : board)),
-    }))
-  }
-
-  const updateBoardTask = (boardId: string, taskIndex: number, patch: Partial<DashboardPlusTask>) => {
-    onChange(current => ({
-      ...current,
-      boards: syncBoardCounts(current.boards.map(board => (
-        board.id === boardId
-          ? { ...board, tasks: board.tasks.map((task, itemIndex) => (itemIndex === taskIndex ? { ...task, ...patch } : task)) }
-          : board
-      ))),
-    }))
-  }
-
-  const removeBoardTask = (boardId: string, taskIndex: number) => {
-    onChange(current => ({
-      ...current,
-      boards: syncBoardCounts(current.boards.map(board => (
-        board.id === boardId
-          ? { ...board, tasks: board.tasks.filter((_, itemIndex) => itemIndex !== taskIndex) }
-          : board
-      ))),
-    }))
-  }
-
-  const updateShoppingItem = (index: number, patch: Partial<DashboardPlusShoppingItem>) => {
-    onChange(current => ({
-      ...current,
-      shopping: {
-        ...current.shopping,
-        items: current.shopping.items.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
-      },
-    }))
-  }
-
-  const addSupplementToShopping = (item: DashboardPlusSupplement) => {
-    const name = item.name.trim() || 'Nachbestellen'
-    let added = true
-    onChange(current => {
-      const exists = current.shopping.items.some(row =>
-        !row.done && row.name.trim().toLowerCase() === name.toLowerCase(),
-      )
-      if (exists) {
-        added = false
-        return current
-      }
-      return {
-        ...current,
-        shopping: {
-          ...current.shopping,
-          items: [
-            ...current.shopping.items,
-            {
-              id: crypto.randomUUID(),
-              icon: 'pill',
-              name,
-              note: 'Aus Best√§nden ¬∑ knapp',
-              price: 0,
-              done: false,
-              lowStock: true,
-            },
-          ],
-        },
-      }
-    })
-    setActiveSection('shopping')
-    showToast(added ? `${name} auf die Kaufliste.` : `${name} ist schon auf der Kaufliste.`)
-  }
-
-  const removeShoppingItem = (index: number) => {
-    onChange(current => ({
-      ...current,
-      shopping: {
-        ...current.shopping,
-        items: current.shopping.items.filter((_, itemIndex) => itemIndex !== index),
-      },
-    }))
-  }
-
-  const updateList = (listId: string, patch: Partial<Pick<DashboardPlusList, 'title' | 'kind'>>) => {
-    onChange(current => ({
-      ...current,
-      lists: current.lists.map(list => (list.id === listId ? { ...list, ...patch } : list)),
-    }))
-  }
-
-  const removeList = (listId: string) => {
-    onChange(current => ({
-      ...current,
-      lists: current.lists.filter(list => list.id !== listId),
-    }))
-  }
-
-  const updateListItem = (listId: string, index: number, patch: Partial<DashboardPlusListItem>) => {
-    onChange(current => ({
-      ...current,
-      lists: current.lists.map(list => (
-        list.id === listId
-          ? { ...list, items: list.items.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)) }
-          : list
-      )),
-    }))
-  }
-
-  const addListItem = (listId: string) => {
-    onChange(current => ({
-      ...current,
-      lists: current.lists.map(list => (
-        list.id === listId
-          ? { ...list, items: [...list.items, { id: crypto.randomUUID(), title: 'Neuer Eintrag', note: '', done: false }] }
-          : list
-      )),
-    }))
-  }
-
-  const removeListItem = (listId: string, index: number) => {
-    onChange(current => ({
-      ...current,
-      lists: current.lists.map(list => (
-        list.id === listId
-          ? { ...list, items: list.items.filter((_, itemIndex) => itemIndex !== index) }
-          : list
-      )),
-    }))
-  }
-
-  const updateRecurringBill = (index: number, patch: Partial<DashboardPlusBill>) => {
-    onChange(current => ({
-      ...current,
-      finances: {
-        ...current.finances,
-        recurring: current.finances.recurring.map((bill, billIndex) => (billIndex === index ? { ...bill, ...patch } : bill)),
-      },
-    }))
-  }
-
-  const updateOpenBill = (index: number, patch: Partial<DashboardPlusBill>) => {
-    onChange(current => ({
-      ...current,
-      finances: {
-        ...current.finances,
-        openBills: current.finances.openBills.map((bill, billIndex) => (billIndex === index ? { ...bill, ...patch } : bill)),
-      },
-    }))
-  }
-
-  const removeRecurringBill = (index: number) => {
-    onChange(current => ({
-      ...current,
-      finances: {
-        ...current.finances,
-        recurring: current.finances.recurring.filter((_, billIndex) => billIndex !== index),
-      },
-    }))
-  }
-
-  const removeOpenBill = (index: number) => {
-    onChange(current => ({
-      ...current,
-      finances: {
-        ...current.finances,
-        openBills: current.finances.openBills.filter((_, billIndex) => billIndex !== index),
-      },
-    }))
-  }
-
-  const renderBillRow = (
-    bill: DashboardPlusBill,
-    index: number,
-    onPatch: (index: number, patch: Partial<DashboardPlusBill>) => void,
-    onRemove: (index: number) => void,
-  ) => (
-    <div
-      className={`finance-bill-row is-${bill.status}`}
-      key={bill.id}
-    >
-      <span className="finance-bill-row__dot" style={{ background: bill.color }} aria-hidden="true" />
-      <div className="finance-bill-row__main">
-        <input
-          className="dashboard-plus-input dashboard-plus-input--title dashboard-plus-input--ghost"
-          value={bill.name}
-          onChange={event => onPatch(index, { name: event.target.value })}
-          aria-label="Name"
-          placeholder="Name"
-        />
-        <div className="finance-bill-row__meta">
-          <input
-            className="dashboard-plus-input dashboard-plus-input--ghost finance-bill-row__due"
-            type={parseBillDueDate(bill.due) ? 'date' : 'text'}
-            value={bill.due}
-            onChange={event => onPatch(index, { due: event.target.value })}
-            aria-label="F√§llig"
-            placeholder="F√§llig"
-          />
-          <input
-            className="dashboard-plus-input dashboard-plus-input--ghost"
-            value={bill.subtitle}
-            onChange={event => onPatch(index, { subtitle: event.target.value })}
-            aria-label="Notiz"
-            placeholder="Notiz"
-          />
-        </div>
-      </div>
-      <label className="finance-bill-row__amount">
-        <span aria-hidden="true">‚Ç¨</span>
-        <input
-          type="number"
-          min="0"
-          step="0.01"
-          value={bill.amount || ''}
-          onChange={event => onPatch(index, { amount: Number(event.target.value) || 0 })}
-          aria-label="Betrag"
-          placeholder="0"
-        />
-      </label>
-      <button
-        type="button"
-        className={`finance-bill-row__status is-${bill.status}`}
-        onClick={() => onPatch(index, { status: cycleBillStatus(bill.status) })}
-        aria-label={`Status: ${billStatusLabel(bill.status)}`}
-      >
-        {billStatusLabel(bill.status)}
-      </button>
-      <button
-        type="button"
-        className="icon-button"
-        onClick={() => onRemove(index)}
-        aria-label="L√∂schen"
-      >
-        <Trash2 size={15} />
-      </button>
-    </div>
-  )
-
-  const sectionContextCounts: Partial<Record<LabDataSection, string | number>> = {
-    todos: `${openFocusTodos} offen`,
-    shopping: `${dashboard.shopping.items.filter(item => !item.done).length} offen`,
-    medications: `${dashboard.medications.filter(item => !isMedicationTakenToday(item, today)).length} offen`,
-    stock: lowStockCount > 0 ? `${lowStockCount} niedrig` : 'ok',
-    goals: `${dashboard.goals.length}`,
-    lists: `${dashboard.lists.length}`,
-    finance: financeSummary.openCount > 0 ? `${financeSummary.openCount} offen` : 'ok',
-    stats: 'Woche',
-    overview: liveOverview.dateLabel,
-  }
-
-  return (
-    <div
-      className="view-stack dashboard-plus-view"
-      ref={scrollRef}
-      onScroll={event => {
-        setHeaderCollapsed(event.currentTarget.scrollTop > 28)
-      }}
-    >
-      <LabDataMobileChrome
-        section={currentSection}
-        contextLine={contextLineForSection(currentSection, sectionContextCounts)}
-        onSectionChange={setActiveSection}
-        searchOpen={mobileSearchOpen}
-        onSearchToggle={() => {
-          setMobileSearchOpen(current => {
-            const next = !current
-            if (!next) setSearchQuery('')
-            return next
-          })
-        }}
-        onOpenSettings={onOpenSettings}
-        onQuickAction={onQuickAction}
-        collapsed={headerCollapsed}
-      />
-      <div className="labor-shell">
-        <nav className="labor-nav labor-nav--desktop" role="tablist" aria-label="Lab-Daten">
-          {tabsToRender.map(tab => {
-            const Icon = tab.icon
-            const active = currentSection === tab.id
-            return (
-              <button
-                type="button"
-                key={tab.id}
-                id={`labor-cat-${tab.id}`}
-                role="tab"
-                aria-selected={active}
-                className={active ? 'labor-nav-item is-active' : 'labor-nav-item'}
-                onClick={() => setActiveSection(tab.id)}
-              >
-                <Icon size={16} aria-hidden="true" />
-                <span>
-                  <strong>{tab.label}</strong>
-                  <small>{tab.hint}</small>
-                </span>
-              </button>
-            )
-          })}
-        </nav>
-
-        <div className="labor-body" role="tabpanel" aria-labelledby={`labor-cat-${currentSection}`}>
-          <div className={mobileSearchOpen ? 'labor-toolbar is-search-open' : 'labor-toolbar'}>
-            <label className="labor-search">
-              <Search size={16} aria-hidden="true" />
-              <input
-                type="search"
-                value={searchQuery}
-                onChange={event => setSearchQuery(event.target.value)}
-                placeholder="Suche in Todos, Listen, Medis‚Ä¶"
-                aria-label="Lab durchsuchen"
-              />
-            </label>
-            <div className="labor-toolbar__actions">
-              <button type="button" className="secondary-button" onClick={onBackToToday}>
-                <ChevronLeft size={16} /> Tageskern
-              </button>
-              <button type="button" className="secondary-button" onClick={onOpenSettings}>
-                <LayoutGrid size={16} /> Reiter
-              </button>
-            </div>
-          </div>
-
-          {searchQuery.trim() && (
-            <section className="card labor-search-results">
-              <SectionTitle eyebrow="Suche" title={`${searchHits.length} Treffer`} />
-              {searchHits.length === 0 ? (
-                <p className="field-hint">Nichts gefunden.</p>
-              ) : (
-                <div className="labor-search-list">
-                  {searchHits.map(hit => (
-                    <button
-                      type="button"
-                      key={`${hit.section}-${hit.id}`}
-                      className="labor-search-hit"
-                      onClick={() => {
-                        setActiveSection(hit.section)
-                        if (hit.boardId) setActiveBoardId(hit.boardId)
-                        if (hit.listId) setActiveListId(hit.listId)
-                        setSearchQuery('')
-                      }}
-                    >
-                      <strong>{hit.title}</strong>
-                      <span>{hit.source}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
-
-      {!laborSearching && currentSection === 'overview' && (
-        <section className="card dashboard-plus-hero">
-          <div className="dashboard-plus-hero__meta">
-            <div>
-              <span className="eyebrow">Heute</span>
-              <h2>{liveOverview.dateLabel}</h2>
-            </div>
-            <ProgressRing value={liveOverview.score} size={86} />
-          </div>
-          <div className="dashboard-plus-hero__stats">
-            <div className="kpi-card dashboard-plus-metric">
-              <span>Habits</span>
-              <strong>{liveOverview.habits}/{liveOverview.habitsTotal || 0}</strong>
-            </div>
-            <div className="kpi-card dashboard-plus-metric">
-              <span>Anker</span>
-              <strong>{liveOverview.todos}/{liveOverview.todosTotal || 0}</strong>
-            </div>
-            <div className="kpi-card dashboard-plus-metric">
-              <span>Boards</span>
-              <strong>{liveOverview.projects}</strong>
-            </div>
-          </div>
-          {hints.length > 0 && (
-            <div className="labor-hints">
-              {hints.map(hint => (
-                <p key={hint}>{hint}</p>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-
-      {!laborSearching && currentSection === 'todos' && (
-      <div className="dashboard-plus-grid">
-        <section className="card dashboard-plus-card dashboard-plus-card--wide">
-          <SectionTitle
-            eyebrow="Todos"
-            title="Fokus"
-            action={<button type="button" className="small-button labor-inline-create" onClick={() => onQuickAction('capture-task')}><Plus size={14} /> Aufgabe</button>}
-          />
-          <LifeAreaFilter value={todoAreaFilter} onChange={setTodoAreaFilter} />
-          <label className="life-area-group-toggle">
-            <input type="checkbox" checked={groupTodosByArea} onChange={event => setGroupTodosByArea(event.target.checked)} />
-            <span>Nach Bereich gruppieren</span>
-          </label>
-          <div className="editable-task-list">
-            {(() => {
-              const rows = dashboard.focusTodos
-                .map((task, index) => ({ task, index }))
-                .filter(({ task }) => matchesAreaFilter(resolveDashboardTaskArea(task, undefined, dashboard.goals), todoAreaFilter))
-              const groups = groupTodosByArea
-                ? groupByResolvedArea(rows, row => resolveDashboardTaskArea(row.task, undefined, dashboard.goals).key)
-                : [{ key: 'all' as const, label: '', items: rows }]
-              return groups.map(group => (
-                <div key={group.key} className="life-area-group">
-                  {group.label && <span className="eyebrow">{group.label}</span>}
-                  {group.items.map(({ task, index }) => (
-              <SwipeableRow
-                key={task.id}
-                leftLabel={task.done ? 'Offen' : 'Erledigt'}
-                rightLabel="Zum Board"
-                onSwipeLeft={() => updateFocusTask(index, { done: !task.done })}
-                onSwipeRight={() => moveFocusToBoard(index)}
-                onLongPress={point => setTaskMenu({ x: point.x, y: point.y, kind: 'focus', index, title: task.title })}
-              >
-                <div className={task.done ? 'editable-task is-done' : 'editable-task'}>
-                  <button
-                    type="button"
-                    className="task-check"
-                    onClick={() => updateFocusTask(index, { done: !task.done })}
-                    aria-pressed={task.done}
-                  >
-                    {task.done ? <Check size={17} /> : <Circle size={17} />}
-                  </button>
-                  <div className="editable-task__content dashboard-plus-editable-content">
-                    <input
-                      className="dashboard-plus-input dashboard-plus-input--title"
-                      value={task.title}
-                      onChange={event => updateFocusTask(index, { title: event.target.value })}
-                      aria-label="Aufgabe"
-                    />
-                    <div className="dashboard-plus-inline-row">
-                      <input
-                        className="dashboard-plus-input"
-                        value={task.tag}
-                        onChange={event => updateFocusTask(index, { tag: event.target.value })}
-                        placeholder="Tag"
-                        aria-label="Tag"
-                      />
-                      <input
-                        className="dashboard-plus-input"
-                        value={task.time}
-                        onChange={event => updateFocusTask(index, { time: event.target.value })}
-                        placeholder="Zeit"
-                        aria-label="Zeit"
-                      />
-                      <LifeAreaSelect compact value={task.lifeArea} onChange={lifeArea => updateFocusTask(index, { lifeArea })} />
-                    </div>
-                  </div>
-                  <div className="editable-task__actions">
-                    <PriorityBadge priority={task.priority} onCycle={() => updateFocusTask(index, { priority: nextPriority(task.priority) })} />
-                    <button type="button" className="icon-button" onClick={() => removeFocusTask(index)} aria-label="L√∂schen">
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                </div>
-              </SwipeableRow>
-                  ))}
-                </div>
-              ))
-            })()}
-          </div>
-        </section>
-
-        <section className="card dashboard-plus-card dashboard-plus-card--wide">
-          <SectionTitle
-            eyebrow="Projekte"
-            title="Boards"
-            action={activeBoard && onOpenProject ? (
-              <button type="button" className="small-button" onClick={() => onOpenProject(activeBoard.id)}>√ñffnen</button>
-            ) : undefined}
-          />
-          <div className="project-tabs dashboard-plus-tabs">
-            {dashboard.boards.map(board => (
-              <button
-                type="button"
-                key={board.id}
-                className={board.id === activeBoardId ? 'project-tab active' : 'project-tab'}
-                onClick={() => setActiveBoardId(board.id)}
-              >
-                {board.label} <span className="tab-count">{board.count}</span>
-              </button>
-            ))}
-          </div>
-          {activeBoard && (() => {
-            const doneCount = activeBoard.tasks.filter(task => task.done).length
-            const totalCount = activeBoard.tasks.length
-            const percent = totalCount ? Math.round((doneCount / totalCount) * 100) : 0
-            return (
-            <>
-              <div className="progress-ring-wrap dashboard-plus-board-summary">
-                <div>
-                  <div className="prog-label">Heute erledigt</div>
-                  <div className="prog-sub">{doneCount} von {totalCount} Aufgaben</div>
-                  {percent >= 80 && totalCount > 0 && (
-                    <span className="status-chip status-chip--good"><span className="status-chip__dot" />Fast geschafft</span>
-                  )}
-                  <LifeAreaMark
-                    area={resolveLifeArea({
-                      explicit: activeBoard.lifeArea,
-                      goal: dashboard.goals.find(item => item.id === activeBoard.goalId),
-                    }).key}
-                    inherited={!activeBoard.lifeArea && Boolean(dashboard.goals.find(item => item.id === activeBoard.goalId)?.lifeArea)}
-                  />
-                </div>
-                <div className="prog-num">{percent}%</div>
-              </div>
-              <LifeAreaSelect
-                compact
-                value={activeBoard.lifeArea}
-                inherited={dashboard.goals.find(item => item.id === activeBoard.goalId)?.lifeArea}
-                onChange={lifeArea => updateBoard(activeBoard.id, { lifeArea })}
-              />
-              <div className="editable-task-list">
-                {activeBoard.tasks
-                  .map((task, index) => ({ task, index }))
-                  .filter(({ task }) => matchesAreaFilter(resolveDashboardTaskArea(task, activeBoard, dashboard.goals), todoAreaFilter))
-                  .map(({ task, index }) => {
-                    const resolved = resolveDashboardTaskArea(task, activeBoard, dashboard.goals)
-                    return (
-                  <SwipeableRow
-                    key={task.id}
-                    leftLabel={task.done ? 'Offen' : 'Erledigt'}
-                    rightLabel="Zum Fokus"
-                    onSwipeLeft={() => updateBoardTask(activeBoard.id, index, { done: !task.done })}
-                    onSwipeRight={() => moveBoardToFocus(activeBoard.id, index)}
-                    onLongPress={point => setTaskMenu({ x: point.x, y: point.y, kind: 'board', index, title: task.title })}
-                  >
-                    <div className={task.done ? 'editable-task is-done' : 'editable-task'}>
-                      <button type="button" className="task-check" onClick={() => updateBoardTask(activeBoard.id, index, { done: !task.done })} aria-pressed={task.done}>
-                        {task.done ? <Check size={17} /> : <Circle size={17} />}
-                      </button>
-                      <div className="editable-task__content dashboard-plus-editable-content">
-                        <input className="dashboard-plus-input dashboard-plus-input--title" value={task.title} onChange={event => updateBoardTask(activeBoard.id, index, { title: event.target.value })} aria-label="Board Aufgabe" />
-                        <div className="dashboard-plus-inline-row">
-                          <input className="dashboard-plus-input" value={task.tag} onChange={event => updateBoardTask(activeBoard.id, index, { tag: event.target.value })} placeholder="Tag" />
-                          <input className="dashboard-plus-input" value={task.time} onChange={event => updateBoardTask(activeBoard.id, index, { time: event.target.value })} placeholder="Zeit" />
-                          <LifeAreaSelect
-                            compact
-                            value={task.lifeArea}
-                            inherited={resolved.source === 'explicit' ? undefined : resolved.key}
-                            onChange={lifeArea => updateBoardTask(activeBoard.id, index, { lifeArea })}
-                          />
-                        </div>
-                      </div>
-                      <div className="editable-task__actions">
-                        <PriorityBadge priority={task.priority} onCycle={() => updateBoardTask(activeBoard.id, index, { priority: nextPriority(task.priority) })} />
-                        <button type="button" className="icon-button" onClick={() => removeBoardTask(activeBoard.id, index)} aria-label="L√∂schen">
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                    </div>
-                  </SwipeableRow>
-                    )
-                  })}
-              </div>
-              <button type="button" className="secondary-button secondary-button--full labor-inline-create" onClick={() => onQuickAction('capture-task')}>
-                <Plus size={15} /> Aufgabe hinzuf√ºgen
-              </button>
-            </>
-            )
-          })()}
-        </section>
-      </div>
-      )}
-
-      {!laborSearching && currentSection === 'lists' && (
-      <div className="dashboard-plus-grid">
-        <section className="card dashboard-plus-card dashboard-plus-card--wide">
-          <SectionTitle
-            eyebrow="Listen"
-            title={activeList?.title || 'Listen'}
-            action={(
-              <button type="button" className="small-button" onClick={() => onQuickAction('capture-list')}>
-                <Plus size={14} /> Liste
-              </button>
-            )}
-          />
-          <div className="project-tabs dashboard-plus-tabs">
-            {dashboard.lists.map(list => (
-              <button
-                type="button"
-                key={list.id}
-                className={list.id === activeListId ? 'project-tab active' : 'project-tab'}
-                onClick={() => setActiveListId(list.id)}
-              >
-                {list.title} <span className="tab-count">{list.items.filter(item => !item.done).length}</span>
-              </button>
-            ))}
-          </div>
-          {activeList && (
-            <>
-              <div className="dashboard-plus-inline-row" style={{ marginBottom: 12 }}>
-                <input
-                  className="dashboard-plus-input dashboard-plus-input--title"
-                  value={activeList.title}
-                  onChange={event => updateList(activeList.id, { title: event.target.value })}
-                  aria-label="Listenname"
-                />
-                <select
-                  className="dashboard-plus-input"
-                  value={activeList.kind}
-                  onChange={event => updateList(activeList.id, { kind: event.target.value as DashboardPlusListKind })}
-                  aria-label="Listentyp"
-                >
-                  {(Object.keys(LIST_KIND_LABELS) as DashboardPlusListKind[]).map(kind => (
-                    <option key={kind} value={kind}>{LIST_KIND_LABELS[kind]}</option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() => removeList(activeList.id)}
-                  aria-label="Liste l√∂schen"
-                  disabled={dashboard.lists.length <= 1}
-                >
-                  <Trash2 size={15} />
-                </button>
-              </div>
-              <div className="editable-task-list">
-                {activeList.items.map((item, index) => (
-                  <SwipeableRow
-                    key={item.id}
-                    leftLabel={item.done ? 'Offen' : 'Erledigt'}
-                    onSwipeLeft={() => updateListItem(activeList.id, index, { done: !item.done })}
-                  >
-                    <div className={item.done ? 'editable-task is-done' : 'editable-task'}>
-                      <button
-                        type="button"
-                        className="task-check"
-                        onClick={() => updateListItem(activeList.id, index, { done: !item.done })}
-                        aria-pressed={item.done}
-                      >
-                        {item.done ? <Check size={17} /> : <Circle size={17} />}
-                      </button>
-                      <div className="editable-task__content dashboard-plus-editable-content">
-                        <input
-                          className="dashboard-plus-input dashboard-plus-input--title"
-                          value={item.title}
-                          onChange={event => updateListItem(activeList.id, index, { title: event.target.value })}
-                          aria-label="Listeneintrag"
-                        />
-                        <input
-                          className="dashboard-plus-input"
-                          value={item.note}
-                          onChange={event => updateListItem(activeList.id, index, { note: event.target.value })}
-                          placeholder="Notiz"
-                          aria-label="Notiz"
-                        />
-                      </div>
-                      <div className="editable-task__actions">
-                        <button type="button" className="icon-button" onClick={() => removeListItem(activeList.id, index)} aria-label="L√∂schen">
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                    </div>
-                  </SwipeableRow>
-                ))}
-              </div>
-              <button type="button" className="secondary-button secondary-button--full" onClick={() => addListItem(activeList.id)}>
-                <Plus size={15} /> Eintrag hinzuf√ºgen
-              </button>
-            </>
-          )}
-        </section>
-      </div>
-      )}
-
-      {!laborSearching && currentSection === 'stock' && (
-      <div className="dashboard-plus-grid">
-        <section className="card dashboard-plus-card dashboard-plus-card--wide">
-          <SectionTitle eyebrow="Supplements" title="Best√§nde" action={<button type="button" className="small-button" onClick={() => onQuickAction('capture-stock')}><Plus size={14} /> Produkt</button>} />
-          <div className="dashboard-plus-supplements">
-            {dashboard.supplements.map((item, index) => {
-              const daysLeft = supplementDaysRemaining(item.stock, item.dailyUse)
-              const isLow = daysLeft !== null && daysLeft <= 7
-              const accent = supplementAccent(item, index)
-              return (
-                <div
-                  className={`supp-card dashboard-plus-supp-card${isLow ? ' is-low' : ''}`}
-                  style={{ ['--supp-accent' as string]: accent }}
-                  key={item.id}
-                >
-                  <input
-                    className="dashboard-plus-input dashboard-plus-input--title"
-                    value={item.name}
-                    onChange={event => updateSupplement(index, { name: event.target.value })}
-                    aria-label="Produktname"
-                  />
-                  <input
-                    className="dashboard-plus-input"
-                    value={item.brand}
-                    onChange={event => updateSupplement(index, { brand: event.target.value })}
-                    placeholder="Marke / Info"
-                    aria-label="Marke oder Info"
-                  />
-                  <div className="dashboard-plus-supp-fields">
-                    <label className="dashboard-plus-supp-field">
-                      <span className="dashboard-plus-supp-label">Bestand</span>
-                      <div className="dashboard-plus-inline-row">
-                        <input
-                          className="dashboard-plus-input"
-                          type="number"
-                          min="0"
-                          value={item.stock}
-                          onChange={event => updateSupplement(index, { stock: Number(event.target.value) || 0 })}
-                          aria-label="Bestand"
-                        />
-                        <input
-                          className="dashboard-plus-input dashboard-plus-input--unit"
-                          value={item.unit}
-                          onChange={event => updateSupplement(index, { unit: event.target.value })}
-                          aria-label="Bestand Einheit"
-                          placeholder="Einheit"
-                        />
-                      </div>
-                    </label>
-                    <label className="dashboard-plus-supp-field">
-                      <span className="dashboard-plus-supp-label">Tagesdosis</span>
-                      <div className="dashboard-plus-inline-row">
-                        <input
-                          className="dashboard-plus-input"
-                          type="number"
-                          min="0"
-                          value={item.dailyUse}
-                          onChange={event => updateSupplement(index, { dailyUse: Number(event.target.value) || 0 })}
-                          aria-label="Tagesdosis"
-                        />
-                        <input
-                          className="dashboard-plus-input dashboard-plus-input--unit"
-                          value={item.dailyUnit}
-                          onChange={event => updateSupplement(index, { dailyUnit: event.target.value })}
-                          aria-label="Tagesdosis Einheit"
-                          placeholder="Einheit"
-                        />
-                      </div>
-                    </label>
-                  </div>
-                  {isLow && (
-                    <>
-                      <p className="dashboard-plus-supp-hint">
-                        {daysLeft! <= 0
-                          ? 'Bestand leer ‚Äî nachbestellen'
-                          : `Noch ca. ${daysLeft} ${daysLeft === 1 ? 'Tag' : 'Tage'} ¬∑ nachbestellen`}
-                      </p>
-                      <button
-                        type="button"
-                        className="secondary-button secondary-button--full"
-                        onClick={() => addSupplementToShopping(item)}
-                      >
-                        <ShoppingBag size={15} /> Auf Kaufliste
-                      </button>
-                    </>
-                  )}
-                  <button type="button" className="secondary-button secondary-button--full" onClick={() => removeSupplement(index)}>
-                    <Trash2 size={15} /> Entfernen
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-        </section>
-      </div>
-      )}
-
-      {!laborSearching && currentSection === 'medications' && (
-      <div className="dashboard-plus-grid">
-        <section className="card dashboard-plus-card dashboard-plus-card--wide">
-          <SectionTitle eyebrow="Gesundheit" title="Medikamente" action={<button type="button" className="small-button" onClick={() => onQuickAction('capture-med-log')}><Plus size={14} /> Einnahme</button>} />
-          <div className="dashboard-plus-supplements">
-            {dashboard.medications.map((item, index) => {
-              const takenToday = isMedicationTakenToday(item, today)
-              return (
-              <div className="supp-card dashboard-plus-supp-card" style={{ borderTopColor: item.color }} key={item.id}>
-                <div className="dashboard-plus-med-head">
-                  <input className="dashboard-plus-input dashboard-plus-input--title" value={item.name} onChange={event => updateMedication(index, { name: event.target.value })} />
-                  <button
-                    type="button"
-                    className={takenToday ? 'status-chip status-chip--good' : 'status-chip'}
-                    onClick={() => updateMedication(index, {
-                      takenDate: takenToday ? undefined : today,
-                      taken: !takenToday,
-                    })}
-                    aria-pressed={takenToday}
-                  >
-                    <span className="status-chip__dot" />{takenToday ? 'Heute genommen' : 'Ausstehend'}
-                  </button>
-                </div>
-                <div className="dashboard-plus-inline-row">
-                  <input className="dashboard-plus-input" value={item.dosage} onChange={event => updateMedication(index, { dosage: event.target.value })} placeholder="Dosierung" aria-label="Dosierung" />
-                  <input className="dashboard-plus-input" value={item.time} onChange={event => updateMedication(index, { time: event.target.value })} placeholder="Uhrzeit z. B. 08:00" aria-label="Uhrzeit" />
-                </div>
-                <label className={`med-remind-toggle${!medisRemindersEnabled ? ' is-muted' : ''}`}>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(item.remind)}
-                    disabled={!medisRemindersEnabled}
-                    onChange={event => updateMedication(index, { remind: event.target.checked })}
-                  />
-                  <span>
-                    {medisRemindersEnabled
-                      ? 'Erinnern zur Uhrzeit'
-                      : 'Erinnern (in Einstellungen anschalten)'}
-                  </span>
-                </label>
-                <input className="dashboard-plus-input" value={item.notes} onChange={event => updateMedication(index, { notes: event.target.value })} placeholder="Notizen" aria-label="Notizen" />
-                <input className="dashboard-plus-input" value={item.effect} onChange={event => updateMedication(index, { effect: event.target.value })} placeholder="Wirkung" aria-label="Wirkung" />
-                <input className="dashboard-plus-input" value={item.sideEffects} onChange={event => updateMedication(index, { sideEffects: event.target.value })} placeholder="Nebenwirkungen" aria-label="Nebenwirkungen" />
-                <button type="button" className="secondary-button secondary-button--full" onClick={() => removeMedication(index)}>
-                  <Trash2 size={15} /> Entfernen
-                </button>
-              </div>
-              )
-            })}
-          </div>
-        </section>
-      </div>
-      )}
-
-      {!laborSearching && currentSection === 'goals' && (
-      <div className="dashboard-plus-grid">
-        <section className="card dashboard-plus-card dashboard-plus-card--wide">
-          <SectionTitle eyebrow="Planung" title="Ziele" action={<button type="button" className="small-button" onClick={() => onQuickAction('capture-goal')}><Plus size={14} /> Ziel</button>} />
-          <LifeAreaFilter value={goalAreaFilter} onChange={setGoalAreaFilter} />
-          <div className="dashboard-plus-supplements">
-            {dashboard.goals
-              .map((goal, index) => ({ goal, index }))
-              .filter(({ goal }) => matchesAreaFilter(resolveLifeArea({ explicit: goal.lifeArea }), goalAreaFilter))
-              .map(({ goal, index }) => {
-              const eta = daysUntil(goal.dueDate, today)
-              const etaLabel = eta > 0
-                ? `Noch ${eta} ${plural(eta, 'Tag', 'Tage')}`
-                : eta === 0
-                  ? 'Heute f√§llig'
-                  : `${Math.abs(eta)} ${plural(Math.abs(eta), 'Tag', 'Tage')} √ºberf√§llig`
-              return (
-                <div className="supp-card dashboard-plus-supp-card" style={{ borderTopColor: goal.color }} key={goal.id}>
-                  <div className="dashboard-plus-goal-head">
-                    <input className="dashboard-plus-input dashboard-plus-input--title" value={goal.title} onChange={event => updateGoal(index, { title: event.target.value })} aria-label="Ziel" />
-                    <button
-                      type="button"
-                      className="dashboard-plus-goal-timeframe"
-                      onClick={() => {
-                        const order: DashboardPlusGoalTimeframe[] = ['Woche', 'Monat', 'Quartal', 'Jahr']
-                        updateGoal(index, { timeframe: order[(order.indexOf(goal.timeframe) + 1) % order.length] })
-                      }}
-                    >
-                      {goal.timeframe}
-                    </button>
-                  </div>
-                  <div className="dashboard-plus-inline-row">
-                    <input className="dashboard-plus-input" type="number" min="0" max="100" value={goal.percent} onChange={event => updateGoal(index, { percent: clampNumber(Number(event.target.value) || 0, 0, 100) })} aria-label="Prozent" />
-                    <input className="dashboard-plus-input" type="date" value={goal.dueDate} onChange={event => updateGoal(index, { dueDate: event.target.value })} aria-label="F√§llig am" />
-                    <LifeAreaSelect compact value={goal.lifeArea} onChange={lifeArea => updateGoal(index, { lifeArea })} />
-                  </div>
-                  <div className="mini-progress" aria-hidden="true">
-                    <span style={{ width: `${goal.percent}%` }} />
-                  </div>
-                  <div className="dashboard-plus-goal-eta">{etaLabel} ¬∑ {goal.percent}%</div>
-                  {onOpenGoal && (
-                    <button type="button" className="secondary-button secondary-button--full" onClick={() => onOpenGoal(goal.id)}>
-                      Ziel √∂ffnen
-                    </button>
-                  )}
-                  <button type="button" className="secondary-button secondary-button--full" onClick={() => removeGoal(index)}>
-                    <Trash2 size={15} /> Entfernen
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-        </section>
-      </div>
-      )}
-
-      {!laborSearching && currentSection === 'shopping' && (
-      <div className="dashboard-plus-grid">
-        <section className="card dashboard-plus-card dashboard-plus-card--wide">
-          <SectionTitle
-            eyebrow="Kaufliste"
-            title="Offen"
-            action={<button type="button" className="small-button" onClick={() => onQuickAction('capture-shopping')}><Plus size={14} /> Artikel</button>}
-          />
-          <div className="shopping-list dashboard-plus-shopping-list">
-            {dashboard.shopping.items.length === 0 && (
-              <p className="dashboard-plus-empty-hint">Noch keine Artikel ‚Äî f√ºge den ersten hinzu.</p>
-            )}
-            {dashboard.shopping.items.map((item, index) => {
-              return (
-              <div className={item.done ? 'shop-item is-done' : 'shop-item'} key={item.id}>
-                <div className="shop-icon" aria-hidden="true">
-                  <ShoppingItemIcon icon={item.icon} />
-                </div>
-                <div className="shop-body dashboard-plus-shop-body">
-                  <input className="dashboard-plus-input dashboard-plus-input--title" value={item.name} onChange={event => updateShoppingItem(index, { name: event.target.value })} aria-label="Artikel" placeholder="Artikel" />
-                  <input className="dashboard-plus-input" value={item.note} onChange={event => updateShoppingItem(index, { note: event.target.value })} aria-label="Notiz oder Quelle" placeholder="Notiz / Quelle" />
-                  {item.lowStock && (
-                    <span className="status-chip status-chip--warn"><span className="status-chip__dot" />Bestand kritisch</span>
-                  )}
-                </div>
-                <div className="dashboard-plus-shop-meta">
-                  <input className="dashboard-plus-input dashboard-plus-input--money" type="number" min="0" step="0.01" value={item.price} onChange={event => updateShoppingItem(index, { price: Number(event.target.value) || 0 })} aria-label="Preis" />
-                  <span className="shop-price">‚Ç¨</span>
-                </div>
-                <div className="dashboard-plus-shop-actions">
-                  <button type="button" className="shop-check" onClick={() => updateShoppingItem(index, { done: !item.done })} aria-pressed={item.done} aria-label={item.done ? 'Als offen markieren' : 'Als erledigt markieren'} />
-                  <button type="button" className="icon-button" onClick={() => removeShoppingItem(index)} aria-label="Artikel entfernen">
-                    <Trash2 size={15} />
-                  </button>
-                </div>
-              </div>
-              )
-            })}
-          </div>
-        </section>
-      </div>
-      )}
-
-      {!laborSearching && currentSection === 'stats' && (
-      <div className="dashboard-plus-grid">
-        <section className="card dashboard-plus-card">
-          <SectionTitle eyebrow="Stats" title="Diese Woche" />
-          <div className="labor-live-stats">
-            <div className="kpi-card"><span>Schnitt</span><strong>{liveStats.average}%</strong></div>
-            <div className="kpi-card"><span>Best</span><strong>{liveStats.best}%</strong></div>
-            <div className="kpi-card"><span>Rhythmus</span><strong>{liveStats.rhythm}</strong><small>Tage</small></div>
-            <div className="kpi-card">
-              <span>Gewicht</span>
-              <strong>{liveStats.weight ? liveStats.weight.toFixed(1) : '‚Äî'}</strong>
-              <small>
-                {liveStats.weightDelta7 === null
-                  ? 'kg'
-                  : `kg ¬∑ ${liveStats.weightDelta7 > 0 ? '+' : ''}${liveStats.weightDelta7} 7T`}
-              </small>
-            </div>
-            <div className="kpi-card">
-              <span>Schlaf</span>
-              <strong>{liveStats.avgSleepHours !== null ? `${liveStats.avgSleepHours}h` : '‚Äî'}</strong>
-              <small>7-Tage-Schnitt</small>
-            </div>
-          </div>
-          <div className="labor-week-bars" aria-hidden="true">
-            {liveStats.weeklyBars.map((value, index) => (
-              <div key={liveStats.weekDates[index]} className="labor-week-bar">
-                <span style={{ height: `${Math.max(value, 4)}%` }} />
-                <small>{value}</small>
-              </div>
-            ))}
-          </div>
-          <div className="todo-card dashboard-plus-projects">
-            {dashboard.stats.projects.map((project, index) => (
-              <div className="todo-item dashboard-plus-project-row" key={project.id}>
-                <div style={{ width: 10, height: 10, borderRadius: '50%', background: project.color, flexShrink: 0 }} />
-                <div className="todo-body">
-                  <input className="dashboard-plus-input dashboard-plus-input--title" value={project.name} onChange={event => onChange(current => ({
-                    ...current,
-                    stats: {
-                      ...current.stats,
-                      projects: current.stats.projects.map((item, projectIndex) => (projectIndex === index ? { ...item, name: event.target.value } : item)),
-                    },
-                  }))} />
-                </div>
-                <input className="dashboard-plus-input dashboard-plus-input--money dashboard-plus-input--percent" type="number" min="0" max="100" value={project.percent} onChange={event => onChange(current => ({
-                  ...current,
-                  stats: {
-                    ...current.stats,
-                    projects: current.stats.projects.map((item, projectIndex) => (projectIndex === index ? { ...item, percent: Number(event.target.value) || 0 } : item)),
-                  },
-                }))} />
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
-      )}
-
-      {!laborSearching && currentSection === 'finance' && (
-      <div className="dashboard-plus-grid">
-        <section className="card dashboard-plus-card dashboard-plus-card--wide">
-          <SectionTitle eyebrow="Finanzen" title="Verpflichtungen" />
-
-          <div className="finance-kpi-row">
-            <div className="finance-kpi">
-              <span className="finance-kpi__label">Monatlich fix</span>
-              <strong className="finance-kpi__value">‚Ç¨ {formatMoney(financeSummary.monthlyFixed)}</strong>
-              <small className="finance-kpi__meta">{financeSummary.recurringCount} Fixkosten</small>
-            </div>
-            <div className="finance-kpi">
-              <span className="finance-kpi__label">Offen</span>
-              <strong className="finance-kpi__value">‚Ç¨ {formatMoney(financeSummary.openSum)}</strong>
-              <small className="finance-kpi__meta">{financeSummary.openCount} offen</small>
-            </div>
-            <div className={`finance-kpi${financeSummary.overdueCount > 0 ? ' is-warning' : ''}`}>
-              <span className="finance-kpi__label">√úberf√§llig</span>
-              <strong className="finance-kpi__value">‚Ç¨ {formatMoney(financeSummary.overdueSum)}</strong>
-              <small className="finance-kpi__meta">
-                {financeSummary.overdueCount} √ºberf√§llig
-                {financeSummary.pressure > 0 ? ` ¬∑ Druck ${financeSummary.pressure}%` : ''}
-              </small>
-            </div>
-          </div>
-
-          {financeSummary.nextDue && (
-            <div className="finance-next">
-              <span className="eyebrow">Als N√§chstes</span>
-              <div className="finance-next__row">
-                <strong>{financeSummary.nextDue.name}</strong>
-                <span>
-                  ‚Ç¨ {formatMoney(financeSummary.nextDue.amount)} ¬∑ {financeSummary.nextDue.due}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {financeSummary.hints.length > 0 && (
-            <div className="finance-hints">
-              {financeSummary.hints.map(hint => (
-                <p key={hint}>
-                  <AlertCircle size={14} aria-hidden="true" />
-                  <span>{hint}</span>
-                </p>
-              ))}
-            </div>
-          )}
-
-          <div className="finance-lists">
-            <div className="finance-list-block">
-              <div className="finance-list-head">
-                <div className="fin-section-label">
-                  <CreditCard size={14} aria-hidden="true" />
-                  <span>Fixkosten</span>
-                </div>
-                <button type="button" className="small-button" onClick={() => onQuickAction('capture-finance')}>
-                  <Plus size={14} /> Fixkosten
-                </button>
-              </div>
-              {dashboard.finances.recurring.length === 0 ? (
-                <p className="dashboard-plus-empty-hint">
-                  Noch keine Fixkosten ‚Äî z. B. Miete, Versicherung, Abo.
-                </p>
-              ) : (
-                <div className="dashboard-plus-bill-list">
-                  {dashboard.finances.recurring.map((bill, index) =>
-                    renderBillRow(bill, index, updateRecurringBill, removeRecurringBill),
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="finance-list-block">
-              <div className="finance-list-head">
-                <div className="fin-section-label">
-                  <Receipt size={14} aria-hidden="true" />
-                  <span>Offene Posten</span>
-                </div>
-                <button type="button" className="small-button" onClick={() => onQuickAction('capture-finance')}>
-                  <Plus size={14} /> Rechnung
-                </button>
-              </div>
-              {dashboard.finances.openBills.length === 0 ? (
-                <p className="dashboard-plus-empty-hint">
-                  Keine offenen Rechnungen ‚Äî Einmalposten hier erfassen.
-                </p>
-              ) : (
-                <div className="dashboard-plus-bill-list">
-                  {dashboard.finances.openBills.map((bill, index) =>
-                    renderBillRow(bill, index, updateOpenBill, removeOpenBill),
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
-      </div>
-      )}
-
-          {!laborSearching && (currentSection === 'todos' || currentSection === 'lists') && (
-            <p className="dashboard-plus-footer">Wischen: links erledigen, rechts verschieben ¬∑ lange dr√ºcken: Men√º</p>
-          )}
-        </div>
-      </div>
-
-      {taskMenu && (() => {
-        const items: ContextMenuItem[] = [
-          { id: 'toggle', label: 'Erledigt umschalten' },
-          { id: 'priority', label: 'Priorit√§t wechseln' },
-          {
-            id: 'move',
-            label: taskMenu.kind === 'focus' ? 'Zum aktiven Board' : 'Zum Fokus',
-          },
-          { id: 'delete', label: 'L√∂schen', danger: true },
-        ]
-        return (
-          <ContextMenu
-            x={taskMenu.x}
-            y={taskMenu.y}
-            title={taskMenu.title || 'Aufgabe'}
-            items={items}
-            onClose={() => setTaskMenu(null)}
-            onSelect={id => {
-              if (taskMenu.kind === 'focus') {
-                const task = dashboard.focusTodos[taskMenu.index]
-                if (!task) return
-                if (id === 'toggle') updateFocusTask(taskMenu.index, { done: !task.done })
-                if (id === 'priority') updateFocusTask(taskMenu.index, { priority: nextPriority(task.priority) })
-                if (id === 'move') moveFocusToBoard(taskMenu.index)
-                if (id === 'delete') removeFocusTask(taskMenu.index)
-                return
-              }
-              const task = activeBoard?.tasks[taskMenu.index]
-              if (!task || !activeBoard) return
-              if (id === 'toggle') updateBoardTask(activeBoard.id, taskMenu.index, { done: !task.done })
-              if (id === 'priority') updateBoardTask(activeBoard.id, taskMenu.index, { priority: nextPriority(task.priority) })
-              if (id === 'move') moveBoardToFocus(activeBoard.id, taskMenu.index)
-              if (id === 'delete') removeBoardTask(activeBoard.id, taskMenu.index)
-            }}
-          />
-        )
-      })()}
-    </div>
-  )
-}
-
-function TaskEditor({
-  initialValue,
-  initialMinutes,
-  isEditing,
-  onClose,
-  onSave,
-}: {
-  initialValue: string
-  initialMinutes: number
-  isEditing: boolean
-  onClose: () => void
-  onSave: (value: string, minutes: number) => void
-}) {
-  const [value, setValue] = useState(initialValue)
-  const [minutes, setMinutes] = useState(() => clampNumber(initialMinutes, 5, 120))
-  useModalBehavior(onClose)
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    onSave(value, minutes)
-  }
-  return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}>
-      <form className="modal modal--small" onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="task-editor-title">
-        <div className="modal-header">
-          <div>
-            <span className="eyebrow">Tagesanker</span>
-            <h2 id="task-editor-title">{isEditing ? 'Aufgabe bearbeiten' : 'Neue Aufgabe'}</h2>
-          </div>
-          <IconButton label="Schlie√üen" onClick={onClose}><X size={18} /></IconButton>
-        </div>
-        <label className="text-field">
-          <span>Aufgabe</span>
-          <input autoFocus value={value} onChange={event => setValue(event.target.value)} maxLength={120} placeholder="Zum Beispiel: Creatine bestellen" />
-        </label>
-        <div className="task-editor-duration">
-          <span className="task-editor-duration__label">Fokusdauer</span>
-          <div className="duration-grid">
-            {TASK_FOCUS_DURATIONS.map(option => (
-              <button
-                type="button"
-                key={option}
-                className={minutes === option ? 'duration-button is-active' : 'duration-button'}
-                onClick={() => setMinutes(option)}
-                aria-pressed={minutes === option}
-              >
-                <strong>{option}</strong>
-                <span>Min.</span>
-              </button>
-            ))}
-          </div>
-          <label className="text-field">
-            <span>Eigene Minuten</span>
-            <input
-              type="number"
-              min={5}
-              max={120}
-              step={5}
-              value={minutes}
-              onChange={event => setMinutes(clampNumber(Number(event.target.value) || 25, 5, 120))}
-            />
-          </label>
-        </div>
-        <p className="field-hint">Formuliere so klein, dass du ohne Nachdenken anfangen kannst.</p>
-        <div className="modal-actions">
-          <button type="button" className="secondary-button" onClick={onClose}>Abbrechen</button>
-          <button type="submit" className="primary-button" disabled={!value.trim()}><Check size={17} /> Speichern</button>
-        </div>
-      </form>
-    </div>
-  )
-}
-
-function QuickAddModal({
-  onClose,
-  onSubmitTask,
-  onSubmitWeight,
-  onSubmitCalories,
-  onSubmitProtein,
-  onSubmitFat,
-  onSubmitCarbs,
-  onSubmitFiber,
-  onSubmitWater,
-  onSubmitSteps,
-}: {
-  onClose: () => void
-  onSubmitTask: (title: string) => void
-  onSubmitWeight: (value: number) => void
-  onSubmitCalories: (value: number) => void
-  onSubmitProtein: (value: number) => void
-  onSubmitFat: (value: number) => void
-  onSubmitCarbs: (value: number) => void
-  onSubmitFiber: (value: number) => void
-  onSubmitWater: (value: number) => void
-  onSubmitSteps: (value: number) => void
-}) {
-  const [value, setValue] = useState('')
-  useModalBehavior(onClose)
-
-  const parsed = parseQuickAdd(value)
-  const preview = value.trim() === ''
-    ? 'Erkennt Gewicht, kcal, Protein, Fett, KH, Ballaststoffe, Wasser und Schritte ‚Äî sonst wird eine Aufgabe daraus.'
-    : describeQuickAdd(parsed)
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    if (!value.trim()) return
-    switch (parsed.kind) {
-      case 'weight':
-        onSubmitWeight(parsed.value)
-        return
-      case 'calories':
-        onSubmitCalories(parsed.value)
-        return
-      case 'protein':
-        onSubmitProtein(parsed.value)
-        return
-      case 'fat':
-        onSubmitFat(parsed.value)
-        return
-      case 'carbs':
-        onSubmitCarbs(parsed.value)
-        return
-      case 'fiber':
-        onSubmitFiber(parsed.value)
-        return
-      case 'water':
-        onSubmitWater(parsed.value)
-        return
-      case 'steps':
-        onSubmitSteps(parsed.value)
-        return
-      case 'task':
-        onSubmitTask(parsed.title)
-        return
-      default: {
-        const _exhaustive: never = parsed
-        return _exhaustive
-      }
-    }
-  }
-
-  return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}>
-      <form className="modal modal--small" onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="quick-add-title">
-        <div className="modal-header">
-          <div>
-            <span className="eyebrow">Quick Add</span>
-            <h2 id="quick-add-title">Was gibt's?</h2>
-          </div>
-          <IconButton label="Schlie√üen" onClick={onClose}><X size={18} /></IconButton>
-        </div>
-        <label className="text-field">
-          <span>Eintrag</span>
-          <input autoFocus value={value} onChange={event => setValue(event.target.value)} maxLength={120} placeholder="z. B. ‚Äû74.2kg‚Äú oder ‚ÄûZahnarzt anrufen‚Äú" />
-        </label>
-        <p className="field-hint">{preview}</p>
-        <div className="modal-actions">
-          <button type="button" className="secondary-button" onClick={onClose}>Abbrechen</button>
-          <button type="submit" className="primary-button" disabled={!value.trim()}><Check size={17} /> Hinzuf√ºgen</button>
-        </div>
-      </form>
-    </div>
-  )
-}
-
-function FocusModal({
-  session,
-  onChangeMinutes,
-  onClose,
-  onFinish,
-  onExportToCalendar,
-}: {
-  session: FocusSession
-  onChangeMinutes: (minutes: number) => void
-  onClose: () => void
-  onFinish: () => void
-  onExportToCalendar: () => void
-}) {
-  const [secondsLeft, setSecondsLeft] = useState(session.minutes * 60)
-  const [running, setRunning] = useState(false)
-  const [editingDuration, setEditingDuration] = useState(false)
-  const [draftMinutes, setDraftMinutes] = useState(String(session.minutes))
-  const finishedRef = useRef(false)
-  const wakeLockRef = useRef<Awaited<ReturnType<typeof requestScreenWakeLock>>>(null)
-  const durationInputRef = useRef<HTMLInputElement | null>(null)
-  useModalBehavior(onClose)
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSecondsLeft(session.minutes * 60)
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setRunning(false)
-    finishedRef.current = false
-    setDraftMinutes(String(session.minutes))
-    setEditingDuration(false)
-  }, [session.minutes])
-
-  useEffect(() => {
-    if (!editingDuration) return
-    durationInputRef.current?.focus()
-    durationInputRef.current?.select()
-  }, [editingDuration])
-
-  useEffect(() => {
-    let cancelled = false
-
-    const syncWakeLock = async () => {
-      if (!running) {
-        await releaseScreenWakeLock(wakeLockRef.current)
-        wakeLockRef.current = null
-        return
-      }
-      const sentinel = await requestScreenWakeLock()
-      if (cancelled) {
-        await releaseScreenWakeLock(sentinel)
-        return
-      }
-      wakeLockRef.current = sentinel
-    }
-
-    void syncWakeLock()
-
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible' && running) void syncWakeLock()
-    }
-    document.addEventListener('visibilitychange', onVisibility)
-
-    return () => {
-      cancelled = true
-      document.removeEventListener('visibilitychange', onVisibility)
-      void releaseScreenWakeLock(wakeLockRef.current)
-      wakeLockRef.current = null
-    }
-  }, [running])
-
-  useEffect(() => {
-    if (!running) return
-    const timer = window.setInterval(() => {
-      setSecondsLeft(current => {
-        if (current <= 1) {
-          window.clearInterval(timer)
-          setRunning(false)
-          if (!finishedRef.current) {
-            finishedRef.current = true
-            if ('Notification' in window && Notification.permission === 'granted') {
-              new Notification('Fokusblock beendet', { body: session.title })
-            }
-            window.setTimeout(() => onFinish(), 0)
-          }
-          return 0
-        }
-        return current - 1
-      })
-    }, 1000)
-    return () => window.clearInterval(timer)
-  }, [running, session.title, onFinish])
-
-  const commitDraftMinutes = () => {
-    const next = clampNumber(Number(draftMinutes) || session.minutes, 5, 120)
-    setEditingDuration(false)
-    if (next !== session.minutes) onChangeMinutes(next)
-    else setDraftMinutes(String(session.minutes))
-  }
-
-  const adjustMinutes = (delta: number) => {
-    if (running) return
-    setEditingDuration(false)
-    onChangeMinutes(clampNumber(session.minutes + delta, 5, 120))
-  }
-
-  const startEditing = () => {
-    if (running) return
-    setDraftMinutes(String(session.minutes))
-    setEditingDuration(true)
-  }
-
-  const displayMinutes = Math.floor(secondsLeft / 60)
-  const displaySeconds = secondsLeft % 60
-  const progress = 1 - secondsLeft / (session.minutes * 60)
-  const statusLabel = running
-    ? 'Bleib bei diesem Schritt'
-    : secondsLeft === 0
-      ? 'Zeit ist um'
-      : editingDuration
-        ? 'Minuten eingeben ¬∑ Enter'
-        : 'Tippen oder ¬± zum Anpassen'
-
-  return (
-    <div className="focus-overlay" role="dialog" aria-modal="true" aria-labelledby="focus-title">
-      <div className="focus-noise" aria-hidden="true" />
-      <div className="focus-topbar">
-        <div className="brand brand--focus"><div className="brand__mark"><span /></div><strong>Life OS</strong></div>
-        <IconButton label="Fokusmodus schlie√üen" onClick={onClose}><X size={19} /></IconButton>
-      </div>
-      <div className="focus-content">
-        <span className="eyebrow">Nur jetzt</span>
-        <h1 id="focus-title">{session.title}</h1>
-        <div
-          className={running ? 'focus-timer' : 'focus-timer focus-timer--editable'}
-          style={{ '--focus-progress': `${progress * 360}deg` } as CSSProperties}
-        >
-          <div className="focus-timer__inner">
-            {!running && (
-              <button
-                type="button"
-                className="focus-timer__step"
-                onClick={() => adjustMinutes(-5)}
-                aria-label="5 Minuten weniger"
-                disabled={session.minutes <= 5}
-              >
-                ‚àí
-              </button>
-            )}
-            <div className="focus-timer__readout">
-              {editingDuration ? (
-                <form
-                  className="focus-timer__edit"
-                  onSubmit={event => {
-                    event.preventDefault()
-                    commitDraftMinutes()
-                  }}
-                >
-                  <input
-                    ref={durationInputRef}
-                    type="number"
-                    min={5}
-                    max={120}
-                    step={1}
-                    inputMode="numeric"
-                    aria-label="Fokusdauer in Minuten"
-                    value={draftMinutes}
-                    onChange={event => setDraftMinutes(event.target.value)}
-                    onBlur={commitDraftMinutes}
-                    onKeyDown={event => {
-                      if (event.key === 'Escape') {
-                        setEditingDuration(false)
-                        setDraftMinutes(String(session.minutes))
-                      }
-                    }}
-                  />
-                  <span className="focus-timer__unit">Min.</span>
-                </form>
-              ) : (
-                <button
-                  type="button"
-                  className="focus-timer__time"
-                  onClick={startEditing}
-                  disabled={running}
-                  aria-label={running ? 'Verbleibende Zeit' : 'Fokusdauer anpassen'}
-                >
-                  <strong>{String(displayMinutes).padStart(2, '0')}:{String(displaySeconds).padStart(2, '0')}</strong>
-                </button>
-              )}
-              <span>{statusLabel}</span>
-            </div>
-            {!running && (
-              <button
-                type="button"
-                className="focus-timer__step"
-                onClick={() => adjustMinutes(5)}
-                aria-label="5 Minuten mehr"
-                disabled={session.minutes >= 120}
-              >
-                +
-              </button>
-            )}
-          </div>
-        </div>
-        <div className="focus-duration-row">
-          {[10, 15, 25, 45, 60].map(value => (
-            <button type="button" key={value} className={session.minutes === value ? 'is-active' : ''} onClick={() => onChangeMinutes(value)} disabled={running}>
-              {value} Min.
-            </button>
-          ))}
-        </div>
-        <div className="focus-controls">
-          <button type="button" className="secondary-button" onClick={() => { setRunning(false); setSecondsLeft(session.minutes * 60) }}>
-            <RotateCcw size={17} /> Reset
-          </button>
-          <button
-            type="button"
-            className="focus-play"
-            onClick={() => {
-              setEditingDuration(false)
-              setRunning(current => !current)
-            }}
-          >
-            {running ? <Pause size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" />}
-          </button>
-          <button type="button" className="primary-button" onClick={onFinish}>
-            <Check size={17} /> Fertig
-          </button>
-        </div>
-        <button type="button" className="text-button focus-calendar-link" onClick={onExportToCalendar}>
-          <CalendarPlus size={15} /> In Kalender legen
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function RitualDurationFields({
-  id,
-  config,
-  onChange,
-}: {
-  id: MorningRitualStepId
-  config: MorningRitualConfig
-  onChange: (config: MorningRitualConfig) => void
-}) {
-  const setMinutes = (key: 'coldSeconds' | 'winnerSeconds' | 'prayerSeconds' | 'hotShowerSeconds', value: number, min: number, max: number) => {
-    onChange({ ...config, [key]: clampNumber(Math.round(value * 60), min, max) })
-  }
-  const plannedTime = (
-    <label className="ritual-duration">
-      <span>Planzeit Min.</span>
-      <input
-        type="number"
-        min={1}
-        max={120}
-        value={config.stepMinutes[id]}
-        onChange={event => onChange({
-          ...config,
-          stepMinutes: {
-            ...config.stepMinutes,
-            [id]: clampNumber(Number(event.target.value) || 1, 1, 120),
-          },
-        })}
-      />
-    </label>
-  )
-
-  switch (id) {
-    case 'coldShower':
-      return (
-        <label className="ritual-duration">
-          <span>Minuten</span>
-          <input
-            type="number"
-            min={1}
-            max={10}
-            value={Math.round(config.coldSeconds / 60)}
-            onChange={event => setMinutes('coldSeconds', Number(event.target.value) || 3, 30, 600)}
-          />
-        </label>
-      )
-    case 'winnerPose':
-      return (
-        <label className="ritual-duration">
-          <span>Minuten</span>
-          <input
-            type="number"
-            min={1}
-            max={10}
-            value={Math.round(config.winnerSeconds / 60)}
-            onChange={event => setMinutes('winnerSeconds', Number(event.target.value) || 3, 30, 600)}
-          />
-        </label>
-      )
-    case 'prayer':
-      return (
-        <label className="ritual-duration">
-          <span>Minuten</span>
-          <input
-            type="number"
-            min={1}
-            max={20}
-            value={Math.round(config.prayerSeconds / 60)}
-            onChange={event => setMinutes('prayerSeconds', Number(event.target.value) || 7, 60, 1200)}
-          />
-        </label>
-      )
-    case 'workout':
-      return (
-        <div className="ritual-duration-row">
-          {plannedTime}
-          <label className="ritual-duration">
-            <span>Pushups</span>
-            <input
-              type="number"
-              min={5}
-              max={200}
-              value={config.pushupTarget}
-              onChange={event => onChange({
-                ...config,
-                pushupTarget: clampNumber(Number(event.target.value) || 50, 5, 200),
-              })}
-            />
-          </label>
-          <label className="ritual-duration">
-            <span>KO</span>
-            <input
-              type="number"
-              min={1}
-              max={100}
-              value={config.koTarget}
-              onChange={event => onChange({
-                ...config,
-                koTarget: clampNumber(Number(event.target.value) || 10, 1, 100),
-              })}
-            />
-          </label>
-        </div>
-      )
-    case 'postShower':
-      return (
-        <div className="ritual-duration-row">
-          <label className="ritual-duration">
-            <span>Hei√ü Min</span>
-            <input
-              type="number"
-              min={1}
-              max={10}
-              value={Math.round(config.hotShowerSeconds / 60)}
-              onChange={event => setMinutes('hotShowerSeconds', Number(event.target.value) || 3, 30, 600)}
-            />
-          </label>
-          <label className="ritual-duration">
-            <span>Kalt Sek</span>
-            <input
-              type="number"
-              min={8}
-              max={45}
-              value={config.coldRinseSeconds}
-              onChange={event => onChange({
-                ...config,
-                coldRinseSeconds: clampNumber(Number(event.target.value) || 20, 8, 45),
-              })}
-            />
-          </label>
-        </div>
-      )
-    case 'medsShake':
-    case 'weight':
-    case 'gratitude':
-    case 'energy':
-    case 'headRecovery':
-    case 'todos':
-    case 'selfcare':
-    case 'letsGo':
-      return plannedTime
-    default: {
-      const _exhaustive: never = id
-      return _exhaustive
-    }
-  }
-}
-
-function ritualPhaseLabel(id: MorningRitualStepId): string {
-  const phase = morningRitualPhase(id)
-  switch (phase) {
-    case 'gate':
-      return 'Start'
-    case 'heute':
-      return 'Planung'
-    case 'track':
-      return 'Aktiv'
-    default: {
-      const _exhaustive: never = phase
-      return _exhaustive
-    }
-  }
-}
-
-type SettingsCategory = 'general' | 'nutrition' | 'routine' | 'rituals' | 'dashboard' | 'devices' | 'data'
-
-const SETTINGS_CATEGORIES: {
-  id: SettingsCategory
-  label: string
-  hint: string
-  icon: LucideIcon
-}[] = [
-  { id: 'general', label: 'Allgemein', hint: 'Name und Darstellung', icon: User },
-  { id: 'nutrition', label: 'Ern√§hrung', hint: 'Makros und Gewicht', icon: Utensils },
-  { id: 'routine', label: 'Routine', hint: 'Habits und Fokus', icon: Sun },
-  { id: 'rituals', label: 'Rituale', hint: 'Morgen- und Abend-Gate', icon: Moon },
-  { id: 'dashboard', label: 'Dashboard', hint: 'Reiter und Layout', icon: LayoutGrid },
-  { id: 'devices', label: 'Ger√§te', hint: 'Sync und Shortcuts', icon: Smartphone },
-  { id: 'data', label: 'Daten', hint: 'Backup und Lab-Daten', icon: Database },
-]
-
-function SettingsModal({
-  settings,
-  lastBackupAt,
-  deviceSync,
-  onChange,
-  onExport,
-  onImport,
-  onResetLabor,
-  onDeviceSyncChange,
-  onSyncNow,
-  showToast,
-  onClose,
-  onPreviewMorningGate,
-  onOpenIntegrations,
-}: {
-  settings: AppSettings
-  lastBackupAt: string | null
-  deviceSync: DeviceSyncCredentials | null
-  onChange: (settings: AppSettings) => void
-  onExport: () => void
-  onImport: (file: File) => Promise<void>
-  onResetLabor: () => void
-  onDeviceSyncChange: (creds: DeviceSyncCredentials | null) => void
-  onSyncNow: () => void
-  showToast: (message: string) => void
-  onClose: () => void
-  onPreviewMorningGate: () => void
-  onOpenIntegrations: () => void
-}) {
-  useModalBehavior(onClose)
-  const importInputRef = useRef<HTMLInputElement | null>(null)
-  const settingsBodyRef = useRef<HTMLDivElement | null>(null)
-  const layout = settings.dashboardPlusLayout
-  const [category, setCategory] = useState<SettingsCategory>('general')
-  const [copiedShortcut, setCopiedShortcut] = useState<string | null>(null)
-  const [pairCode, setPairCode] = useState<string | null>(null)
-  const [pairExpiresAt, setPairExpiresAt] = useState<string | null>(null)
-  const [joinCode, setJoinCode] = useState('')
-  const [syncBusy, setSyncBusy] = useState(false)
-  const [selfcareDraft, setSelfcareDraft] = useState('')
-  const ritualConfig = normalizeMorningRitualConfig(settings.morningRitual)
-
-  useEffect(() => {
-    settingsBodyRef.current?.scrollTo({ top: 0 })
-  }, [category])
-
-  const moveDashboardTab = (index: number, direction: -1 | 1) => {
-    const target = index + direction
-    if (target < 0 || target >= layout.order.length) return
-    const nextOrder = [...layout.order]
-    const [moved] = nextOrder.splice(index, 1)
-    nextOrder.splice(target, 0, moved)
-    onChange({ ...settings, dashboardPlusLayout: { ...layout, order: nextOrder } })
-  }
-
-  const toggleDashboardTabHidden = (id: DashboardPlusSection) => {
-    const isHidden = layout.hidden.includes(id)
-    if (!isHidden && layout.hidden.length >= DASHBOARD_PLUS_SECTION_IDS.length - 1) return
-    const nextHidden = isHidden ? layout.hidden.filter(hiddenId => hiddenId !== id) : [...layout.hidden, id]
-    onChange({ ...settings, dashboardPlusLayout: { ...layout, hidden: nextHidden } })
-  }
-
-  return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}>
-      <div className="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-        <div className="modal-header">
-          <div><span className="eyebrow">Life OS</span><h2 id="settings-title">Einstellungen</h2></div>
-          <IconButton label="Schlie√üen" onClick={onClose}><X size={18} /></IconButton>
-        </div>
-
-        <div className="settings-shell">
-          <nav className="settings-nav" role="tablist" aria-label="Einstellungskategorien">
-            {SETTINGS_CATEGORIES.map(item => {
-              const Icon = item.icon
-              const active = category === item.id
-              return (
-                <button
-                  type="button"
-                  key={item.id}
-                  id={`settings-cat-${item.id}`}
-                  role="tab"
-                  className={active ? 'settings-nav-item is-active' : 'settings-nav-item'}
-                  aria-selected={active}
-                  title={item.hint}
-                  onClick={() => setCategory(item.id)}
-                >
-                  <Icon size={16} aria-hidden="true" />
-                  <span>
-                    <strong>{item.label}</strong>
-                    <small>{item.hint}</small>
-                  </span>
-                </button>
-              )
-            })}
-          </nav>
-
-          <div
-            className="settings-body"
-            ref={settingsBodyRef}
-            role="tabpanel"
-            aria-labelledby={`settings-cat-${category}`}
-          >
-        <div className="settings-section" hidden={category !== 'devices'}>
-          <h3>Integrationen</h3>
-          <p style={{ margin: '-6px 0 12px', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-            Connectoren, Webhooks und Outbound-Events. Die Startseite bleibt unver√§ndert.
-          </p>
-          <button type="button" className="secondary-button" onClick={onOpenIntegrations}>
-            Integrationen √∂ffnen
-          </button>
-        </div>
-
-        <div className="settings-section" hidden={category !== 'routine'}>
-          <h3>T√§gliche Gewohnheiten</h3>
-          <p style={{ margin: '-6px 0 12px', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-            Aktive Habits erscheinen in der Routine. Wochentage steuern, an welchen Tagen sie f√§llig sind (leer = jeden Tag).
-          </p>
-          <div className="habit-settings-list">
-            {DAILY_HABITS.map(h => {
-              const active = settings.activeHabits.includes(h.id)
-              const schedule = settings.habitSchedules[h.id]
-              return (
-                <div className="habit-settings-row" key={h.id}>
-                  <button
-                    type="button"
-                    className={active ? 'choice-button is-active' : 'choice-button'}
-                    onClick={() => onChange({
-                      ...settings,
-                      activeHabits: active
-                        ? settings.activeHabits.filter(id => id !== h.id)
-                        : [...settings.activeHabits, h.id],
-                    })}
-                    aria-pressed={active}
-                  >
-                    {h.label}
-                  </button>
-                  {active && (
-                    <div className="weekday-chip-row" role="group" aria-label={`${h.label} Wochentage`}>
-                      {WEEKDAY_LABELS.map(day => {
-                        const selected = !schedule || schedule.includes(day.value)
-                        return (
-                          <button
-                            type="button"
-                            key={day.value}
-                            className={selected ? 'weekday-chip is-active' : 'weekday-chip'}
-                            onClick={() => onChange({
-                              ...settings,
-                              habitSchedules: toggleScheduleDay(settings.habitSchedules, h.id, day.value),
-                            })}
-                            aria-pressed={selected}
-                          >
-                            {day.short}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
-        <div className="settings-section" hidden={category !== 'dashboard'}>
-          <h3>Dashboard+ Reiter</h3>
-          <p style={{ margin: '-6px 0 12px', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-            Reihenfolge und Sichtbarkeit der Dashboard+ Bereiche anpassen. Mindestens ein Reiter bleibt sichtbar.
-          </p>
-          <ul className="reorder-list">
-            {layout.order.map((id, index) => {
-              const tab = DASHBOARD_PLUS_TABS.find(t => t.id === id)
-              if (!tab) return null
-              const hidden = layout.hidden.includes(id)
-              return (
-                <li key={id} className={hidden ? 'reorder-row is-hidden' : 'reorder-row'}>
-                  <tab.icon size={16} />
-                  <span className="reorder-row__label">{tab.label}</span>
-                  <div className="reorder-row__actions">
-                    <IconButton
-                      label={`${tab.label} nach oben verschieben`}
-                      onClick={() => moveDashboardTab(index, -1)}
-                      disabled={index === 0}
-                    >
-                      <ChevronUp size={15} />
-                    </IconButton>
-                    <IconButton
-                      label={`${tab.label} nach unten verschieben`}
-                      onClick={() => moveDashboardTab(index, 1)}
-                      disabled={index === layout.order.length - 1}
-                    >
-                      <ChevronDown size={15} />
-                    </IconButton>
-                    <IconButton
-                      label={hidden ? `${tab.label} einblenden` : `${tab.label} ausblenden`}
-                      onClick={() => toggleDashboardTabHidden(id)}
-                      className={hidden ? '' : 'is-active'}
-                    >
-                      {hidden ? <EyeOff size={15} /> : <Eye size={15} />}
-                    </IconButton>
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
-
-        <div className="settings-section" hidden={category !== 'general'}>
-          <h3>Profil</h3>
-          <p className="settings-help">Name erscheint in der Begr√º√üung und im Tagesablauf.</p>
-          <label className="text-field">
-            <span>Name</span>
-            <input value={settings.name} placeholder="Dein Name" onChange={event => onChange({ ...settings, name: event.target.value })} />
-          </label>
-        </div>
-
-        <div className="settings-section" hidden={category !== 'general'}>
-          <h3>Darstellung</h3>
-          <div className="theme-segment" role="group" aria-label="Farbschema">
-            {(['light', 'dark', 'system'] as ThemePreference[]).map(theme => (
-              <button
-                type="button"
-                key={theme}
-                className={settings.theme === theme ? 'is-active' : ''}
-                onClick={() => onChange({ ...settings, theme })}
-                aria-pressed={settings.theme === theme}
-              >
-                {theme === 'light' ? <Sun size={16} /> : theme === 'dark' ? <Moon size={16} /> : <Sparkles size={16} />}
-                {theme === 'light' ? 'Hell' : theme === 'dark' ? 'Dunkel' : 'System'}
-              </button>
-            ))}
-          </div>
-          <p className="settings-help" style={{ marginTop: 14 }}>Akzentfarbe</p>
-          <div className="accent-swatch-row" role="group" aria-label="Akzentfarbe">
-            {ACCENT_OPTIONS.map(option => (
-              <button
-                type="button"
-                key={option.id}
-                className={settings.accent === option.id ? 'accent-swatch is-active' : 'accent-swatch'}
-                style={{ ['--swatch' as string]: option.swatch }}
-                onClick={() => onChange({ ...settings, accent: option.id })}
-                aria-pressed={settings.accent === option.id}
-                aria-label={`Akzentfarbe ${option.label}`}
-                title={option.label}
-              >
-                {settings.accent === option.id && <Check size={14} />}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="settings-section" hidden={category !== 'routine'}>
-          <h3>Standard-Fokus</h3>
-          <p className="settings-help">
-            Fallback f√ºr neue Anker und wenn keine eigene Dauer gesetzt ist. Pro Aufgabe kannst du die Dauer beim Bearbeiten √ºberschreiben.
-          </p>
-          <div className="duration-grid settings-focus-duration">
-            {[10, 25, 45].map(minutes => (
-              <button
-                type="button"
-                key={minutes}
-                className={settings.focusMinutes === minutes ? 'duration-button is-active' : 'duration-button'}
-                onClick={() => onChange({ ...settings, focusMinutes: minutes })}
-                aria-pressed={settings.focusMinutes === minutes}
-              >
-                <strong>{minutes}</strong>
-                <span>Min.</span>
-              </button>
-            ))}
-          </div>
-          <label className="text-field" style={{ marginTop: 12 }}>
-            <span>Eigene Minuten</span>
-            <input
-              type="number"
-              min={5}
-              max={120}
-              step={5}
-              value={settings.focusMinutes}
-              onChange={event => onChange({
-                ...settings,
-                focusMinutes: clampNumber(Number(event.target.value) || 25, 5, 120),
-              })}
-            />
-          </label>
-        </div>
-
-        <div className="settings-section" hidden={category !== 'nutrition'}>
-          <h3>Makros</h3>
-          <p className="settings-help">Tagesziele f√ºr Protein, Kalorien und Kohlenhydrate.</p>
-          <div className="settings-grid">
-            <label className="text-field"><span>Proteinziel in g</span><input type="number" min="50" max="400" step="5" value={settings.proteinGoal} onChange={event => onChange({ ...settings, proteinGoal: clampNumber(Number(event.target.value) || 150, 50, 400) })} /></label>
-            <label className="text-field"><span>Kalorienziel</span><input type="number" min="1000" max="8000" step="50" value={settings.calorieGoal} onChange={event => onChange({ ...settings, calorieGoal: clampNumber(Number(event.target.value) || 3500, 1000, 8000) })} /></label>
-            <label className="text-field"><span>Fettziel in g</span><input type="number" min="20" max="200" step="5" value={settings.fatGoal} onChange={event => onChange({ ...settings, fatGoal: clampNumber(Number(event.target.value) || 70, 20, 200) })} /></label>
-            <label className="text-field"><span>KH-Ziel in g</span><input type="number" min="50" max="500" step="5" value={settings.carbsGoal} onChange={event => onChange({ ...settings, carbsGoal: clampNumber(Number(event.target.value) || 250, 50, 500) })} /></label>
-            <label className="text-field"><span>Ballaststoffe in g</span><input type="number" min="10" max="80" step="1" value={settings.fiberGoal} onChange={event => onChange({ ...settings, fiberGoal: clampNumber(Number(event.target.value) || 30, 10, 80) })} /></label>
-          </div>
-        </div>
-
-        <div className="settings-section" hidden={category !== 'nutrition'}>
-          <h3>K√∂rper</h3>
-          <p className="settings-help">Gr√∂√üe f√ºr den BMI, Start- und Zielgewicht f√ºr Lab.</p>
-          <div className="settings-grid">
-            <label className="text-field"><span>K√∂rpergr√∂√üe in cm</span><input type="number" min="0" max="250" step="1" value={settings.heightCm || ''} placeholder="f√ºr BMI" onChange={event => onChange({ ...settings, heightCm: clampNumber(Number(event.target.value) || 0, 0, 250) })} /></label>
-            <label className="text-field"><span>Gewichtsziel in kg</span><input type="number" min="0" max="300" step="0.1" value={settings.weightGoalKg || ''} placeholder="z. B. 70" onChange={event => onChange({ ...settings, weightGoalKg: clampNumber(Number(event.target.value) || 0, 0, 300) })} /></label>
-            <label className="text-field"><span>Startgewicht in kg</span><input type="number" min="0" max="300" step="0.1" value={settings.weightStartKg || ''} placeholder="leer = erster Wert" onChange={event => onChange({ ...settings, weightStartKg: clampNumber(Number(event.target.value) || 0, 0, 300) })} /></label>
-          </div>
-        </div>
-
-        <div className="settings-section" hidden={category !== 'rituals'}>
-          <h3>Abend-Gate</h3>
-          <p className="settings-help">
-            Ab dieser Uhrzeit erscheint der Tagesabschluss. Punkte steuern, was noch z√§hlt.
-          </p>
-          <div className="settings-actions">
-            <button
-              type="button"
-              className={settings.eveningGate.enabled ? 'choice-button is-active' : 'choice-button'}
-              aria-pressed={settings.eveningGate.enabled}
-              onClick={() => onChange({
-                ...settings,
-                eveningGate: { ...settings.eveningGate, enabled: !settings.eveningGate.enabled },
-              })}
-            >
-              {settings.eveningGate.enabled ? 'Gate an' : 'Gate aus'}
-            </button>
-          </div>
-          {settings.eveningGate.enabled && (
-            <>
-              <label className="select-field" style={{ marginTop: 14 }}>
-                <span>Ab Uhrzeit</span>
-                <select
-                  value={settings.eveningGate.fromHour}
-                  onChange={event => onChange({
-                    ...settings,
-                    eveningGate: {
-                      ...settings.eveningGate,
-                      fromHour: clampNumber(Number(event.target.value) || 17, 15, 22),
-                    },
-                  })}
-                >
-                  {[15, 16, 17, 18, 19, 20, 21, 22].map(hour => (
-                    <option key={hour} value={hour}>
-                      {`${String(hour).padStart(2, '0')}:00`}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <p className="settings-help" style={{ marginTop: 14 }}>Abschluss-Punkte</p>
-              <div className="choice-grid">
-                {EVENING_CLOSE_CHECK_IDS.map(id => {
-                  const meta = EVENING_CLOSE_CHECK_META[id]
-                  const active = !settings.eveningGate.hiddenChecks.includes(id)
-                  return (
-                    <button
-                      type="button"
-                      key={id}
-                      className={active ? 'choice-button is-active' : 'choice-button'}
-                      aria-pressed={active}
-                      onClick={() => {
-                        const hiddenChecks = active
-                          ? [...settings.eveningGate.hiddenChecks, id]
-                          : settings.eveningGate.hiddenChecks.filter(check => check !== id)
-                        const nextHidden = hiddenChecks.length >= EVENING_CLOSE_CHECK_IDS.length
-                          ? settings.eveningGate.hiddenChecks.filter(check => check !== id)
-                          : hiddenChecks
-                        onChange({
-                          ...settings,
-                          eveningGate: { ...settings.eveningGate, hiddenChecks: nextHidden as EveningCloseCheckId[] },
-                        })
-                      }}
-                    >
-                      {meta.label}
-                    </button>
-                  )
-                })}
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="settings-section" hidden={category !== 'rituals'}>
-          <h3>Morgen-Ritual</h3>
-          <p className="settings-help">
-            Reihenfolge, Regeln und Zeiten steuerst du unten. Jeder Timer wird weiterhin manuell gestartet.
-          </p>
-          <div className="settings-actions">
-            <button
-              type="button"
-              className={settings.morningGateEnabled ? 'choice-button is-active' : 'choice-button'}
-              aria-pressed={settings.morningGateEnabled}
-              onClick={() => onChange({ ...settings, morningGateEnabled: !settings.morningGateEnabled })}
-            >
-              {settings.morningGateEnabled ? 'Ritual an' : 'Ritual aus'}
-            </button>
-            {settings.morningGateEnabled && (
-              <button type="button" className="secondary-button" onClick={onPreviewMorningGate}>
-                Ablauf jetzt √∂ffnen
-              </button>
-            )}
-          </div>
-          {settings.morningGateEnabled && (
-            <div className="settings-grid" style={{ marginTop: 14 }}>
-              <label className="text-field">
-                <span>Shake Protein g</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={80}
-                  value={ritualConfig.shakeMeal.proteinGrams}
-                  onChange={event => onChange({
-                    ...settings,
-                    morningRitual: {
-                      ...ritualConfig,
-                      shakeMeal: {
-                        ...ritualConfig.shakeMeal,
-                        proteinGrams: clampNumber(Number(event.target.value) || 0, 0, 80),
-                      },
-                    },
-                  })}
-                />
-              </label>
-              <label className="text-field">
-                <span>Shake kcal</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={800}
-                  value={ritualConfig.shakeMeal.calories}
-                  onChange={event => onChange({
-                    ...settings,
-                    morningRitual: {
-                      ...ritualConfig,
-                      shakeMeal: {
-                        ...ritualConfig.shakeMeal,
-                        calories: clampNumber(Number(event.target.value) || 0, 0, 800),
-                      },
-                    },
-                  })}
-                />
-              </label>
-              <label className="text-field">
-                <span>Shake Fett g</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={40}
-                  value={ritualConfig.shakeMeal.fatGrams}
-                  onChange={event => onChange({
-                    ...settings,
-                    morningRitual: {
-                      ...ritualConfig,
-                      shakeMeal: {
-                        ...ritualConfig.shakeMeal,
-                        fatGrams: clampNumber(Number(event.target.value) || 0, 0, 40),
-                      },
-                    },
-                  })}
-                />
-              </label>
-              <label className="text-field">
-                <span>Shake KH g</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={80}
-                  value={ritualConfig.shakeMeal.carbsGrams}
-                  onChange={event => onChange({
-                    ...settings,
-                    morningRitual: {
-                      ...ritualConfig,
-                      shakeMeal: {
-                        ...ritualConfig.shakeMeal,
-                        carbsGrams: clampNumber(Number(event.target.value) || 0, 0, 80),
-                      },
-                    },
-                  })}
-                />
-              </label>
-            </div>
-          )}
-          {settings.morningGateEnabled && (
-            <div className="ritual-card-overview">
-              <p className="settings-help">
-                Alle Karten in Ablauf-Reihenfolge. Regeln erscheinen direkt auf der jeweiligen Karte.
-                Timer-Zeiten steuern den echten Timer; Planzeiten sind Richtwerte.
-              </p>
-              <ol className="ritual-card-grid">
-                {ritualConfig.stepOrder.map((id, index) => {
-                  const hidden = ritualConfig.hiddenSteps.includes(id)
-                  const meta = morningRitualMeta(id, ritualConfig)
-                  return (
-                    <li key={id} className={hidden ? 'ritual-config-card is-hidden' : 'ritual-config-card'}>
-                      <div className="ritual-config-card__head">
-                        <div className="ritual-config-card__number" aria-hidden="true">
-                          {String(index + 1).padStart(2, '0')}
-                        </div>
-                        <div className="ritual-config-card__title">
-                          <span>{ritualPhaseLabel(id)}</span>
-                          <strong>{meta.label}</strong>
-                          <small>{hidden ? 'Wird √ºbersprungen' : meta.hint}</small>
-                        </div>
-                        <div className="ritual-config-card__actions">
-                          <IconButton
-                            label={`${meta.label} nach oben`}
-                            disabled={index === 0}
-                            onClick={() => onChange({
-                              ...settings,
-                              morningRitual: {
-                                ...ritualConfig,
-                                stepOrder: moveRitualStep(ritualConfig.stepOrder, index, -1),
-                              },
-                            })}
-                          >
-                            <ChevronUp size={15} />
-                          </IconButton>
-                          <IconButton
-                            label={`${meta.label} nach unten`}
-                            disabled={index === ritualConfig.stepOrder.length - 1}
-                            onClick={() => onChange({
-                              ...settings,
-                              morningRitual: {
-                                ...ritualConfig,
-                                stepOrder: moveRitualStep(ritualConfig.stepOrder, index, 1),
-                              },
-                            })}
-                          >
-                            <ChevronDown size={15} />
-                          </IconButton>
-                          <IconButton
-                            label={hidden ? `${meta.label} einblenden` : `${meta.label} ausblenden`}
-                            className={hidden ? '' : 'is-active'}
-                            onClick={() => {
-                              const hiddenSteps = hidden
-                                ? ritualConfig.hiddenSteps.filter(step => step !== id)
-                                : [...ritualConfig.hiddenSteps, id]
-                              onChange({
-                                ...settings,
-                                morningRitual: { ...ritualConfig, hiddenSteps },
-                              })
-                            }}
-                          >
-                            {hidden ? <EyeOff size={15} /> : <Eye size={15} />}
-                          </IconButton>
-                        </div>
-                      </div>
-
-                      <div className="ritual-config-card__body">
-                        <label className="text-field ritual-rule-field">
-                          <span>Eigene Regel</span>
-                          <textarea
-                            rows={3}
-                            maxLength={240}
-                            value={ritualConfig.stepRules[id]}
-                            onChange={event => onChange({
-                              ...settings,
-                              morningRitual: {
-                                ...ritualConfig,
-                                stepRules: {
-                                  ...ritualConfig.stepRules,
-                                  [id]: event.target.value.slice(0, 240),
-                                },
-                              },
-                            })}
-                          />
-                        </label>
-                        <RitualDurationFields
-                          id={id}
-                          config={ritualConfig}
-                          onChange={morningRitual => onChange({ ...settings, morningRitual })}
-                        />
-
-                        {id === 'gratitude' && (
-                          <label className="text-field ritual-card-wide-field">
-                            <span>Text zum lauten Vorlesen</span>
-                            <textarea
-                              rows={5}
-                              maxLength={1200}
-                              value={ritualConfig.gratitudeText}
-                              onChange={event => onChange({
-                                ...settings,
-                                morningRitual: {
-                                  ...ritualConfig,
-                                  gratitudeText: event.target.value.slice(0, 1200),
-                                },
-                              })}
-                            />
-                          </label>
-                        )}
-
-                        {id === 'selfcare' && (
-                          <div className="ritual-card-wide-field">
-                            <span className="ritual-config-card__field-label">Checkliste</span>
-                            <div className="habit-settings-list">
-                              {ritualConfig.selfcareItems.map(item => (
-                                <button
-                                  type="button"
-                                  key={item.id}
-                                  className="choice-button is-active"
-                                  onClick={() => {
-                                    if (ritualConfig.selfcareItems.length <= 1) return
-                                    onChange({
-                                      ...settings,
-                                      morningRitual: {
-                                        ...ritualConfig,
-                                        selfcareItems: ritualConfig.selfcareItems.filter(entry => entry.id !== item.id),
-                                      },
-                                    })
-                                  }}
-                                >
-                                  {item.label}
-                                </button>
-                              ))}
-                            </div>
-                            <label className="text-field" style={{ marginTop: 8 }}>
-                              <span>Selfcare-Punkt hinzuf√ºgen</span>
-                              <input
-                                value={selfcareDraft}
-                                placeholder="z. B. Haar stylen"
-                                onChange={event => setSelfcareDraft(event.target.value)}
-                                onKeyDown={event => {
-                                  if (event.key !== 'Enter') return
-                                  event.preventDefault()
-                                  const label = selfcareDraft.trim()
-                                  if (!label) return
-                                  onChange({
-                                    ...settings,
-                                    morningRitual: {
-                                      ...ritualConfig,
-                                      selfcareItems: normalizeSelfcareItems([
-                                        ...ritualConfig.selfcareItems,
-                                        { id: `selfcare-${Date.now()}`, label },
-                                      ]),
-                                    },
-                                  })
-                                  setSelfcareDraft('')
-                                }}
-                              />
-                            </label>
-                          </div>
-                        )}
-                      </div>
-                    </li>
-                  )
-                })}
-              </ol>
-            </div>
-          )}
-        </div>
-
-        <div className="settings-section" hidden={category !== 'devices'}>
-          <h3>iPhone ¬∑ Kurzbefehle</h3>
-          <p className="settings-help">
-            In Kurzbefehle ‚Üí ‚ÄûURL √∂ffnen‚Äú. Life OS als PWA auf dem Home Screen speichern (Teilen ‚Üí Zum Home-Bildschirm), dann bleiben Daten stabiler.
-            Ray-Ban / Meta AI ohne Sync: URL mit <code>?action=note&amp;text=‚Ä¶</code> √∂ffnen. Mit Sync: Webhook unten.
-          </p>
-          <div className="shortcut-recipe-list">
-            {SHORTCUT_RECIPES.map(recipe => {
-              const url = buildActionUrl(recipe.kind, recipe.text ? { text: recipe.text } : undefined)
-              return (
-                <div key={recipe.kind} className="shortcut-recipe">
-                  <div>
-                    <strong>{recipe.label}</strong>
-                    <span>{recipe.hint}</span>
-                    <code>{url.replace(/^https?:\/\/[^/]+/, '')}</code>
-                  </div>
-                  <button
-                    type="button"
-                    className="small-button"
-                    onClick={async () => {
-                      const ok = await copyText(url)
-                      if (!ok) return
-                      setCopiedShortcut(recipe.kind)
-                      window.setTimeout(() => setCopiedShortcut(current => (current === recipe.kind ? null : current)), 1600)
-                    }}
-                  >
-                    {copiedShortcut === recipe.kind ? 'Kopiert' : 'URL kopieren'}
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-          <p className="settings-help">
-            Fokus mit Dauer: <code>?action=focus&amp;min=25</code>. Werte ohne UI:
-            <code>?action=log&amp;protein=180&amp;water=2.5</code> oder
-            <code>?action=log&amp;text=180g%20protein</code>. Aufgabe direkt:
-            <code>?action=add-task&amp;title=Creatine%20holen</code>.
-            Notiz (Journal + Kurznotiz): <code>?action=note&amp;text=Idee</code>.
-          </p>
-        </div>
-
-        <div className="settings-section" hidden={category !== 'devices'}>
-          <h3>Ger√§te-Sync</h3>
-          <p className="settings-help">
-            Einmal koppeln, danach automatisch: Speichern l√§dt hoch, √ñffnen/alle 60s holt Updates.
-          </p>
-          {deviceSync ? (
-            <>
-              <p className="settings-help">
-                Verbunden seit {new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(deviceSync.pairedAt))}
-                {deviceSync.lastSyncedAt
-                  ? ` ¬∑ zuletzt ${new Intl.DateTimeFormat('de-DE', { timeStyle: 'short' }).format(new Date(deviceSync.lastSyncedAt))} Uhr`
-                  : ''}
-              </p>
-              {pairCode && (
-                <div className="sync-pair-code" aria-live="polite">
-                  <strong>{pairCode}</strong>
-                  <span>
-                    Code g√ºltig bis{' '}
-                    {pairExpiresAt
-                      ? new Intl.DateTimeFormat('de-DE', { timeStyle: 'short' }).format(new Date(pairExpiresAt))
-                      : '‚Äî'}{' '}
-                    Uhr
-                  </span>
-                </div>
-              )}
-              <div className="settings-actions">
-                <button
-                  type="button"
-                  className="secondary-button"
-                  disabled={syncBusy}
-                  onClick={async () => {
-                    setSyncBusy(true)
-                    try {
-                      const result = await refreshPairCode()
-                      setPairCode(result.pairCode)
-                      setPairExpiresAt(result.expiresAt)
-                      showToast('Code erzeugt ‚Äî auf dem anderen Ger√§t eingeben.')
-                    } catch (error) {
-                      showToast(error instanceof Error ? error.message : 'Code fehlgeschlagen.')
-                    } finally {
-                      setSyncBusy(false)
-                    }
-                  }}
-                >
-                  Weiteres Ger√§t koppeln
-                </button>
-                <button type="button" className="secondary-button" disabled={syncBusy} onClick={onSyncNow}>
-                  Jetzt synchronisieren
-                </button>
-                <button
-                  type="button"
-                  className="secondary-button"
-                  disabled={syncBusy}
-                  onClick={() => {
-                    if (!window.confirm('Sync auf diesem Ger√§t trennen? Daten bleiben lokal.')) return
-                    clearSyncCredentials()
-                    setPairCode(null)
-                    setPairExpiresAt(null)
-                    onDeviceSyncChange(null)
-                    showToast('Sync getrennt.')
-                  }}
-                >
-                  Sync trennen
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="settings-actions">
-                <button
-                  type="button"
-                  className="primary-button"
-                  disabled={syncBusy}
-                  onClick={async () => {
-                    setSyncBusy(true)
-                    setPairCode(null)
-                    try {
-                      const result = await createDevicePairing()
-                      setPairCode(result.pairCode)
-                      setPairExpiresAt(result.expiresAt)
-                      onDeviceSyncChange(loadSyncCredentials())
-                      showToast(`Code: ${result.pairCode}`)
-                    } catch (error) {
-                      showToast(error instanceof Error ? error.message : 'Koppeln fehlgeschlagen.')
-                    } finally {
-                      setSyncBusy(false)
-                    }
-                  }}
-                >
-                  {syncBusy ? 'Code wird erzeugt ‚Ä¶' : 'Dieses Ger√§t als Start koppeln'}
-                </button>
-              </div>
-              {pairCode && (
-                <div className="sync-pair-code" aria-live="polite">
-                  <strong>{pairCode}</strong>
-                  <span>Auf dem anderen Ger√§t unten eingeben</span>
-                </div>
-              )}
-              {syncBusy && !pairCode && (
-                <p className="settings-help">Warte auf Sync-Server ‚Ä¶</p>
-              )}
-              <label className="text-field" style={{ marginTop: 12 }}>
-                <span>Code von anderem Ger√§t</span>
-                <input
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  maxLength={6}
-                  placeholder="6-stelliger Code"
-                  value={joinCode}
-                  onChange={event => setJoinCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
-                />
-              </label>
-              <div className="settings-actions">
-                <button
-                  type="button"
-                  className="secondary-button"
-                  disabled={syncBusy || joinCode.length !== 6}
-                  onClick={async () => {
-                    setSyncBusy(true)
-                    try {
-                      const creds = await joinDevicePairing(joinCode)
-                      setJoinCode('')
-                      onDeviceSyncChange(creds)
-                      showToast('Ger√§t gekoppelt ‚Äî Sync l√§uft automatisch.')
-                    } catch (error) {
-                      showToast(error instanceof Error ? error.message : 'Beitritt fehlgeschlagen.')
-                    } finally {
-                      setSyncBusy(false)
-                    }
-                  }}
-                >
-                  Mit Code verbinden
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="settings-section" hidden={category !== 'devices'}>
-          <h3>Webhook</h3>
-          {deviceSync ? (
-            <>
-              <p className="settings-help">
-                Kurzbefehle, Watch, Ray-Ban Meta oder andere Apps k√∂nnen schreiben, ohne die App zu √∂ffnen.
-                Token nicht teilen ‚Äî wer ihn hat, kann Tage √ºberschreiben.
-              </p>
-              <div className="shortcut-recipe-list">
-                <div className="shortcut-recipe">
-                  <div>
-                    <strong>POST URL</strong>
-                    <span>JSON an diesen Endpunkt senden</span>
-                    <code>{`${window.location.origin}/api/hooks`}</code>
-                  </div>
-                  <button
-                    type="button"
-                    className="small-button"
-                    onClick={async () => {
-                      const ok = await copyText(`${window.location.origin}/api/hooks`)
-                      if (!ok) return
-                      setCopiedShortcut('webhook-url')
-                      window.setTimeout(() => setCopiedShortcut(current => (current === 'webhook-url' ? null : current)), 1600)
-                    }}
-                  >
-                    {copiedShortcut === 'webhook-url' ? 'Kopiert' : 'URL kopieren'}
-                  </button>
-                </div>
-                <div className="shortcut-recipe">
-                  <div>
-                    <strong>Beispiel JSON</strong>
-                    <span>type: log, quick, task oder note</span>
-                    <code>{`{"roomId":"${deviceSync.roomId}","deviceToken":"${deviceSync.deviceToken}","type":"log","proteinGrams":180}`}</code>
-                  </div>
-                  <button
-                    type="button"
-                    className="small-button"
-                    onClick={async () => {
-                      const ok = await copyText(JSON.stringify({
-                        roomId: deviceSync.roomId,
-                        deviceToken: deviceSync.deviceToken,
-                        type: 'log',
-                        proteinGrams: 180,
-                      }, null, 2))
-                      if (!ok) return
-                      setCopiedShortcut('webhook-json')
-                      window.setTimeout(() => setCopiedShortcut(current => (current === 'webhook-json' ? null : current)), 1600)
-                    }}
-                  >
-                    {copiedShortcut === 'webhook-json' ? 'Kopiert' : 'JSON kopieren'}
-                  </button>
-                </div>
-                <div className="shortcut-recipe">
-                  <div>
-                    <strong>Brille-Notiz JSON</strong>
-                    <span>Kurzbefehl: Text aus WhatsApp/Notizen in text setzen</span>
-                    <code>{`{"roomId":"${deviceSync.roomId}","deviceToken":"${deviceSync.deviceToken}","type":"note","text":"DEIN TEXT"}`}</code>
-                  </div>
-                  <button
-                    type="button"
-                    className="small-button"
-                    onClick={async () => {
-                      const ok = await copyText(JSON.stringify({
-                        roomId: deviceSync.roomId,
-                        deviceToken: deviceSync.deviceToken,
-                        type: 'note',
-                        text: 'DEIN TEXT',
-                      }, null, 2))
-                      if (!ok) return
-                      setCopiedShortcut('webhook-note')
-                      window.setTimeout(() => setCopiedShortcut(current => (current === 'webhook-note' ? null : current)), 1600)
-                    }}
-                  >
-                    {copiedShortcut === 'webhook-note' ? 'Kopiert' : 'JSON kopieren'}
-                  </button>
-                </div>
-              </div>
-              <div className="settings-help glasses-hook-help">
-                <p>Ray-Ban Meta ‚Üí Life OS (ohne Native-App):</p>
-                <ol>
-                  <li>Brille: ‚ÄûHey Meta, schick mir per WhatsApp: ‚Ä¶‚Äú oder in die iPhone-Notizen.</li>
-                  <li>Kurzbefehle ‚Üí Automation: neue WhatsApp-Nachricht von dir selbst, oder Teilen-Sheet aus Notizen.</li>
-                  <li>Aktion ‚ÄûURL-Inhalt abrufen‚Äú: POST auf die Webhook-URL, JSON-Typ <code>note</code>, Text = Diktat.</li>
-                  <li>Life OS holt die Notiz beim n√§chsten Sync ‚Äî Journal + Kurznotiz.</li>
-                </ol>
-              </div>
-              <p className="settings-help">
-                Quick-Text: <code>{`{"type":"quick","text":"180g protein"}`}</code>
-                ¬∑ Aufgabe: <code>{`{"type":"task","title":"Creatine holen"}`}</code>
-                ¬∑ Energie: <code>{`{"type":"log","energy":"high"}`}</code>
-                ¬∑ Notiz: <code>{`{"type":"note","text":"Idee vom Gehen"}`}</code>
-              </p>
-              <div className="shortcut-recipe-list" style={{ marginTop: 16 }}>
-                <div className="shortcut-recipe">
-                  <div>
-                    <strong>Apple Health Ingest</strong>
-                    <span>Health Auto Export: Fitdays ‚Üí Apple Health ‚Üí dieser Endpunkt</span>
-                    <code>{`${window.location.origin}/api/health/ingest`}</code>
-                  </div>
-                  <button
-                    type="button"
-                    className="small-button"
-                    onClick={async () => {
-                      const ok = await copyText(`${window.location.origin}/api/health/ingest`)
-                      if (!ok) return
-                      setCopiedShortcut('health-url')
-                      window.setTimeout(() => setCopiedShortcut(current => (current === 'health-url' ? null : current)), 1600)
-                    }}
-                  >
-                    {copiedShortcut === 'health-url' ? 'Kopiert' : 'URL kopieren'}
-                  </button>
-                </div>
-                <div className="shortcut-recipe">
-                  <div>
-                    <strong>Health-Header</strong>
-                    <span>In Health Auto Export als eigene HTTP-Header setzen</span>
-                    <code>{`Authorization: Bearer ${deviceSync.deviceToken}\nX-Life-Os-Room: ${deviceSync.roomId}`}</code>
-                  </div>
-                  <button
-                    type="button"
-                    className="small-button"
-                    onClick={async () => {
-                      const ok = await copyText(`Authorization: Bearer ${deviceSync.deviceToken}\nX-Life-Os-Room: ${deviceSync.roomId}`)
-                      if (!ok) return
-                      setCopiedShortcut('health-headers')
-                      window.setTimeout(() => setCopiedShortcut(current => (current === 'health-headers' ? null : current)), 1600)
-                    }}
-                  >
-                    {copiedShortcut === 'health-headers' ? 'Kopiert' : 'Header kopieren'}
-                  </button>
-                </div>
-              </div>
-              <p className="settings-help">
-                Health Auto Export kann das native JSON schicken. Einfacher Test:
-                <code>{`{"metric":"weight","value":56.8,"unit":"kg","date":"2026-09-13T07:42:00+02:00","source":"Fitdays"}`}</code>
-              </p>
-            </>
-          ) : (
-            <p className="settings-help">
-              Zuerst Ger√§te-Sync koppeln. Danach erscheint hier die Webhook-URL mit Token.
-            </p>
-          )}
-        </div>
-
-        <div className="settings-section" hidden={category !== 'data'}>
-          <h3>Medis-Erinnerungen</h3>
-          <p className="settings-help">
-            Nur mit Opt-in. Pro Medikament ‚ÄûErinnern‚Äú setzen und Uhrzeit eintragen. System-Benachrichtigungen nur, wenn du sie hier erlaubst.
-          </p>
-          <div className="settings-actions">
-            <button
-              type="button"
-              className={settings.medisRemindersEnabled ? 'choice-button is-active' : 'choice-button'}
-              aria-pressed={settings.medisRemindersEnabled}
-              onClick={() => onChange({ ...settings, medisRemindersEnabled: !settings.medisRemindersEnabled })}
-            >
-              {settings.medisRemindersEnabled ? 'Erinnerungen an' : 'Erinnerungen aus'}
-            </button>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={async () => {
-                if (!('Notification' in window)) return
-                if (Notification.permission === 'granted') return
-                await Notification.requestPermission()
-              }}
-            >
-              <Bell size={16} /> System-Hinweis erlauben
-            </button>
-          </div>
-        </div>
-
-        <div className="settings-section" hidden={category !== 'data'}>
-          <h3>Backup</h3>
-          <p className="settings-help">
-            Vollbackup enth√§lt Tage, Settings, Lab-Daten und XP. Zus√§tzlich kannst du Ger√§te-Sync nutzen.
-          </p>
-          <p className="settings-help">
-            Letztes Backup: {lastBackupAt
-              ? new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(lastBackupAt))
-              : 'noch keines'}
-          </p>
-          <div className="settings-actions">
-            <button type="button" className="secondary-button" onClick={onExport}>
-              <ChevronDown size={16} /> Backup exportieren
-            </button>
-            <button type="button" className="secondary-button" onClick={() => importInputRef.current?.click()}>
-              <ChevronUp size={16} /> Backup importieren
-            </button>
-            <input
-              ref={importInputRef}
-              type="file"
-              accept="application/json,.json"
-              hidden
-              onChange={async event => {
-                const file = event.target.files?.[0]
-                event.target.value = ''
-                if (file) await onImport(file)
-              }}
-            />
-          </div>
-        </div>
-
-        <div className="settings-section" hidden={category !== 'data'}>
-          <h3>Lab-Daten</h3>
-          <p className="settings-help">
-            Alte Demo-Daten (Medis, Boards, Finanzen) entfernen und den Datenbereich von Lab neu starten. Tages-Eintr√§ge bleiben.
-          </p>
-          <div className="settings-actions">
-            <button type="button" className="secondary-button" onClick={onResetLabor}>
-              <RotateCcw size={16} /> Lab-Daten zur√ºcksetzen
-            </button>
-          </div>
-        </div>
-
-        <div className="settings-note" hidden={category !== 'data'}>
-          <Bell size={18} />
-          <p>Benachrichtigungen werden nie ungefragt angefordert. Timer-Hinweise nur mit bestehender Berechtigung. Mit Ger√§te-Sync laufen Daten nach dem Koppeln automatisch mit.</p>
-        </div>
-          </div>
-        </div>
-        <div className="modal-actions"><button type="button" className="primary-button" onClick={onClose}><Check size={17} /> Fertig</button></div>
-      </div>
-    </div>
-  )
-}
-
-function safeLocalStorageSetItem(key: string, value: string): boolean {
-  try {
-    localStorage.setItem(key, value)
-    return true
-  } catch {
-    return false
-  }
-}
-
-export default App
+Y™Áäx-ÆÈ‹j◊ù¢Îi∫⁄+äßj[hëÈ‹¢ÈÌ◊]¯ÛdËµ©h∫⁄n∂XßzÕZ[\‹ù¬à\ŸQYôôX›à\ŸTôYãà\ŸSY[[Àà\ŸT›]Kà\H‘‘‘õ‹\ùY\Àà\H\‹]⁄à\Hõ‹õQ]ô[ùà\HôXX›õŸKà\HŸ]›]PX›[€ãüHúõ€H	‹ôXX›	¬ö[\‹ù¬à[\ù⁄\ò€Kà\úõ›—›€îöY⁄à\úõ›’\öY⁄àô[àõ€⁄”‹[ãàúòZ[ãàÿ[[ô\î\Àà⁄X⁄Àà⁄]úõ€ë›€ãà⁄]úõ€ìYùà⁄]úõ€îöY⁄à⁄]úõ€ï\à⁄\ò€Kà€›Yà€€\\‹Àà€ŸôôYKà‹ôY]ÿ\ôà‹õ›€ãà]Xò\ŸKàõ‹]à[Xòô[àö\⁄à^YKà^YSŸôãàõ\⁄–€€öXÿ[àõÿ›\Àà€YKà[òõﬁà^[›]‹öYàZXÀàXYãà[€€ãà]\ŸKà[ò⁄[à[à^Kà\ÀàôXŸZ\àõ›]Pÿ›ÀàŸX\ò⁄àŸ][ô‹Àà⁄\ôLãà⁄‹[ô–òYÀà€X\ù€ôKà€õ›ŸõZŸKà‹\ö€\Àà›[ãà[Y\ãàò\⁄ãà\Ÿ\ãà\Ÿ\úÀà][ú⁄[Ààà\HX⁄YRX€€ãüHúõ€H	€X⁄YK\ôXX›	¬ö[\‹ù»\ŸQ[ùöY\»Húõ€H	Àã⁄€⁄‹À›\ŸQ[ùöY\…¬ö[\‹ù»›⁄\XXõTõ›»Húõ€H	Àãÿ€€\€ô[ùÀ‘›⁄\XXõTõ›…¬ö[\‹ù»€€ù^Y[ùK\H€€ù^Y[ùR][HHúõ€H	Àãÿ€€\€ô[ùÀ–€€ù^Y[ùI¬ö[\‹ù\H»\⁄õÿ\ô[ùûHHúõ€H	Àã›\\À—\⁄õÿ\ô[ùûI¬ö[\‹ù»‹ôX]QYò][[ùûHHúõ€H	Àã›\\À—\⁄õÿ\ô[ùûI¬ö[\‹ù»Ÿ]^T€XﬁHHúõ€H	Àã€XãŸ^T€XﬁI¬ö[\‹ù»ùZ[ŸYZ“[ú⁄Y⁄»Húõ€H	Àã€Xã⁄[ú⁄Y⁄…¬ö[\‹ù»\ö]ôSXõ‹ì›ô\ùöY]À\ö]ôSXõ‹î›]À€X\ùXõ‹í[ù»Húõ€H	Àã€Xã€Xõ‹ì]ôI¬ö[\‹ù»ŸX\ò⁄Xõ‹àHúõ€H	Àã€Xã€Xõ‹îŸX\ò⁄	¬ö[\‹ù»ùZ[[€ù‹öY[€ùXô[Húõ€H	Àã€Xãÿÿ[[ô\ë‹öY	¬ö[\‹ù»\⁄úõ€UöY]À\⁄]€õK\‘õŸ‹ô\‹“XïöY]ÀXë]TŸX›[€ëúõ€R\⁄ò]öYÿ]R\⁄ò]öYÿ]R\⁄⁄]Yò]öYÿ]SXë]TŸX›[€ãYZ–\X›[€ãZŸP\X›[€ëúõ€Sÿÿ][€ãöY]—úõ€R\⁄[ù]RYúõ€R\⁄ùZ[X›[€ï\õ“‘ï’U‘ëP“TTÀíQU◊”PëSÀ\H\X›[€ã\H\öY]À\HXë]TŸX›[€àHúõ€H	Àã€Xã‹õ›][ô…¬ö[\‹ù¬àPó—UW–TëPTÀàPó—UW‘—P’S”ó“QÀà€€ù^[ôQõ‹îŸX›[€ãà\HXë]T]ZX⁄–X›[€ãüHúõ€H	Àã€Xã€Xë]Sò]â¬ö[\‹ù»⁄\ôS‹ë›€õÿYX‹»Húõ€H	Àã€Xã⁄X‹…¬ö[\‹ù»€‹U^⁄\ôU^Húõ€H	Àã€Xã‹⁄\ôI¬ö[\‹ù»ô[X\ŸTÿ‹ôY[ïÿZŸSÿ⁄Àô\]Y\›ÿ‹ôY[ïÿZŸSÿ⁄»Húõ€H	Àã€Xã›ÿZŸSÿ⁄…¬ö[\‹ù»ÿ[›[]Tÿ€‹ôKÿ[›[]T›ôXZ—õ‹íXö]Ÿ]ÿ€‹ôPúôXZŸ›€àHúõ€H	Àã€Xã‹ÿ€‹ôI¬ö[\‹ù»ÿ[›[]RXö]›ô[ô›Xö]›ô[ô›Xô[Húõ€H	Àã€Xã⁄Xö]›ô[ô›	¬ö[\‹ù¬àö[\íXö]—õ‹ë]Kàõ‹õX[^ôRXö]ÿ⁄Y[\ÀàŸŸ€Tÿ⁄Y[Q^Kà—QR—VW”PëSÀà\HXö]ÿ⁄Y[SX\üHúõ€H	Àã€Xã⁄Xö]ÿ⁄Y[I¬ö[\‹ù»ùZ[YX\íX]X\]ô[ö[ô‘õ€\õ‹ë]HHúõ€H	Àã€Xã⁄X]X\	¬ö[\‹ù»ùZ[ŸYZ€Tô]öY]ÀùZ[ŸZY⁄Ÿ\öY\»Húõ€H	Àã€Xã›ŸYZ€Tô]öY]…¬ö[\‹ù¬à]ô\òYŸT€Y\›\úÀàùZ[ŸZY⁄[ú⁄Y⁄Ààõ‹õX]€Y\›\ú”Xô[à›\ú–ô]ŸY[ï[Y\ÀàXX‹õ‘õŸ‹ô\‹ÀüHúõ€H	Àã€Xã⁄X[Y]öX‹…¬ö[\‹ù\H»Xö]Ÿ^HHúõ€H	Àã›\\À—\⁄õÿ\ô[ùûI¬ö[\‹ù¬à\PòX⁄›\^ò\Àà^‹ùòX⁄›\ù[ôKàŸ]\›òX⁄›\]à[\‹ùòX⁄›\ö[KàY\ôŸQ[ùöY\–ûQ]Kàÿ]ôP[[ùöY\ÀüHúõ€H	Àã€Xã‹›‹òYŸI¬ö[\‹ù¬à€X\îﬁ[ò–‹ôY[ùX[Àà‹ôX]Q]öXŸTZ\ö[ôÀà\—]öXŸTﬁ[ò—[òXõYàõ⁄[ë]öXŸTZ\ö[ôÀàQëW”‘◊‘÷Sê◊—VêT◊—UëSïàÿYﬁ[ò–‹ôY[ùX[Ààô[[›P\QŸ[ô\ò][€ìõ›Àà\⁄]öXŸTﬁ[òÀàôYúô\⁄Z\ê€ŸKà\H]öXŸTﬁ[ò–‹ôY[ùX[ÀüHúõ€H	Àã€XãŸ]öXŸTﬁ[ò…¬ö[\‹ù»]ô[õŸ‹ô\‹ÀÿYôX€€\]Vúõ€Q[ùöY\À”ô^]ô[Húõ€H	Àã€Xãﬁ\›‹ôI¬ö[\‹ù¬àYSYYXÿ][€îô[Z[ô\úÀà\”YYZŸ[ïŸ^Kàô[Z[ô\î›‹òYŸRŸ^KüHúõ€H	Àã€Xã€YYô[Z[ô\ú…¬ö[\‹ù¬àïS–‘ëQSó‘’T“QÀàS‘ìíSë◊‘íUPS‘ì—‘ëT‘◊“—VKàÿY[‹õö[ô—ÿ]T⁄⁄\àÿY[‹õö[ô‘ö]X[õŸ‹ô\‹ÀàX\ö‘ö]X[›\€ôKà[‹õö[ô‘ö]X[Y]Kà[‹õö[ô‘ö]X[\ŸKà[›ôTö]X[›\àô^[‹õö[ô‘ö]X[›\àõ‹õX[^ôS[‹õö[ô‘ö]X[€€ôöYÀàõ‹õX[^ôTŸ[òÿ\ôR][\Ààö]X[Ÿ\]Y[òŸKàÿ]ôS[‹õö[ô—ÿ]T⁄⁄\àÿ]ôS[‹õö[ô‘ö]X[õŸ‹ô\‹Àà\H[‹õö[ô‘ö]X[€€ôöYÀà\H[‹õö[ô‘ö]X[õŸ‹ô\‹Àà\H[‹õö[ô‘ö]X[›\YüHúõ€H	Àã€Xã€[‹õö[ô—ÿ]I¬ö[\‹ù»\ŸSYôS‹»Húõ€H	Àã⁄€⁄‹À›\ŸSYôS‹…¬ö[\‹ù¬àQëW”‘◊–“Së—W—UëSïà\P€€ùô\ùô\›[àùZ[]\õZ[ö\›X“[ú⁄Y⁄Àà€€\]Tô]öY]Àà€€ùô\ùÿ\\ôKà‹ôX]Pÿ\\ôKà‹ôX]P€€õôX›‹í[ú›[òŸKà‹ôX]RYà‹ôX]Tô]öY]—òYùà[Z]€XZ[ë]ô[ùà\⁄ŸX‹ô]à[ù\úô][ú⁄Y⁄Ààõ›“\€Àà\ö[Ÿõ‹îô]öY]’\Kàô[]YYÀàôYúô\⁄X⁄\⁄[€î›]\Àà\Ÿ\ùô[][€ãà‹õ›\ûTô\€€ôY\ôXKàYôP\ôXUò[ú⁄][€ë]ô[ùÀàX]⁄\–\ôXQö[\ãà\úŸSYôP\ôXKàô\€€ôSYôP\ôXKà\H\ôXQö[\ãà\Hÿ\\ôU\ôŸ]\Kà\HX⁄\⁄[€ãà\H€XZ[ë]ô[ù\Kà\H[ú⁄Y⁄à\H€õ›€YŸR][Kà\HYôP\ôXRŸ^Kà\Hô]öY]Àà\Hô]öY]’\KüHúõ€H	Àã€Xã€Yô[‹…¬ö[\‹ù»\P€€ùô\ù—\⁄õÿ\ôHúõ€H	Àã€Xã€Yô[‹ÀŸ\⁄õÿ\ôúöYŸI¬ö[\‹ù¬à\QX⁄\⁄[€êò]⁄àò]⁄úõ€Tô]öY]ÀàX⁄YPÿ\\ôR[ú]àYò][õ›][ôSYX[Ààô]öY]—úõ€Pò]⁄àôX€‹ôX⁄\⁄[€ê]Y]Ààô[Y[Xô\ë^X›]YŸ^\Ààô\€€ôQX⁄\⁄[€ëõY‹Àà\HX⁄\⁄[€êò]⁄üHúõ€H	Àã€XãŸX⁄\⁄[€ãY[ô⁄[ôI¬ö[\‹ù»ÿ\\ôT⁄Y]Húõ€H	Àã›öY]‹À€Yô[‹À–ÿ\\ôT⁄Y]	¬ö[\‹ù»⁄[ôŸTô]öY]‘⁄Y]Húõ€H	Àãÿ€€\€ô[ùÀ–⁄[ôŸTô]öY]‘⁄Y]	¬ö[\‹ù»ÿÿ[ö[‹ö]HHúõ€H	Àã€XãŸŸ[ô\ò][€ò[ù[ã€Ÿ⁄X…¬ö[\‹ù»Ÿ[ô\ò][€ò[ù[ïöY]»Húõ€H	Àã›öY]‹À€Yô[‹À—Ÿ[ô\ò][€ò[ù[ïöY]…¬ö[\‹ù»€€[X[ô[]HHúõ€H	Àã›öY]‹À€Yô[‹À–€€[X[ô[]I¬ö[\‹ù»X⁄\⁄[€ïöY]»Húõ€H	Àã›öY]‹À€Yô[‹À—X⁄\⁄[€ïöY]…¬ö[\‹ù»€ÿ[]Z[öY]»Húõ€H	Àã›öY]‹À€Yô[‹À—€ÿ[]Z[öY]…¬ö[\‹ù»[òõﬁöY]»Húõ€H	Àã›öY]‹À€Yô[‹À“[òõﬁöY]…¬ö[\‹ù»[ú⁄Y⁄’öY]»Húõ€H	Àã›öY]‹À€Yô[‹À“[ú⁄Y⁄’öY]…¬ö[\‹ù»[ùY‹ò][€ú’öY]»Húõ€H	Àã›öY]‹À€Yô[‹À“[ùY‹ò][€ú’öY]…¬ö[\‹ù»€õ›€YŸUöY]»Húõ€H	Àã›öY]‹À€Yô[‹À“€õ›€YŸUöY]…¬ö[\‹ù»\TXõ\⁄Y€õ›€YŸHHúõ€H	Àã€Xã‹ôY[…¬ö[\‹ù»õ⁄ôX›]Z[öY]»Húõ€H	Àã›öY]‹À€Yô[‹À‘õ⁄ôX›]Z[öY]…¬ö[\‹ù»ô]öY]’öY]»Húõ€H	Àã›öY]‹À€Yô[‹À‘ô]öY]’öY]…¬ö[\‹ù»⁄Y€ò[’öY]»Húõ€H	Àã›öY]‹À€Yô[‹À‘⁄Y€ò[’öY]…¬ö[\‹ù»YôP\ôXQö[\ãYôP\ôXSX\öÀYôP\ôXTŸ[X›Húõ€H	Àã›öY]‹À€Yô[‹À€Yô[‹’ZI¬ö[\‹ù»[‹õö[ô—ÿ]HHúõ€H	Àãÿ€€\€ô[ùÀ”[‹õö[ô—ÿ]I¬ö[\‹ù»]ô[ö[ô—ÿ]HHúõ€H	Àãÿ€€\€ô[ùÀ—]ô[ö[ô—ÿ]I¬ö[\‹ù»õŸ‹ô\‹“Xìò]àHúõ€H	Àãÿ€€\€ô[ùÀ‘õŸ‹ô\‹“Xìò]â¬ö[\‹ù»Xë]S[ÿö[P⁄õ€YHHúõ€H	Àãÿ€€\€ô[ùÀ€Xã”Xë]S[ÿö[P⁄õ€YI¬ö[\‹ù»õ›][ôS[ŸTŸ[X›‹àHúõ€H	Àãÿ€€\€ô[ùÀ‘õ›][ôS[ŸTŸ[X›‹â¬ö[\‹ù»ö]ò]Sõ›\‘⁄Y]Húõ€H	Àãÿ€€\€ô[ùÀ‘ö]ò]Sõ›\‘⁄Y]	¬ö[\‹ù¬àYò][Y\]ôSYôP€€ôöYÀàXïZP€\‹”ò[Y\Àà\Sõ›—Y\T€XﬁKàôXYY\]ôQúõ€TŸ][ô‹Àà\HY\]ôSYôP€€ôöYÀüHúõ€H	Àã€XãÿY\]ôKX€‹ôI¬ö[\‹ù¬à€€[Z]ﬁ\›[P⁄[ôŸKàûS‹[îﬁ\›[P⁄[ôŸKà[ô‘ﬁ\›[P⁄[ôŸKà\Hõ–⁄[ôŸTŸ\‹⁄[€ãüHúõ€H	Àã€XãÿY\]ôKX€‹ôK⁄õÀ‹ﬁ\›[KX⁄[ôŸI¬ö[\‹ù»ûP[ú›Ÿ\í€õ›€YŸT]Y\ûK\H€õ›€YŸT]Y\ûP[ú›Ÿ\àHúõ€H	Àã€XãÿY\]ôKX€‹ôK⁄õÀ⁄€õ›€YŸK\]Y\ûI¬ö[\‹ù»€õ›€YŸP[ú›Ÿ\î⁄Y]Húõ€H	Àãÿ€€\€ô[ùÀ“€õ›€YŸP[ú›Ÿ\î⁄Y]	¬ö[\‹ù»[Z]Y\]ôQ]ô[ùHúõ€H	Àã€XãÿY\]ôKX€‹ôKŸ]ô[ùÀ‹›‹ôI¬ö[\‹ù¬à\‹Ÿ\‹—Z[TõŸ‹ô\‹Àà€€\]Yö]X[›\Àà]ô[ö[ô”›€ôYXö]Ÿ^\Àà]ô[ö[ô‘ô[XZ[ö[ôÀà[ùûR\”YX[à\“Xö]ô[]ò[ùõ›Àà\“XYôX€›ô\ûQ€ôKàõ›–⁄\Xô[à›ô\ùöY]‘€›àö]X[›€ôYXö]Ÿ^\Ààö]X[ô[XZ[ö[ôÀàŸ[X›õ›“][\ÀàŸ[X››ô\ùöY]“][\Àà“R—W”QPS“Qà⁄›[⁄›—Z[P€‹ŸKàﬁ[ò‘õ›Z[î⁄ZŸSù]ö][€ãàŸYZ—]RŸ^\Àà\H^T€›à\Hõ›“][KüHúõ€H	Àã€XãŸZ[Qõ›…¬ö[\‹ù¬àÿYõŸSYX\›\ô[Y[ùÀàŸ[X›Ÿ^UŸZY⁄üHúõ€H	Àã€XãÿõŸSYX\›\ô[Y[ù	¬ö[\‹ù»Xö]]Z[⁄Y]Húõ€H	Àãÿ€€\€ô[ùÀ“Xö]]Z[⁄Y]	¬ö[\‹ù»Yò][Xö]⁄[ô\“Xö]€€\]K\“Xö]Ÿ^HHúõ€H	Àã€Xã⁄Xö]⁄[ô…¬ö[\‹ù»[€ŸXö][ôHHúõ€H	Àã€Xã€[€ŸXö]	¬ö[\‹ù»\[ôõ›\õò[õ‹õX]õ›S[ôKY\ôŸT]ZX⁄”õ›K\úŸT]ZX⁄”õ›HHúõ€H	Àã€Xã⁄[òõ›[ôõ›I¬ö[\‹ù¬à\‹Ÿ\‹—^P€€\][ô\‹ÀàUëSíSë◊–”‘—W–“P“◊“QÀàUëSíSë◊–”‘—W–“P“◊”QUKàõ‹õX[^ôQ]ô[ö[ô—ÿ]P€€ôöYÀà\H]ô[ö[ô–€‹ŸP⁄X⁄“Yà\H]ô[ö[ô—ÿ]P€€ôöYÀüHúõ€H	Àã€XãŸ^P€‹ŸI¬ö[\‹ù¬àQëW”‘◊—RSW—UëSï◊—UëSïà\[ôZ[Q]ô[ùàùZ[[ô‘]⁄àÿ[ï[ô—[ùûT]⁄àÿ[ï[ô‘ö]X[›\àÿ\\ôTô]ö[›\’ò[Y\Àà‹ôX]Q[ùûT]⁄]ô[ùà‹ôX]Tö]X[›\]ô[ùàRSW—UëSï◊“—VKà]ô[ù—õ‹ë]Kàõ‹õX]]ô[ù[YKàÿYZ[Q]ô[ùÀà€›\òŸSXô[à›[[X\ö^ôQZ[Q]ô[ùà\HZ[Q]ô[ùà\HZ[Q]ô[ù€›\òŸKà\H[ùûT]⁄]ô[ùüHúõ€H	Àã€XãŸZ[Q]ô[ù…¬ö[\‹ù	Àã€][ò⁄ò‹‹…¬Çù\HöY]»H\öY]¬ù\H[YTôYô\ô[òŸHH	€Y⁄	»	Ÿ\ö…»	‹ﬁ\›[I¬ù\HXÿŸ[ùôYô\ô[òŸHH	⁄XŸI»	›\úòX€›I»	‹ÿYŸI»	€ÿŸX[â»	€[X…»	ÿ[Xô\â¬Çò€€ú›P–—Sï”‘S”îŒà\úò^O»YàXÿŸ[ùôYô\ô[òŸN»Xô[à›ö[ôŒ»›ÿ]⁄à›ö[ô»OàH¬à»Yà	⁄XŸIÀXô[à	“XŸIÀ›ÿ]⁄à	»–—ëP—å…»Kà»Yà	›\úòX€›IÀXô[à	’\úòZ€›IÀ›ÿ]⁄à	»ÿÕÕŸçòâ»Kà»Yà	‹ÿYŸIÀXô[à	‘ÿ[ôZIÀ›ÿ]⁄à	»ÕôéçŸ	»Kà»Yà	€ÿŸX[âÀXô[à	”ﬁôX[âÀ›ÿ]⁄à	»ÕôNåI»Kà»Yà	€[X…ÀXô[à	—õYY\âÀ›ÿ]⁄à	»ÿLÿé	»Kà»Yà	ÿ[Xô\âÀXô[à	–ô\õú›Z[âÀ›ÿ]⁄à	»ÿçéÕ…»KóBÇò€€ú›P–—Sï“Q»HP–—Sï”‘S”îÀõX\
+‹[€àOà‹[€ãöY
+Bù\H[ô\ôﬁS]ô[Hõ€ìù[XõO\⁄õÿ\ô[ùûV…Ÿ[ô\ôﬁS]ô[	◊OÇù\Hõ›][ôRŸ^HBà	ÿúôX][ô—€ôI»	ÿ€€⁄›Ÿ\â»	‹õ›Z[î⁄ZŸI¬à	‹\⁄\—€ôI»	‹‹]X]—€ôI»	›ÿ[⁄]€ôI»	‹[ö—€ôI¬à	Ÿ‹ò]]YQ€ôI»	Ÿõÿ›\—€ôI»	›⁄[õô\ì[ŸQ€ôI¬à	⁄õ›\õò[€ôI»	Ÿò[Z[U[YQ€ôI¬Çù\H\Ÿ][ô‹»H¬àò[YNà›ö[ô¬à[YNà[YTôYô\ô[òŸBàXÿŸ[ùàXÿŸ[ùôYô\ô[òŸBàõÿ›\”Z[ù]\Œàù[Xô\Çàõ›Z[ë€ÿ[àù[Xô\Çàÿ[‹öYQ€ÿ[àù[Xô\Çàò]€ÿ[àù[Xô\Çàÿ\òú—€ÿ[àù[Xô\ÇàöXô\ë€ÿ[àù[Xô\Çà äàõ‹àìRN»HöX⁄Ÿ\Ÿ]ùà
+ã¬àZY⁄€Nàù[Xô\Çà äà\ôŸ]ŸZY⁄»HöX⁄Ÿ\Ÿ]ùà
+ã¬àŸZY⁄€ÿ[ŸŒàù[Xô\Çà äà‹[€ò[ò\Ÿ[[ôHõ‹àõŸ‹ô\‹Œ»H\ú›\àŸ\‹ZX⁄\ù\àŸ\ùà
+ã¬àŸZY⁄›\ùŸŒàù[Xô\ÇàX›]ôRXö]Œà›ö[ô÷◊Bà äà[\H»Z\‹⁄[ô»H]ô\ûH^Kàò[Y\»S[»8†)àèT€Àà
+ã¬àXö]ÿ⁄Y[\ŒàXö]ÿ⁄Y[SX\à\⁄õÿ\ô\”^[›]à\⁄õÿ\ô\”^[›]à äà‹Z[éà€ŸùYY\»ô[Z[ô\ú»⁄[à€ÿ⁄»X]⁄\»
+õ»]]»\õZ\‹⁄[€à\⁄ Kà
+ã¬àYY\‘ô[Z[ô\ú—[òXõYàõ€€X[Çà äàö\ú›‹[àŸàH^Nà€€\]H\ŸH⁄YŸ]»ôYõ‹ôH]]Kà
+ã¬à[‹õö[ô—ÿ]Q[òXõYàõ€€X[Çà[‹õö[ô‘ö]X[à[‹õö[ô‘ö]X[€€ôöY¬à]ô[ö[ô—ÿ]Nà]ô[ö[ô—ÿ]P€€ôöY¬àY\]ôNàY\]ôSYôP€€ôöY¬üBÇù\H\⁄õÿ\ô\”^[›]H¬à‹ô\éà\⁄õÿ\ô\‘ŸX›[€ñ◊BàY[éà\⁄õÿ\ô\‘ŸX›[€ñ◊BüBÇù\Hõÿ›\‘Ÿ\‹⁄[€àH¬à]Nà›ö[ô¬àZ[ù]\Œàù[Xô\Çà\⁄“[ô^Œàù[Xô\Çàõ›][ôRŸ^OŒàõ›][ôRŸ^BüBÇù\Hÿ\››]HH¬àY\‹ÿYŸNà›ö[ô¬àX›[€ìXô[Œà›ö[ô¬à€êX›[€èŒà
+
+HOàõ⁄YüHù[Çù\H\⁄õÿ\ô\‘ö[‹ö]HH	‹I»	‹â»	‹…»	‹	¬Çò€€ú›íS‘íUW”‘ëTéà\⁄õÿ\ô\‘ö[‹ö]V◊HH…‹IÀ	‹âÀ	‹…À	‹	◊BÇò€€ú›íS‘íUW”QUNàôX€‹ô\⁄õÿ\ô\‘ö[‹ö]K»Xô[à›ö[ôŒ»€€‹éà›ö[ô»OàH¬àNà»Xô[à	‘IÀ€€‹éà	›ò\äKY[ôŸ\äI»Kàéà»Xô[à	‘âÀ€€‹éà	›ò\äK]ÿ\õö[ô I»KàŒà»Xô[à	‘…À€€‹éà	›ò\äKXõYJI»Kàà»Xô[à	‘	À€€‹éà	›ò\äK]^[]]Y
+I»KüBÇôù[ò›[€àô^ö[‹ö]J›\úô[ùà\⁄õÿ\ô\‘ö[‹ö]JNà\⁄õÿ\ô\‘ö[‹ö]H¬à€€ú›[ô^HíS‘íUW”‘ëTãö[ô^Ÿä›\úô[ù
+Bàô]\õàíS‘íUW”‘ëTñ [ô^
+»JH	HíS‘íUW”‘ëTãõ[ô›BüBÇù\H\⁄õÿ\ô\’\⁄»H¬àYà›ö[ô¬à]Nà›ö[ô¬àYŒà›ö[ô¬à[YNà›ö[ô¬à€ôNàõ€€X[Çàö[‹ö]Nà\⁄õÿ\ô\‘ö[‹ö]Bà[õôYZ[ù]\œŒàù[Xô\ÇàX›X[Z[ù]\œŒàù[Xô\ÇàYôP\ôXOŒàYôP\ôXRŸ^BüBÇù\H\⁄õÿ\ô\‘›\[Y[ùH¬àYà›ö[ô¬àò[YNà›ö[ô¬àúò[ôà›ö[ô¬à›ÿ⁄Œàù[Xô\Çà[ö]à›ö[ô¬àZ[U\ŸNàù[Xô\ÇàZ[U[ö]à›ö[ô¬à äàYÿXﬁH»‹[€ò[8†%XÿŸ[ù\»\ö]ôY[àRHúõ€HY€ò[YH
+ã¬à€€‹èŒà›ö[ô¬üBÇò€€ú›’TSQSï–P–—Sï»H¬à	›ò\äKXXÿŸ[ù
+IÀà	›ò\äK\ÿYŸJIÀà	›ò\äKXõYJIÀà	›ò\äK[[X IÀà	›ò\äK]ÿ\õö[ô IÀóH\»€€ú›Çôù[ò›[€à\⁄›\[Y[ùŸ^Jò[YNà›ö[ô Nàù[Xô\à¬à]\⁄Hàõ‹à
+][ô^H»[ô^ò[YKõ[ô›»[ô^
+œHJH¬à\⁄H
+
+\⁄JHH\⁄
+»ò[YKò⁄\ê€ŸP]
+[ô^
+JHàBàô]\õàX]òXú \⁄
+BüBÇôù[ò›[€à›\[Y[ùXÿŸ[ù
+][NàX⁄œ\⁄õÿ\ô\‘›\[Y[ù	⁄Y	»	€ò[YIœã[ô^àù[Xô\äNà›ö[ô»¬à€€ú›Ÿ^HH][KöY][Kõò[YH›ö[ô [ô^
+Bàô]\õà’TSQSï–P–—Sï÷⁄\⁄›\[Y[ùŸ^JŸ^JH	H’TSQSï–P–—SïÀõ[ô›BüBÇôù[ò›[€à›\[Y[ù^\‘ô[XZ[ö[ô ›ÿ⁄Œàù[Xô\ãZ[U\ŸNàù[Xô\äNàù[Xô\àù[¬àYà
+Z[U\ŸHH
+Hô]\õàù[àô]\õàX]ôõ€‹ä›ÿ⁄»»Z[U\ŸJBüBÇù\Hõ⁄ôX››]\»H	ÿX›]ôI»	‹]\ŸY	»	Ÿ€ôI»	ÿ\ò⁄]ôY	¬Çù\Hõ⁄ôX›Z[\›€ôHH»Yà›ö[ôŒ»]Nà›ö[ôŒ»€ôNàõ€€X[é»YOŒà›ö[ô»BÇù\H\⁄õÿ\ô\–õÿ\ôH¬àYà›ö[ô¬àXô[à›ö[ô¬à€›[ùàù[Xô\Çà\⁄‹Œà\⁄õÿ\ô\’\⁄÷◊Bà\ÿ‹ö\[€èŒà›ö[ô¬à›]€€YOŒà›ö[ô¬à›]\œŒàõ⁄ôX››]\¬àö[‹ö]OŒà\⁄õÿ\ô\‘ö[‹ö]Bà›\ù]OŒà›ö[ô¬à\ôŸ]]OŒà›ö[ô¬àô^X›[€èŒà›ö[ô¬àô^X›[€ï\⁄“YŒà›ö[ô¬àZ[\›€ô\œŒàõ⁄ôX›Z[\›€ôV◊Bà€ÿ[YŒà›ö[ô¬à\›X›]ö]P]Œà›ö[ô¬àYôP\ôXOŒàYôP\ôXRŸ^BüBÇù\H⁄‹[ô“X€€íŸ^HH	Ÿõ\⁄…»	Ÿö\⁄	»	‹[	»	ÿòY…»	Ÿõ‹]	¬Çù\H\⁄õÿ\ô\‘⁄‹[ô“][HH¬àYà›ö[ô¬à äàŸ[X[ùX»X€€àŸ^H8†%ô]ô\à[à[[⁄öH
+ã¬àX€€éà⁄‹[ô“X€€íŸ^H›ö[ô¬àò[YNà›ö[ô¬àõ›Nà›ö[ô¬àöXŸNàù[Xô\Çà€ôNàõ€€X[Çà›‘›ÿ⁄œŒàõ€€X[ÇüBÇò€€ú›“‘Së◊“P””ó”PTàôX€‹ô⁄‹[ô“X€€íŸ^K\[Ÿà⁄‹[ô–òYœàH¬àõ\⁄Œàõ\⁄–€€öXÿ[àö\⁄àö\⁄àõ‹]àõ‹]à[à[àòYŒà⁄‹[ô–òYÀüBÇôù[ò›[€à⁄‹[ô“X€€íŸ^Jò]Œà›ö[ô Nà⁄‹[ô“X€€íŸ^H¬à€€ú›ò[YHHò]Àùö[J
+Kù”›Ÿ\êÿ\ŸJ
+BàYà
+ò[YHOOH	Ÿõ\⁄…»ò[YHOOH	Ÿö\⁄	»ò[YHOOH	‹[	»ò[YHOOH	ÿòY…»ò[YHOOH	Ÿõ‹]	 Hô]\õàò[YBàÀ»YÿXﬁH[[⁄öH»[ö€õ›€à8°§àòY¬àô]\õà	ÿòY…¬üBÇôù[ò›[€à⁄‹[ô“][RX€€ä»X€€àNà»X€€éà›ö[ô»JH¬à€€ú›X€€àH“‘Së◊“P””ó”PT‹⁄‹[ô“X€€íŸ^JX€€äWBàô]\õàX€€à⁄^ôO^ÃMüHœÇüBÇù\H\⁄õÿ\ô\–ö[›]\»H	‹ZY	»	€‹[â»	€›ô\ôYI¬Çù\H\⁄õÿ\ô\–ö[H¬àYà›ö[ô¬àò[YNà›ö[ô¬à›Xù]Nà›ö[ô¬à[[›[ùàù[Xô\ÇàYNà›ö[ô¬à›]\Œà\⁄õÿ\ô\–ö[›]\¬à€€‹éà›ö[ô¬üBÇù\H\⁄õÿ\ô\”YYXÿ][€àH¬àYà›ö[ô¬àò[YNà›ö[ô¬à‹ÿYŸNà›ö[ô¬à[YNà›ö[ô¬àõ›\Œà›ö[ô¬àYôôX›à›ö[ô¬à⁄YQYôôX›Œà›ö[ô¬à äà\ôXÿ]Y\ŸHZŸ[ë]H8†%Ÿ\õ‹àŸYY€YÿXﬁH
+ã¬àZŸ[éàõ€€X[Çà äàVVVKSSKQ⁄[àZŸ[é»€X\ôYYù\àZYöY⁄ûH€€\\ö[ô»»Ÿ^H
+ã¬àZŸ[ë]OŒà›ö[ô¬à äà€Ÿùô[Z[ô\à][YX⁄[àŸ][ô‹ÀõYY\‘ô[Z[ô\ú—[òXõY
+ã¬àô[Z[ôŒàõ€€X[Çà€€‹éà›ö[ô¬üBÇôù[ò›[€à\”YYXÿ][€ïZŸ[ïŸ^J][Nà\⁄õÿ\ô\”YYXÿ][€ãŸ^Nà›ö[ô Nàõ€€X[à¬àô]\õà\”YYZŸ[ïŸ^J][KŸ^JBüBÇôù[ò›[€àõ‹õX[^ôSYYXÿ][€ä][Nà\⁄õÿ\ô\”YYXÿ][€ãŸ^Nà›ö[ô Nà\⁄õÿ\ô\”YYXÿ][€à¬àYà
+][KùZŸ[à	âàZ][KùZŸ[ë]JH¬àô]\õà»ããö][KZŸ[ë]NàŸ^KZŸ[éàùYHBàBàô]\õà][BüBÇù\H\⁄õÿ\ô\—€ÿ[[YYúò[YHH	“òZâ»	‘]X\ù[	»	”[€ò]	»	’€ÿ⁄I¬Çù\H€ÿ[⁄X⁄“[àH»Yà›ö[ôŒ»]à›ö[ôŒ»õ›Nà›ö[ôŒ»ò[YOŒàù[Xô\àBÇù\H\⁄õÿ\ô\—€ÿ[H¬àYà›ö[ô¬à]Nà›ö[ô¬à[YYúò[YNà\⁄õÿ\ô\—€ÿ[[YYúò[YBà\òŸ[ùàù[Xô\ÇàYQ]Nà›ö[ô¬à€€‹éà›ö[ô¬à\ÿ‹ö\[€èŒà›ö[ô¬à›]€€YOŒà›ö[ô¬àY]öXœŒà›ö[ô¬à\ôŸ]Œàù[Xô\Çà›\úô[ùŒàù[Xô\Çà[ö]Œà›ö[ô¬à›]\œŒà	ÿX›]ôI»	‹]\ŸY	»	Ÿ€ôI»	Ÿõ‹Y	¬à⁄X⁄“[úœŒà€ÿ[⁄X⁄“[ñ◊BàYôP\ôXOŒàYôP\ôXRŸ^BüBÇù\Hö[ò[òŸT›[[X\ûHH¬à[€ùQö^Yàù[Xô\ÇàôX›\úö[ô–€›[ùàù[Xô\Çà‹[î›[Nàù[Xô\Çà‹[ê€›[ùàù[Xô\Çà›ô\ôYT›[Nàù[Xô\Çà›ô\ôYP€›[ùàù[Xô\Çàô\‹›\ôNàù[Xô\Çàô^YNà»ò[YNà›ö[ôŒ»YNà›ö[ôŒ»[[›[ùàù[Xô\àHù[à[ùŒà›ö[ô÷◊BüBÇôù[ò›[€à›[Pö[[[›[ù ö[Œà\⁄õÿ\ô\–ö[◊JNàù[Xô\à¬àô]\õàö[ÀúôYXŸJ
+›[ö[
+HOà›[
+»
+ù[Xô\ãö\—ö[ö]Jö[ò[[›[ù
+H»ö[ò[[›[ùà
+K
+BüBÇôù[ò›[€à\úŸPö[YQ]JYNà›ö[ô Nà›ö[ô»ù[¬à€€ú›ò[YHH›ö[ô YHœ»	… Kùö[J
+BàYà
+◊óÕKWÃüKWÃüIÀù\›
+ò[YJJHô]\õàò[YBàô]\õàù[üBÇôù[ò›[€àﬁX€Pö[›]\ ›]\Œà\⁄õÿ\ô\–ö[›]\ Nà\⁄õÿ\ô\–ö[›]\»¬à›⁄]⁄
+›]\ H¬àÿ\ŸH	€‹[âŒÇàô]\õà	‹ZY	¬àÿ\ŸH	‹ZY	ŒÇàô]\õà	€›ô\ôYI¬àÿ\ŸH	€›ô\ôYIŒÇàô]\õà	€‹[â¬àYò][à¬à€€ú›Ÿ^]\›]ôNàô]ô\àH›]\¬àô]\õàŸ^]\›]ôBàBàBüBÇôù[ò›[€à‹ôX]Pö[òYù
+à⁄[ôà	‹ôX›\úö[ô…»	€‹[âÀàŸ^Nà›ö[ôÀà[ô^àù[Xô\ãäNà\⁄õÿ\ô\–ö[¬àô]\õà¬àYà‹û\Àúò[ô€UURQ
+
+Kàò[YNà⁄[ôOOH	‹ôX›\úö[ô…»»	”ô]YHö^€‹›[â»à	”ô]YHôX⁄ù[ô…Àà›Xù]Nà⁄[ôOOH	‹ôX›\úö[ô…»»	€[€ò]X⁄	»à	…Àà[[›[ùààYNàŸ^Kà›]\Œà	€‹[âÀà€€‹éà’TSQSï–P–—Sï÷⁄[ô^	H’TSQSï–P–—SïÀõ[ô›KàBüBÇôù[ò›[€à\ö]ôQö[ò[òŸT›[[X\ûJö[ò[òŸ\Œà\⁄õÿ\ô\‘›]V…Ÿö[ò[òŸ\…◊JNàö[ò[òŸT›[[X\ûH¬à€€ú›[úZY‹[àHö[ò[òŸ\Àõ‹[êö[Àôö[\äö[Oàö[ú›]\»OOH	€‹[â Bà€€ú››ô\ôYPö[»HÀããôö[ò[òŸ\ÀúôX›\úö[ôÀããôö[ò[òŸ\Àõ‹[êö[◊Kôö[\äö[Oàö[ú›]\»OOH	€›ô\ôYI Bà€€ú›[€ùQö^YH›[Pö[[[›[ù ö[ò[òŸ\ÀúôX›\úö[ô Bà€€ú›‹[î›[HH›[Pö[[[›[ù [úZY‹[äBà€€ú››ô\ôYT›[HH›[Pö[[[›[ù ›ô\ôYPö[ Bà€€ú›ô\‹›\ôHH[€ùQö^Yàà»X]úõ›[ô
+
+
+‹[î›[H
+»›ô\ôYT›[JH»[€ùQö^Y
+H
+àL
+BààÇà€€ú›ô^ÿ[ôY]\»HÀããôö[ò[òŸ\ÀúôX›\úö[ôÀããôö[ò[òŸ\Àõ‹[êö[◊Bàôö[\äö[Oàö[ú›]\»OOH	€‹[â»ö[ú›]\»OOH	€›ô\ôYI BàõX\
+ö[Oà¬à€€ú›YHH\úŸPö[YQ]Jö[ôYJBàô]\õàYH»»ò[YNàö[õò[YH	‘ôX⁄ù[ô…ÀYK[[›[ùàö[ò[[›[ùHàù[àJBàôö[\ä
+][JNà][H\»»ò[YNà›ö[ôŒ»YNà›ö[ôŒ»[[›[ùàù[Xô\àHOàõ€€X[ä][JJBàú€‹ù
+
+KäHOàKôYKõÿÿ[P€€\\ôJãôYJJBà€€ú›ô^YHHô^ÿ[ôY]\÷ÃHœ»ù[Çà€€ú›[ùŒà›ö[ô÷◊HH◊BàYà
+›ô\ôYPö[Àõ[ô›à
+H¬à[ùÀú\⁄
+à›ô\ôYPö[Àõ[ô›OOHBà»	—Z[ôHôX⁄ù[ô»\›0Ôô\ô∞ÈY»8†%ùY\ú›€0Èô[ã[õàŸZ]\ú[ô[ãâ¬àà	€›ô\ôYPö[Àõ[ô›HôX⁄ù[ôŸ[à⁄[ô0Ôô\ô∞ÈY»8†%ùZY»Xò\òôZ][ãô]õ‹àô]Y\»^ùZ€€[]òà
+BàBàYà
+[€ùQö^Yà	âà‹[î›[H
+»›ô\ôYT›[Hà[€ùQö^Y
+àçJH¬à[ùÀú\⁄
+	”Ÿôô[ôHô]∞ÈŸH⁄[ôô[]]àÿ⁄ù[H[€ò]Ÿö^8†%›\ûàö[‹ö\⁄Y\ô[ãâ BàBÇàô]\õà¬à[€ùQö^YàôX›\úö[ô–€›[ùàö[ò[òŸ\ÀúôX›\úö[ôÀõ[ô›à‹[î›[Kà‹[ê€›[ùà[úZY‹[ãõ[ô›à›ô\ôYT›[Kà›ô\ôYP€›[ùà›ô\ôYPö[Àõ[ô›àô\‹›\ôKàô^YKà[ùŒà[ùÀú€XŸJäKàBüBÇôù[ò›[€àö[›]\”Xô[
+›]\Œà\⁄õÿ\ô\–ö[›]\ Nà›ö[ô»¬à›⁄]⁄
+›]\ H¬àÿ\ŸH	‹ZY	ŒÇàô]\õà	–ô^òZ	¬àÿ\ŸH	€‹[âŒÇàô]\õà	”Ÿôô[â¬àÿ\ŸH	€›ô\ôYIŒÇàô]\õà	Áô\ô∞ÈY…¬àYò][à¬à€€ú›Ÿ^]\›]ôNàô]ô\àH›]\¬àô]\õàŸ^]\›]ôBàBàBüBÇù\H\⁄õÿ\ô\”\›⁄[ôH	‹X⁄…»	›⁄\⁄\›	»	ÿõ€⁄‹…»	‹ôX⁄\\…»	ÿ›\›€I¬Çù\H\⁄õÿ\ô\”\›][HH¬àYà›ö[ô¬à]Nà›ö[ô¬àõ›Nà›ö[ô¬à€ôNàõ€€X[ÇüBÇù\H\⁄õÿ\ô\”\›H¬àYà›ö[ô¬à]Nà›ö[ô¬à⁄[ôà\⁄õÿ\ô\”\›⁄[ôà][\Œà\⁄õÿ\ô\”\›][V◊BüBÇò€€ú›T’““Së”PëSŒàôX€‹ô\⁄õÿ\ô\”\›⁄[ô›ö[ôœàH¬àX⁄Œà	‘X⁄€\›IÀà⁄\⁄\›à	’›[úÿ⁄\›IÀàõ€⁄‹Œà	–∞Ô⁄\âÀàôX⁄\\Œà	‘ô^ô\IÀà›\›€Nà	”\›IÀüBÇù\H\⁄õÿ\ô\‘›]HH¬à›ô\ùöY]Œà¬à]SXô[à›ö[ô¬àﬁ[ò‘›]\Œà›ö[ô¬àﬁ[ò’[YNà›ö[ô¬àÿ€‹ôNàù[Xô\ÇàXö]Œàù[Xô\ÇàŸ‹Œàù[Xô\Çàõ⁄ôX›Œàù[Xô\ÇàBàõÿ›\’Ÿ‹Œà\⁄õÿ\ô\’\⁄÷◊Bà›\[Y[ùŒà\⁄õÿ\ô\‘›\[Y[ù◊BàYYXÿ][€úŒà\⁄õÿ\ô\”YYXÿ][€ñ◊Bà€ÿ[Œà\⁄õÿ\ô\—€ÿ[◊Bàõÿ\ôŒà\⁄õÿ\ô\–õÿ\ô◊Bà⁄‹[ôŒà¬à›[àù[Xô\Çà][\Œà\⁄õÿ\ô\‘⁄‹[ô“][V◊BàBà\›Œà\⁄õÿ\ô\”\›◊Bà›]Œà¬à]ô\òYŸNàù[Xô\Çàô\›àù[Xô\Çàö]Nàù[Xô\ÇàŸZY⁄àù[Xô\ÇàŸYZ€Pò\úŒàù[Xô\ñ◊BàX]X\àù[Xô\ñ◊Bàõ⁄ôX›Œà\úò^O»Yà›ö[ôŒ»ò[YNà›ö[ôŒ»\òŸ[ùàù[Xô\é»€€‹éà›ö[ô»OÇàBàö[ò[òŸ\Œà¬à[€ùQö^Yàù[Xô\Çà‹[éàù[Xô\Çà›ô\ôYNàù[Xô\ÇàôX›\úö[ôŒà\⁄õÿ\ô\–ö[◊Bà‹[êö[Œà\⁄õÿ\ô\–ö[◊BàBüBÇò€€ú›T“ì–Të‘T◊’Pî»HPó—UW–TëPT¬Çù\H\⁄õÿ\ô\‘ŸX›[€àHXë]TŸX›[€ÇÇò€€ú›—USë‘◊“—VHH	€YôK[‹À]åK\Ÿ][ô‹…¬ã äà›‹ô\»H]HŸàH\›‹\⁄€»H[ùõ»[ö[X][€à€õH^\»€àHö\ú›‹[àŸàH^Kà
+ã¬ò€€ú›‘T““—VHH	€YôK[‹À\‹\⁄Y^I¬ò€€ú›URP“◊”ì’W“—VHH	€YôK[‹À\]ZX⁄À[õ›I¬ò€€ú›T“ì–Të‘T◊“—VHH	€YôK[‹À]åKY\⁄õÿ\ô\\…¬Çôù[ò›[€à⁄›[û\\‹”[‹õö[ô—ÿ]JX›[€éà\X›[€àù[
+Nàõ€€X[à¬àô]\õàX›[€èÀö⁄[ôOOH	€õ›I¬àX›[€èÀö⁄[ôOOH	€Ÿ…¬àX›[€èÀö⁄[ôOOH	ÿY]\⁄…¬àX›[€èÀö⁄[ôOOH	Ÿõÿ›\…¬àX›[€èÀö⁄[ôOOH	ÿÿ\\ôI¬üBÇãÀ»8• 8• ]Húõ€Hõ⁄ôX›òXûH8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• 8• ò€€ú›Qó’T“‘»H¬à	”[‹õö[ô»õ›][ôHXúÿ⁄YpÁŸ[âÀà	’òZ[ö[ô»0≠»HZ[à€‹ö€›]	Àà	Ãìÿ\‹Ÿ\àö[öŸ[âÀà	—Y\€‹ö»õÿ⁄»0≠»LZ[âÀà	‘›\[Y[ù»Z[õôZY[âÀà	Ã»Ÿ‹»]\»õ⁄ôZ›	Àà	–Xô[ôP⁄X⁄ÀZ[à0≠»ôYõZ›[€âÀóH\»€€ú›Çò€€ú›ì»H…—Z[ú›YY…À	–]Yòò]IÀ	Áù[ô…À	‘ö]]\…À	“€€ú›[ûâÀ	—ŸYô\›Y›	À	’ô\ùYYù	À	’ô\ò[öŸ\ù	À	”YZ\›\úÿ⁄Yù	À	‘€›]ô\∞Èâ◊H\»€€ú›Çã äàX\»H\ú⁄\›Y\›‹ôH]ô[
+[òõ›[ôY
+H€ù»Hì»ò[YHY\ãà
+ã¬ôù[ò›[€à]ô[ò[YJ]ô[àù[Xô\äNà›ö[ô»¬àô]\õàì÷”X]õZ[äX]õX^
+]ô[JKìÀõ[ô›
+HHWBüBÇù\HXö]YàH¬àYàõ›][ôRŸ^BàXô[à›ö[ô¬àÿ]Y€‹ûNà›ö[ô¬àZ[ù]\œŒàù[Xô\ÇàX€€éàôXX›ê€€\€ô[ù\O»⁄^ôOŒàù[Xô\àOÇüBÇò€€ú›RSW“PíUŒàXö]Yñ◊HH¬à»Yà	ÿúôX][ô—€ôIÀXô[à	ÃLHZ[ãà]][ô…Àÿ]Y€‹ûNà	”Z[ô	ÀZ[ù]\ŒàLKX€€éàúòZ[àKà»Yà	ÿ€€⁄›Ÿ\âÀXô[à	–€€⁄›Ÿ\âÀÿ]Y€‹ûNà	–õŸIÀX€€éà€õ›ŸõZŸHKà»Yà	‹õ›Z[î⁄ZŸIÀXô[à	‘õ›Z[à⁄ZŸIÀÿ]Y€‹ûNà	–õŸIÀX€€éà€ŸôôYHKà»Yà	‹\⁄\—€ôIÀXô[à	ÕL\⁄\…Àÿ]Y€‹ûNà	–õŸIÀX€€éà[Xòô[Kà»Yà	‹‹]X]—€ôIÀXô[à	ÕL‹]X]…Àÿ]Y€‹ûNà	–õŸIÀX€€éà[Xòô[Kà»Yà	›ÿ[⁄]€ôIÀXô[à	ÕL»ÿ[⁄]	Àÿ]Y€‹ûNà	–õŸIÀX€€éà[Y\àKà»Yà	‹[ö—€ôIÀXô[à	ÕL»[ö…Àÿ]Y€‹ûNà	–õŸIÀX€€éà[Y\àKà»Yà	Ÿ‹ò]]YQ€ôIÀXô[à	—[öÿò\öŸZ]	Àÿ]Y€‹ûNà	”Z[ô	ÀX€€éà‹\ö€\»Kà»Yà	Ÿõÿ›\—€ôIÀXô[à	—Y\õÿ›\…Àÿ]Y€‹ûNà	”Z[ô	ÀX€€éàõÿ›\»Kà»Yà	›⁄[õô\ì[ŸQ€ôIÀXô[à	’⁄[õô\à[ŸIÀÿ]Y€‹ûNà	”Z[ô	ÀX€€éà‹õ›€àKà»Yà	⁄õ›\õò[€ôIÀXô[à	“õ›\õò[ÿ⁄ôZXô[âÀÿ]Y€‹ûNà	”Z[ô	ÀX€€éàõ€⁄”‹[àKà»Yà	Ÿò[Z[U[YQ€ôIÀXô[à	—ò[Z[Y[ûôZ]	Àÿ]Y€‹ûNà	”XZ[âÀX€€éà\Ÿ\ú»KóBÇôù[ò›[€à‹ôX]Q\⁄õÿ\ô\‘ŸYY
+
+Nà\⁄õÿ\ô\‘›]H¬àô]\õà¬à›ô\ùöY]Œà¬à]SXô[àô]»[ùë]U[YQõ‹õX]
+	ŸKQIÀ»ŸYZŸ^Nà	€€ô…À^Nà	€ù[Y\öX…À[€ùà	‹⁄‹ù	ÀYX\éà	€ù[Y\öX…»JKôõ‹õX]
+ô]»]J
+JKàﬁ[ò‘›]\Œà	”⁄ÿ[	Ààﬁ[ò’[YNà	…Ààÿ€‹ôNààXö]ŒààŸ‹Œààõ⁄ôX›ŒààKàõÿ›\’Ÿ‹Œà◊Kà›\[Y[ùŒà◊KàYYXÿ][€úŒà◊Kà€ÿ[Œà◊Kàõÿ\ôŒà¬à»Yà	‹\ú€€ò[	ÀXô[à	‘\ú€€ò[	À€›[ùà\⁄‹Œà◊HKà»Yà	›€‹ö…ÀXô[à	–\òôZ]	À€›[ùà\⁄‹Œà◊HKà»Yà	⁄X[	ÀXô[à	“X[	À€›[ùà\⁄‹Œà◊HKàKà⁄‹[ôŒà»›[à][\Œà◊HKà\›Œà¬à»Yà	‹X⁄…À]Nà	‘X⁄€\›IÀ⁄[ôà	‹X⁄…À][\Œà◊HKà»Yà	›⁄\⁄\›	À]Nà	’›[úÿ⁄\›IÀ⁄[ôà	›⁄\⁄\›	À][\Œà◊HKàKà›]Œà¬à]ô\òYŸNààô\›ààö]NààŸZY⁄ààŸYZ€Pò\úŒàÃKàX]X\à◊Kàõ⁄ôX›Œà◊KàKàö[ò[òŸ\Œà¬à[€ùQö^Yàà‹[éàà›ô\ôYNààôX›\úö[ôŒà◊Kà‹[êö[Œà◊KàKàBüBÇôù[ò›[€àﬁ[ò–õÿ\ô€›[ù õÿ\ôŒà\⁄õÿ\ô\–õÿ\ô◊JNà\⁄õÿ\ô\–õÿ\ô◊H¬àô]\õàõÿ\ôÀõX\
+õÿ\ôOà
+¬àããòõÿ\ôà€›[ùàõÿ\ôù\⁄‹Àôö[\ä\⁄»Oà]\⁄Àô€ôJKõ[ô›àJJBüBÇôù[ò›[€à›ö\[[⁄ö\ ò[YNà›ö[ô Nà›ö[ô»¬àô]\õàò[YBàúô\XŸJ◊—^[ôY‘X›Ÿ‹ò\XﬂKŸ›K	… Bàúô\XŸJ◊QëLãŸÀ	… Bàúô\XŸJ◊ﬁÃãKŸÀ	»	 Bàùö[J
+BüBÇôù[ò›[€àõ‹õX[^ôT⁄‹[ô“][J][Nà\⁄õÿ\ô\‘⁄‹[ô“][JNà\⁄õÿ\ô\‘⁄‹[ô“][H¬à€€ú›YÿXﬁSX\àôX€‹ô›ö[ôÀ⁄‹[ô“X€€íŸ^OàH¬à	¸'ÈÍâŒà	Ÿõ\⁄…Àà	¸'‰'…Œà	Ÿö\⁄	Àà	¸'‰¢âŒà	‹[	Àà	¸'‰©…Œà	Ÿõ‹]	ÀàBà€€ú›X\YHYÿXﬁSX\⁄][KöX€€óHœ»⁄‹[ô“X€€íŸ^J›ö[ô ][KöX€€äJBàô]\õà¬àããö][KàX€€éàX\Yàò[YNà›ö\[[⁄ö\ ][Kõò[YJKàõ›Nà›ö\[[⁄ö\ ][Kõõ›JKàBüBÇãÀ»]ô\ûH\úò^Hô[›»\»ô[ô\ôY⁄]H\ôX›õX\
+
+H[à\⁄õÿ\ô\’öY]À€¬ãÀ»\ú⁄\›Y›]H]ôY]\»HöY[
+‹àÿ\»[ôYY]Y[ù»HòY⁄\JBãÀ»]\›ô]ô\àôXX⁄ô[ô\à\»[û][ô»ù]Hÿ[YK\⁄\Y\úò^H8†%›\ù⁄\ŸHBãÀ»⁄[ô€H›[K€Z\‹⁄[ô»öY[‹ò\⁄\»H⁄€HöY]»
+KôÀà[à[ö€õ›€ÇãÀ»⁄‹[ôÀZ][HX€€ã‹àHöY[úõ€HôYõ‹ôH]^\›Y[àHÿ⁄[XJKÇãÀ»ö[‹ö]PòYŸHŸ\»íS‘íUW”QUV‹ö[‹ö]WH⁄]õ»ò[òX⁄À€»[ûH\⁄¬ãÀ»\ú⁄\›Y[ô\àHôKT\ŸKLàÿ⁄[YH
+	‹ôY	À…€‹ò[ôŸIÀ…ÿõYI H‹à›\ù⁄\ŸBãÀ»[ùò[Y‹ò\⁄\»HŸ‹»XàH[ú›[ù]ô[ô\úÀÇôù[ò›[€àõ‹õX[^ôU\⁄‘ö[‹ö]J\⁄Œà\⁄õÿ\ô\’\⁄ Nà\⁄õÿ\ô\’\⁄»¬à€€ú›YÿXﬁTö[‹ö]NàôX€‹ô›ö[ôÀ\⁄õÿ\ô\‘ö[‹ö]OàH¬àôYà	‹IÀà‹ò[ôŸNà	‹âÀàõYNà	‹…ÀàBà€€ú›ò]»H\⁄Àúö[‹ö]H\»›ö[ô¬à€€ú›X\YH
+YÿXﬁTö[‹ö]V‹ò]◊Hœ»ò] H\»\⁄õÿ\ô\‘ö[‹ö]Bàô]\õà¬àããäíS‘íUW”‘ëTãö[ò€Y\ X\Y
+H»»ããù\⁄Àö[‹ö]NàX\YHà»ããù\⁄Àö[‹ö]Nà	‹…»JKàYôP\ôXNà\úŸSYôP\ôXJ\⁄ÀõYôP\ôXJKàBüBÇôù[ò›[€àô\€€ôQ\⁄õÿ\ô\⁄–\ôXJà\⁄Œà\⁄õÿ\ô\’\⁄Ààõÿ\ôà\⁄õÿ\ô\–õÿ\ô[ôYö[ôYà€ÿ[Œà\⁄õÿ\ô\—€ÿ[◊KäH¬à€€ú›€ÿ[Hõÿ\ôÀô€ÿ[Y»€ÿ[Àôö[ô
+][HOà][KöYOOHõÿ\ôô€ÿ[Y
+Hà[ôYö[ôYàô]\õàô\€€ôSYôP\ôXJ»^X⁄]à\⁄ÀõYôP\ôXKõ⁄ôX›àõÿ\ô€ÿ[JBüBÇôù[ò›[€àõ‹õX[^ôQ\⁄õÿ\ô\‘›]J\úŸYà\ùX[\⁄õÿ\ô\‘›]Oàù[[ôYö[ôY
+Nà\⁄õÿ\ô\‘›]H¬à€€ú›ŸYYH‹ôX]Q\⁄õÿ\ô\‘ŸYY
+
+BàYà
+\\úŸY\[Ÿà\úŸYOOH	€ÿöôX›	»\\úŸYõ›ô\ùöY] Hô]\õàŸYYÇàô]\õà¬à›ô\ùöY]Œà»ããúŸYYõ›ô\ùöY]Àããú\úŸYõ›ô\ùöY]»Kàõÿ›\’Ÿ‹Œà\úò^Kö\–\úò^J\úŸYôõÿ›\’Ÿ‹ H»\úŸYôõÿ›\’Ÿ‹ÀõX\
+õ‹õX[^ôU\⁄‘ö[‹ö]JHàŸYYôõÿ›\’Ÿ‹Àà›\[Y[ùŒà\úò^Kö\–\úò^J\úŸYú›\[Y[ù H»\úŸYú›\[Y[ù»àŸYYú›\[Y[ùÀàYYXÿ][€úŒà\úò^Kö\–\úò^J\úŸYõYYXÿ][€ú Bà»\úŸYõYYXÿ][€úÀõX\
+][HOàõ‹õX[^ôSYYXÿ][€ä][K]RŸ^Jô]»]J
+JJJBààŸYYõYYXÿ][€úÀà€ÿ[Œà\úò^Kö\–\úò^J\úŸYô€ÿ[ H»\úŸYô€ÿ[ÀõX\
+€ÿ[Oà
+¬àããô€ÿ[à⁄X⁄“[úŒà\úò^Kö\–\úò^J€ÿ[ò⁄X⁄“[ú H»€ÿ[ò⁄X⁄“[ú»à◊KàYôP\ôXNà\úŸSYôP\ôXJ€ÿ[õYôP\ôXJKàJJHàŸYYô€ÿ[Ààõÿ\ôŒà\úò^Kö\–\úò^J\úŸYòõÿ\ô Bà»ﬁ[ò–õÿ\ô€›[ù \úŸYòõÿ\ôÀõX\
+õÿ\ôOà
+¬àããòõÿ\ôàYôP\ôXNà\úŸSYôP\ôXJõÿ\ôõYôP\ôXJKà\⁄‹Œà\úò^Kö\–\úò^Jõÿ\ôù\⁄‹ H»õÿ\ôù\⁄‹ÀõX\
+õ‹õX[^ôU\⁄‘ö[‹ö]JHà◊KàZ[\›€ô\Œà\úò^Kö\–\úò^Jõÿ\ôõZ[\›€ô\ H»õÿ\ôõZ[\›€ô\»à◊KàJJJBààŸYYòõÿ\ôÀà⁄‹[ôŒà¬à›[à\[Ÿà\úŸYú⁄‹[ôœÀù›[OOH	€ù[Xô\â»»\úŸYú⁄‹[ôÀù›[àŸYYú⁄‹[ôÀù›[à][\Œà\úò^Kö\–\úò^J\úŸYú⁄‹[ôœÀö][\ Bà»\úŸYú⁄‹[ôÀö][\ÀõX\
+][HOàõ‹õX[^ôT⁄‹[ô“][J¬àããö][KàX€€éà\[Ÿà][KöX€€àOOH	‹›ö[ô…»»][KöX€€àà	Ÿõ\⁄…ÀàJJBààŸYYú⁄‹[ôÀö][\ÀàKà\›Œà\úò^Kö\–\úò^J\úŸYõ\› H	âà\úŸYõ\›Àõ[ô›àà»\úŸYõ\›ÀõX\
+\›Oà
+¬àYà›ö[ô \›öY‹û\Àúò[ô€UURQ
+
+JKà]Nà›ö[ô \›ù]H	”\›I Kà⁄[ôà
+…‹X⁄…À	›⁄\⁄\›	À	ÿõ€⁄‹…À	‹ôX⁄\\…À	ÿ›\›€I◊H\»€€ú›
+Kö[ò€Y\ \›ö⁄[ô\»\⁄õÿ\ô\”\›⁄[ô
+Bà»\›ö⁄[ô\»\⁄õÿ\ô\”\›⁄[ôàà	ÿ›\›€IÀà][\Œà\úò^Kö\–\úò^J\›ö][\ Bà»\›ö][\ÀõX\
+][HOà
+¬àYà›ö[ô ][KöY‹û\Àúò[ô€UURQ
+
+JKà]Nà›ö[ô ][Kù]H	… Kàõ›Nà›ö[ô ][Kõõ›H	… Kà€ôNàõ€€X[ä][Kô€ôJKàJJBàà◊KàJJBààŸYYõ\›Àà›]Œà¬àããúŸYYú›]Ààããú\úŸYú›]ÀàŸYZ€Pò\úŒà\úò^Kö\–\úò^J\úŸYú›]œÀùŸYZ€Pò\ú H»\úŸYú›]ÀùŸYZ€Pò\ú»àŸYYú›]ÀùŸYZ€Pò\úÀàX]X\à\úò^Kö\–\úò^J\úŸYú›]œÀöX]X\
+H»\úŸYú›]ÀöX]X\àŸYYú›]ÀöX]X\àõ⁄ôX›Œà\úò^Kö\–\úò^J\úŸYú›]œÀúõ⁄ôX› H»\úŸYú›]Àúõ⁄ôX›»àŸYYú›]Àúõ⁄ôX›ÀàKàö[ò[òŸ\Œà¬àããúŸYYôö[ò[òŸ\Ààããú\úŸYôö[ò[òŸ\ÀàôX›\úö[ôŒà\úò^Kö\–\úò^J\úŸYôö[ò[òŸ\œÀúôX›\úö[ô H»\úŸYôö[ò[òŸ\ÀúôX›\úö[ô»àŸYYôö[ò[òŸ\ÀúôX›\úö[ôÀà‹[êö[Œà\úò^Kö\–\úò^J\úŸYôö[ò[òŸ\œÀõ‹[êö[ H»\úŸYôö[ò[òŸ\Àõ‹[êö[»àŸYYôö[ò[òŸ\Àõ‹[êö[ÀàKàBüBÇôù[ò›[€àÿY\⁄õÿ\ô\‘›]J
+Nà\⁄õÿ\ô\‘›]H¬àûH¬à€€ú››‹ôYHÿÿ[›‹òYŸKôŸ]][JT“ì–Të‘T◊“—VJBàYà
+\›‹ôY
+Hô]\õà‹ôX]Q\⁄õÿ\ô\‘ŸYY
+
+Bà€€ú›\úŸYHî””ãú\úŸJ›‹ôY
+H\»\ùX[\⁄õÿ\ô\‘›]OÇàô]\õàõ‹õX[^ôQ\⁄õÿ\ô\‘›]J\úŸY
+BàHÿ]⁄¬àô]\õà‹ôX]Q\⁄õÿ\ô\‘ŸYY
+
+BàBüBÇò€€ú›QêUS–P’UëW“PíU»H…ÿúôX][ô—€ôIÀ	ÿ€€⁄›Ÿ\âÀ	‹õ›Z[î⁄ZŸIÀ	‹\⁄\—€ôIÀ	Ÿ‹ò]]YQ€ôI◊BÇò€€ú›T“ì–Të‘T◊‘—P’S”ó“Q»HÀããìPó—UW‘—P’S”ó“Q◊BÇò€€ú›QêUS—T“ì–Të‘T◊”VS’Uà\⁄õÿ\ô\”^[›]H¬à‹ô\éàÀããëT“ì–Të‘T◊‘—P’S”ó“Q◊KàY[éà◊KüBÇò€€ú›QêUS‘—USë‘Œà\Ÿ][ô‹»H¬àò[YNà	…Àà[YNà	‹ﬁ\›[IÀàXÿŸ[ùà	⁄XŸIÀàõÿ›\”Z[ù]\ŒàçKàõ›Z[ë€ÿ[àMLàÿ[‹öYQ€ÿ[àÕLàò]€ÿ[àÃàÿ\òú—€ÿ[àçLàöXô\ë€ÿ[àÃàZY⁄€NààŸZY⁄€ÿ[ŸŒààŸZY⁄›\ùŸŒààX›]ôRXö]ŒàQêUS–P’UëW“PíUÀàXö]ÿ⁄Y[\ŒàﬂKà\⁄õÿ\ô\”^[›]àQêUS—T“ì–Të‘T◊”VS’UàYY\‘ô[Z[ô\ú—[òXõYàò[ŸKà[‹õö[ô—ÿ]Q[òXõYàùYKà[‹õö[ô‘ö]X[àõ‹õX[^ôS[‹õö[ô‘ö]X[€€ôöY [ôYö[ôY
+Kà]ô[ö[ô—ÿ]Nàõ‹õX[^ôQ]ô[ö[ô—ÿ]P€€ôöY [ôYö[ôY
+KàY\]ôNàYò][Y\]ôSYôP€€ôöY 
+KüBÇôù[ò›[€àõ‹õX[^ôQ\⁄õÿ\ô\”^[›]
+ò]Œà[ö€õ›€äNà\⁄õÿ\ô\”^[›]¬à€€ú›ÿ[ôY]HH
+ò]»œ»ﬂJH\»\ùX[\⁄õÿ\ô\”^[›]Çà€€ú›\‘ŸX›[€àH
+Yà[ö€õ›€äNàY\»\⁄õÿ\ô\‘ŸX›[€àOÇà\[ŸàYOOH	‹›ö[ô…»	âà
+T“ì–Të‘T◊‘—P’S”ó“Q»\»›ö[ô÷◊JKö[ò€Y\ Y
+BÇà€€ú››‹ôY‹ô\àH\úò^Kö\–\úò^Jÿ[ôY]Kõ‹ô\äH»ÿ[ôY]Kõ‹ô\ãôö[\ä\‘ŸX›[€äHà◊Bà€€ú›‹ô\àHÀããú›‹ôY‹ô\ãããëT“ì–Të‘T◊‘—P’S”ó“QÀôö[\äYOà\›‹ôY‹ô\ãö[ò€Y\ Y
+JWBÇà€€ú››‹ôYY[àH\úò^Kö\–\úò^Jÿ[ôY]KöY[äH»ÿ[ôY]KöY[ãôö[\ä\‘ŸX›[€äHà◊BàÀ»ô]ô\à]]ô\ûHXàôHY[à8†%ò[òX⁄»»ò[ö\⁄XõHàò]\à[à[à[ù\ÿXõH\⁄õÿ\ô
+ÀÇà€€ú›Y[àH›‹ôYY[ãõ[ô›èHT“ì–Të‘T◊‘—P’S”ó“QÀõ[ô›»◊Hà›‹ôYY[ÇÇàô]\õà»‹ô\ãY[àBüBÇò€€ú›êUó“USTŒà\úò^O»YàöY]Œ»Xô[à›ö[ôŒ»X€€éà\[Ÿà€YHOàH¬à»Yà	›Ÿ^IÀXô[à	“]]IÀX€€éà€YHKà»Yà	‹õŸ‹ô\‹…ÀXô[à	”XâÀX€€éàõ\⁄–€€öXÿ[KóBÇò€€ú›’ëPR◊“PíU“—VTŒàXö]Ÿ^V◊HH¬à	ÿ€€⁄›Ÿ\âÀ	‹õ›Z[î⁄ZŸIÀ	‹\⁄\—€ôIÀ	‹‹]X]—€ôIÀ	›ÿ[⁄]€ôIÀ	‹[ö—€ôIÀà	Ÿ‹ò]]YQ€ôIÀ	Ÿõÿ›\—€ôIÀ	›⁄[õô\ì[ŸQ€ôIÀ	⁄õ›\õò[€ôIÀ	Ÿò[Z[U[YQ€ôIÀ	ÿúôX][ô—€ôIÀóBÇôù[ò›[€à›‹òYŸT›]\”Xô[
+ﬁ[ò‘›]\Œà›ö[ôÀ\”€õ[ôNàõ€€X[ã]öXŸTﬁ[ò»Hò[ŸJNà›ö[ô»¬àYà
+ﬁ[ò‘›]\»OOH	Ÿ\úõ‹â Hô]\õà]öXŸTﬁ[ò»»	‘ﬁ[ò»ôZŸ\ÿ⁄YŸ[â»à	‘‹ZX⁄\õàôZŸ\ÿ⁄YŸ[â¬àYà
+Z\”€õ[ôHﬁ[ò‘›]\»OOH	€Ÿôõ[ôI Hô]\õà	”Ÿôõ[ôH0≠»⁄ÿ[	¬àYà
+ﬁ[ò‘›]\»OOH	‹ﬁ[ò⁄[ô… Hô]\õà]öXŸTﬁ[ò»»	‘ﬁ[ò⁄õ€ö\⁄Y\ù8†)â»à	‘‹ZX⁄\ù⁄ÿ[8†)â¬àYà
+ﬁ[ò‘›]\»OOH	‹ﬁ[òŸY	 Hô]\õà]öXŸTﬁ[ò»»	—Ÿ\∞ÈHﬁ[ò⁄õ€â»à	”⁄ÿ[Ÿ\‹ZX⁄\ù	¬àô]\õà]öXŸTﬁ[ò»»	—Ÿ\∞ÈKTﬁ[ò»[â»à	”⁄ÿ[Ÿ\‹ZX⁄\ù	¬üBÇò€€ú›S”—»H…‘ŸZàÿ⁄X⁄	À	‘ÿ⁄X⁄	À	”⁄ÿ^IÀ	—›]	À	‘ŸZà›]	◊Bò€€ú›”QT‘UPSUHH…‘ÿ⁄X⁄	À	”⁄ÿ^IÀ	—›]	À	‘ŸZà›]	◊Bò€€ú›”QT—TêUS”ó‘ëT—U»H…œZ	À	Õö	À	Õ⁄	À	ÕÀçZ	À	Œ	À	œé	◊BÇã äà\úŸH›‹ôY€Y\Xô[»
+çÀçZãèZäH[ù»›\ã€Z[ù]HòYùÀà
+ã¬ôù[ò›[€à\úŸT€Y\\ò][€î\ù ò]Œà›ö[ô Nà»›\úŒà›ö[ôŒ»Z[ù]\Œà›ö[ô»H¬à€€ú›ò[YHH›ö[ô ò]»œ»	… Kùö[J
+Kù”›Ÿ\êÿ\ŸJ
+BàYà
+]ò[YJHô]\õà»›\úŒà	…ÀZ[ù]\Œà	…»BàYà
+ò[YKú›\ù’⁄]
+	œ	 JHô]\õà»›\úŒà	Õ	ÀZ[ù]\Œà	ÃÃ	»BàYà
+ò[YKú›\ù’⁄]
+	œâ JHô]\õà»›\úŒà	ŒIÀZ[ù]\Œà	Ã	»Bà€€ú›X]⁄Hò[YKõX]⁄
+◊ä
+ ŒñÀãW
+ O W ö… BàYà
+[X]⁄
+Hô]\õà»›\úŒà	…ÀZ[ù]\Œà	…»Bà€€ú››[Hù[Xô\ãú\úŸQõÿ]
+X]⁄ÃWKúô\XŸJ	À	À	Àâ JBàYà
+Sù[Xô\ãö\—ö[ö]J›[
+H›[
+Hô]\õà»›\úŒà	…ÀZ[ù]\Œà	…»Bà€€ú››\ú»HX]ôõ€‹ä›[
+Bà€€ú›Z[ù]\»HX]úõ›[ô
+
+›[H›\ú H
+àå
+Bàô]\õà»›\úŒà›ö[ô ›\ú KZ[ù]\Œà›ö[ô Z[ù]\ HBüBÇôù[ò›[€àõ‹õX]€Y\\ò][€ìXô[
+›\úŒàù[Xô\ãZ[ù]\Œàù[Xô\äNà›ö[ô»¬à€€ú›ÿYôR›\ú»HX]õX^
+X]õZ[äMãX]ôõ€‹ä›\ú JJBà€€ú›ÿYôSZ[ù]\»HX]õX^
+X]õZ[äNKX]ôõ€‹äZ[ù]\ JJBàYà
+ÿYôR›\ú»OOH	âàÿYôSZ[ù]\»OOH
+Hô]\õà	…¬àYà
+ÿYôSZ[ù]\»OOH
+Hô]\õà	‹ÿYôR›\úﬂZàYà
+ÿYôSZ[ù]\»OOHÃ
+Hô]\õà	‹ÿYôR›\úﬂKçZà€€ú››[HX]úõ›[ô
+
+ÿYôR›\ú»
+»ÿYôSZ[ù]\»»å
+H
+àL
+H»Làô]\õà	››[ZüBÇôù[ò›[€à€Ÿù\ò][€í[ú]
+¬àò[YKà€ê⁄[ôŸKüNà¬àò[YNà›ö[ô¬à€ê⁄[ôŸNà
+ô^à›ö[ô HOàõ⁄YüJH¬à€€ú›⁄›\úÀŸ]›\ú◊HH\ŸT›]J
+
+HOà\úŸT€Y\\ò][€î\ù ò[YJKö›\ú Bà€€ú›€Z[ù]\ÀŸ]Z[ù]\◊HH\ŸT›]J
+
+HOà\úŸT€Y\\ò][€î\ù ò[YJKõZ[ù]\ Bà€€ú›ÿ€€ôö\õYYŸ]€€ôö\õYYHH\ŸT›]J
+
+HOàõ€€X[äò[YJJBà€€ú›‹[ŸKŸ][ŸWHH\ŸT›]Jò[ŸJBÇà\ŸQYôôX›
+
+
+HOà¬à€€ú›\ù»H\úŸT€Y\\ò][€î\ù ò[YJBàŸ]›\ú \ùÀö›\ú BàŸ]Z[ù]\ \ùÀõZ[ù]\ BàŸ]€€ôö\õYY
+õ€€X[äò[YJJBàK›ò[YWJBÇà€€ú›€€ôö\õHH
+
+HOà¬à€€ú›ô^Hõ‹õX]€Y\\ò][€ìXô[
+ù[Xô\ä›\ú Hù[Xô\äZ[ù]\ H
+Bà€ê⁄[ôŸJô^
+BàŸ]€€ôö\õYY
+õ€€X[äô^
+JBàYà
+[ô^
+Hô]\õÇàŸ][ŸJùYJBà⁄[ô›ÀúŸ][Y[›]
+
+
+HOàŸ][ŸJò[ŸJKå
+BàBÇàô]\õà
+à]Çà€\‹”ò[YO^÷¬à	‹€ŸùY\ò][€âÀà€€ôö\õYY»	⁄\ÀX€€ôö\õYY	»à	…Àà[ŸH»	⁄\À\[ŸI»à	…ÀàKôö[\äõ€€X[äKöõ⁄[ä	»	 _BàÇàXô[€\‹”ò[YOHú€ŸùY\ò][€ó◊ŸöY[èÇà[ú]à[ú][ŸOHõù[Y\öX»Çà]\õèHñÃNWJàÇàò[YO^⁄›\úﬂBàXŸZ€\èHåÇà\öXK[Xô[Hî›[ô[àÇà€ê⁄[ôŸO^Ÿ]ô[ùOàŸ]›\ú ]ô[ùù\ôŸ]ùò[YKúô\XŸJ◊ŸÀ	… Kú€XŸJäJ_Bà€íŸ^Q›€è^Ÿ]ô[ùOà¬àYà
+]ô[ùöŸ^HOOH	—[ù\â H€€ôö\õJ
+Bà_BàœÇà‹[èî›è‹‹[èÇà€Xô[ÇàXô[€\‹”ò[YOHú€ŸùY\ò][€ó◊ŸöY[èÇà[ú]à[ú][ŸOHõù[Y\öX»Çà]\õèHñÃNWJàÇàò[YO^€Z[ù]\ﬂBàXŸZ€\èHåÇà\öXK[Xô[HìZ[ù][àÇà€ê⁄[ôŸO^Ÿ]ô[ùOà¬à€€ú›Y⁄]»H]ô[ùù\ôŸ]ùò[YKúô\XŸJ◊ŸÀ	… Kú€XŸJäBàYà
+Y⁄]»OOH	… H¬àŸ]Z[ù]\ 	… Bàô]\õÇàBàŸ]Z[ù]\ ›ö[ô X]õZ[äNKù[Xô\äY⁄] JJJBà_Bà€íŸ^Q›€è^Ÿ]ô[ùOà¬àYà
+]ô[ùöŸ^HOOH	—[ù\â H€€ôö\õJ
+Bà_BàœÇà‹[èìZ[ãè‹‹[èÇà€Xô[Çàù]€Çà\OHòù]€àÇà€\‹”ò[YOHú€ŸùY\ò][€ó◊ÿ€€ôö\õHÇà€ê€X⁄œ^ÿ€€ôö\õ_Bà\öXK[Xô[Hë]Y\àô\›0ÈYŸ[àÇàÇà⁄X⁄»⁄^ôO^ÃåH›õ⁄ŸU⁄Y^Ããç_HœÇàÿù]€èÇàŸ]èÇà
+BüBÇôù[ò›[€àÿYŸ][ô‹ 
+Nà\Ÿ][ô‹»¬àûH¬à€€ú››‹ôYHî””ãú\úŸJÿÿ[›‹òYŸKôŸ]][J—USë‘◊“—VJHœ»	ﬁﬂI H\»\ùX[\Ÿ][ô‹œÇà€€ú›[YNà[YTôYô\ô[òŸHH…€Y⁄	À	Ÿ\ö…À	‹ﬁ\›[I◊Kö[ò€Y\ ›‹ôYù[YHœ»	… Bà»›‹ôYù[YH\»[YTôYô\ô[òŸBààQêUS‘—USë‘Àù[YBÇà€€ú›XÿŸ[ùàXÿŸ[ùôYô\ô[òŸHHP–—Sï“QÀö[ò€Y\ ›‹ôYòXÿŸ[ù\»XÿŸ[ùôYô\ô[òŸJBà»›‹ôYòXÿŸ[ù\»XÿŸ[ùôYô\ô[òŸBààQêUS‘—USë‘ÀòXÿŸ[ùÇàô]\õà¬àò[YNà\[Ÿà›‹ôYõò[YHOOH	‹›ö[ô…»»›‹ôYõò[YKú€XŸJ
+HàQêUS‘—USë‘Àõò[YKà[YKàXÿŸ[ùàõÿ›\”Z[ù]\Œà€[\ù[Xô\äù[Xô\ä›‹ôYôõÿ›\”Z[ù]\ HQêUS‘—USë‘Àôõÿ›\”Z[ù]\ÀKLå
+Kàõ›Z[ë€ÿ[à€[\ù[Xô\äù[Xô\ä›‹ôYúõ›Z[ë€ÿ[
+HQêUS‘—USë‘Àúõ›Z[ë€ÿ[L
+Kàÿ[‹öYQ€ÿ[à€[\ù[Xô\äù[Xô\ä›‹ôYòÿ[‹öYQ€ÿ[
+HQêUS‘—USë‘Àòÿ[‹öYQ€ÿ[L
+Kàò]€ÿ[à€[\ù[Xô\äù[Xô\ä›‹ôYôò]€ÿ[
+HQêUS‘—USë‘Àôò]€ÿ[åå
+Kàÿ\òú—€ÿ[à€[\ù[Xô\äù[Xô\ä›‹ôYòÿ\òú—€ÿ[
+HQêUS‘—USë‘Àòÿ\òú—€ÿ[LL
+KàöXô\ë€ÿ[à€[\ù[Xô\äù[Xô\ä›‹ôYôöXô\ë€ÿ[
+HQêUS‘—USë‘ÀôöXô\ë€ÿ[L
+KàZY⁄€Nà€[\ù[Xô\äù[Xô\ä›‹ôYöZY⁄€JHçL
+KàŸZY⁄€ÿ[ŸŒà€[\ù[Xô\äù[Xô\ä›‹ôYùŸZY⁄€ÿ[Ÿ HÃ
+KàŸZY⁄›\ùŸŒà€[\ù[Xô\äù[Xô\ä›‹ôYùŸZY⁄›\ùŸ HÃ
+KàX›]ôRXö]Œà\úò^Kö\–\úò^J›‹ôYòX›]ôRXö] H»›‹ôYòX›]ôRXö]»àQêUS–P’UëW“PíUÀàXö]ÿ⁄Y[\Œàõ‹õX[^ôRXö]ÿ⁄Y[\ ›‹ôYöXö]ÿ⁄Y[\ Kà\⁄õÿ\ô\”^[›]àõ‹õX[^ôQ\⁄õÿ\ô\”^[›]
+›‹ôYô\⁄õÿ\ô\”^[›]
+KàYY\‘ô[Z[ô\ú—[òXõYàõ€€X[ä›‹ôYõYY\‘ô[Z[ô\ú—[òXõY
+Kà[‹õö[ô—ÿ]Q[òXõYà›‹ôYõ[‹õö[ô—ÿ]Q[òXõYOOHò[ŸKà[‹õö[ô‘ö]X[àõ‹õX[^ôS[‹õö[ô‘ö]X[€€ôöY à
+›‹ôY\»\ùX[\Ÿ][ô‹œà	à»[‹õö[ô‘ö]X[Œà\ùX[[‹õö[ô‘ö]X[€€ôöYœàJKõ[‹õö[ô‘ö]X[à
+Kà]ô[ö[ô—ÿ]Nàõ‹õX[^ôQ]ô[ö[ô—ÿ]P€€ôöY à
+›‹ôY\»\ùX[\Ÿ][ô‹œà	à»]ô[ö[ô—ÿ]OŒà\ùX[]ô[ö[ô—ÿ]P€€ôöYœàJKô]ô[ö[ô—ÿ]Kà
+KàY\]ôNàôXYY\]ôQúõ€TŸ][ô‹ ›‹ôY
+KàBàHÿ]⁄¬àô]\õàQêUS‘—USë‘¬àBüBÇôù[ò›[€à]RŸ^J]Nà]JNà›ö[ô»¬à€€ú›YX\àH]KôŸ]ù[YX\ä
+Bà€€ú›[€ùH›ö[ô ]KôŸ][€ù
+
+H
+»JKúY›\ù
+ã	Ã	 Bà€€ú›^HH›ö[ô ]KôŸ]]J
+JKúY›\ù
+ã	Ã	 Bàô]\õà	ﬁYX\üKI€[€ùKIŸ^_XüBÇôù[ò›[€àúõ€Q]RŸ^JŸ^Nà›ö[ô Nà]H¬àô]\õàô]»]J	⁄Ÿ^_ULéåå
+BüBÇôù[ò›[€àY^\ Ÿ^Nà›ö[ôÀ[[›[ùàù[Xô\äNà›ö[ô»¬à€€ú›]HHúõ€Q]RŸ^JŸ^JBà]KúŸ]]J]KôŸ]]J
+H
+»[[›[ù
+Bàô]\õà]RŸ^J]JBüBÇôù[ò›[€à^\’[ù[
+\ôŸ]Ÿ^Nà›ö[ôÀŸ^RŸ^Nà›ö[ô Nàù[Xô\à¬à€€ú›\»Húõ€Q]RŸ^J\ôŸ]Ÿ^JKôŸ][YJ
+HHúõ€Q]RŸ^JŸ^RŸ^JKôŸ][YJ
+Bàô]\õàX]úõ›[ô
+\»»óÕÃ
+BüBÇù\H]ZX⁄–Yô\›[Bà»⁄[ôà	›ŸZY⁄	Œ»ò[YNàù[Xô\àBà»⁄[ôà	ÿÿ[‹öY\…Œ»ò[YNàù[Xô\àBà»⁄[ôà	‹õ›Z[âŒ»ò[YNàù[Xô\àBà»⁄[ôà	Ÿò]	Œ»ò[YNàù[Xô\àBà»⁄[ôà	ÿÿ\òú…Œ»ò[YNàù[Xô\àBà»⁄[ôà	ŸöXô\âŒ»ò[YNàù[Xô\àBà»⁄[ôà	›ÿ]\âŒ»ò[YNàù[Xô\àBà»⁄[ôà	‹›\…Œ»ò[YNàù[Xô\àBà»⁄[ôà	›\⁄…Œ»]Nà›ö[ô»BÇã äà[Xô\ò][H⁄[\H]\õàX]⁄[ôÀõ»ì–RH8†%H[ôù[Ÿà[ö]à
+à›Yôö^\»õ›]H›òZY⁄[ù»HX]⁄[ô»Z[HY]öXÀ]ô\û][ô»[ŸBà
+àôX€€Y\»Hô]»\⁄Àà
+ã¬ôù[ò›[€à\úŸT]ZX⁄–Y
+ò]Œà›ö[ô Nà]ZX⁄–Yô\›[¬à€€ú›^Hò]Àùö[J
+Bà€€ú›”ù[Xô\àH
+X]⁄à›ö[ô HOàù[Xô\äX]⁄úô\XŸJ	À	À	Àâ JBÇà€€ú›ŸZY⁄H^õX]⁄
+ 
+ ŒñÀãW
+ O W öŸ◊ã⁄JBàYà
+ŸZY⁄
+Hô]\õà»⁄[ôà	›ŸZY⁄	Àò[YNà”ù[Xô\äŸZY⁄ÃWJHBÇà€€ú›ÿ[‹öY\»H^õX]⁄
+ 
+ ŒñÀãW
+ O W öÿÿ[ã⁄JBàYà
+ÿ[‹öY\ Hô]\õà»⁄[ôà	ÿÿ[‹öY\…Àò[YNà”ù[Xô\äÿ[‹öY\÷ÃWJHBÇà€€ú›õ›Z[àH^õX]⁄
+ 
+ ŒñÀãW
+ O W äŒô◊ äO Œúõ›Z[üZ]ŸZV‹Á◊JWã⁄JBàœ»^õX]⁄
+ 
+ ŒñÀãW
+ O W ô◊ úã⁄JBàYà
+õ›Z[äHô]\õà»⁄[ôà	‹õ›Z[âÀò[YNà”ù[Xô\äõ›Z[ñÃWJHBÇà€€ú›ò]H^õX]⁄
+ 
+ ŒñÀãW
+ O W äŒô◊ äO Œôô]ò]
+Wã⁄JBàYà
+ò]
+Hô]\õà»⁄[ôà	Ÿò]	Àò[YNà”ù[Xô\äò]ÃWJHBÇà€€ú›ÿ\òú»H^õX]⁄
+ 
+ ŒñÀãW
+ O W äŒô◊ äO Œö⁄€⁄[öYò]_ÿ\òúœ Wã⁄JBàYà
+ÿ\òú Hô]\õà»⁄[ôà	ÿÿ\òú…Àò[YNà”ù[Xô\äÿ\òú÷ÃWJHBÇà€€ú›öXô\àH^õX]⁄
+ 
+ ŒñÀãW
+ O W äŒô◊ äO Œòò[\››ŸôôOﬂöXô\äWã⁄JBàYà
+öXô\äHô]\õà»⁄[ôà	ŸöXô\âÀò[YNà”ù[Xô\äöXô\ñÃWJHBÇà€€ú›ÿ]\àH^õX]⁄
+ 
+ ŒñÀãW
+ O W äŒõ]\äWã⁄JBàYà
+ÿ]\äHô]\õà»⁄[ôà	›ÿ]\âÀò[YNà”ù[Xô\äÿ]\ñÃWJHBÇà€€ú››\»H^õX]⁄
+ 
+ ŒñÀãW
+ O W äŒúÿ⁄ö]_›\ Wã⁄JBàYà
+›\ Hô]\õà»⁄[ôà	‹›\…Àò[YNàX]úõ›[ô
+”ù[Xô\ä›\÷ÃWJJHBÇàô]\õà»⁄[ôà	›\⁄…À]Nà^BüBÇôù[ò›[€à\ÿ‹öXôT]ZX⁄–Y
+\úŸYà]ZX⁄–Yô\›[
+Nà›ö[ô»¬à›⁄]⁄
+\úŸYö⁄[ô
+H¬àÿ\ŸH	›ŸZY⁄	ŒÇàô]\õà8°§àŸ]⁄X⁄à	‹\úŸYùò[Y_HŸÿàÿ\ŸH	ÿÿ[‹öY\…ŒÇàô]\õà8°§àÿ[‹öY[éà	‹\úŸYùò[Y_Hÿÿ[àÿ\ŸH	‹õ›Z[âŒÇàô]\õà8°§àõ›Z[éà	‹\úŸYùò[Y_Hÿàÿ\ŸH	Ÿò]	ŒÇàô]\õà8°§àô]à	‹\úŸYùò[Y_Hÿàÿ\ŸH	ÿÿ\òú…ŒÇàô]\õà8°§à€⁄[öYò]Nà	‹\úŸYùò[Y_Hÿàÿ\ŸH	ŸöXô\âŒÇàô]\õà8°§àò[\››ŸôôNà	‹\úŸYùò[Y_Hÿàÿ\ŸH	›ÿ]\âŒÇàô]\õà8°§àÿ\‹Ÿ\éà	‹\úŸYùò[Y_Hàÿ\ŸH	‹›\…ŒÇàô]\õà8°§àÿ⁄ö]Nà	‹\úŸYùò[Y_Xàÿ\ŸH	›\⁄…ŒÇàô]\õà8°§àô]YH]YôÿXôNà8†'â‹\úŸYù]_x†'àYò][à¬à€€ú›Ÿ^]\›]ôNàô]ô\àH\úŸYàô]\õàŸ^]\›]ôBàBàBüBÇôù[ò›[€àõ‹õX]€ô—]JŸ^Nà›ö[ô Nà›ö[ô»¬àô]\õàô]»[ùë]U[YQõ‹õX]
+	ŸKQIÀ¬àŸYZŸ^Nà	€€ô…Àà^Nà	€ù[Y\öX…Àà[€ùà	€€ô…ÀàJKôõ‹õX]
+úõ€Q]RŸ^JŸ^JJBüBÇôù[ò›[€àõ‹õX]⁄‹ù]JŸ^Nà›ö[ô Nà›ö[ô»¬àô]\õàô]»[ùë]U[YQõ‹õX]
+	ŸKQIÀ¬à^Nà	ÃãYY⁄]	Àà[€ùà	ÃãYY⁄]	ÀàJKôõ‹õX]
+úõ€Q]RŸ^JŸ^JJBüBÇôù[ò›[€àõ‹õX]⁄‹ùŸYZŸ^JŸ^Nà›ö[ô Nà›ö[ô»¬àô]\õàô]»[ùë]U[YQõ‹õX]
+	ŸKQIÀ»ŸYZŸ^Nà	‹⁄‹ù	»JBàôõ‹õX]
+úõ€Q]RŸ^JŸ^JJBàúô\XŸJ	ÀâÀ	… BüBÇôù[ò›[€à‹ôY][ô 
+Nà›ö[ô»¬à€€ú››\àHô]»]J
+KôŸ]›\ú 
+BàYà
+›\àLJHô]\õà	—›][à[‹ôŸ[â¬àYà
+›\àN
+Hô]\õà	—›][àY…¬àô]\õà	—›][àXô[ô	¬üBÇôù[ò›[€à€[\ù[Xô\äò[YNàù[Xô\ãZ[éàù[Xô\ãX^àù[Xô\äNàù[Xô\à¬àô]\õàX]õZ[äX^X]õX^
+Z[ãò[YJJBüBÇò€€ú›T“◊—ì–’T◊—TêUS”î»HÃLMKçKKåH\»€€ú›Çôù[ò›[€àõ‹õX[^ôP[ò⁄‹ìZ[ù]\ àZ[ù]\Œà[ö€õ›€ãà[ô›àù[Xô\ãàò[òX⁄Œàù[Xô\ãäNàù[Xô\ñ◊H¬à€€ú›ò]»H\úò^Kö\–\úò^JZ[ù]\ H»Z[ù]\»à◊Bà€€ú›ÿYôQò[òX⁄»H€[\ù[Xô\äù[Xô\äò[òX⁄ HçKKLå
+Bàô]\õà\úò^Kôúõ€J»[ô›K
+À[ô^
+HOà¬à€€ú›ò[YHHù[Xô\äò]÷⁄[ô^JBàô]\õàù[Xô\ãö\—ö[ö]Jò[YJH	âàò[YHèHH»€[\ù[Xô\äò[YKKLå
+HàÿYôQò[òX⁄¬àJBüBÇôù[ò›[€à\ò[
+€›[ùàù[Xô\ã⁄[ô›[\éà›ö[ôÀ\ò[€‹ôà›ö[ô Nà›ö[ô»¬àô]\õà€›[ùOOHH»⁄[ô›[\àà\ò[€‹ôüBÇôù[ò›[€à\ŸS[Ÿ[ôZ]ö[‹ä€ê€‹ŸNà
+
+HOàõ⁄Y
+H¬à\ŸQYôôX›
+
+
+HOà¬à€€ú›ô]ö[›\”›ô\ôõ›»Hÿ›[Y[ùòõŸKú›[Kõ›ô\ôõ›¬à€€ú›€‹ŸS€ë\ÿÿ\HH
+]ô[ùàŸ^Xõÿ\ô]ô[ù
+HOà¬àYà
+]ô[ùöŸ^HOOH	—\ÿÿ\I H€ê€‹ŸJ
+BàBÇàÿ›[Y[ùòõŸKú›[Kõ›ô\ôõ›»H	⁄Y[â¬à⁄[ô›ÀòY]ô[ù\›[ô\ä	⁄Ÿ^Y›€âÀ€‹ŸS€ë\ÿÿ\JBÇàô]\õà
+
+HOà¬àÿ›[Y[ùòõŸKú›[Kõ›ô\ôõ›»Hô]ö[›\”›ô\ôõ›¬à⁄[ô›Àúô[[›ôQ]ô[ù\›[ô\ä	⁄Ÿ^Y›€âÀ€‹ŸS€ë\ÿÿ\JBàBàK€€ê€‹ŸWJBüBÇôù[ò›[€àX€€êù]€ä¬àXô[à⁄[ô[ãà€ê€X⁄Àà\ÿXõYà€\‹”ò[YHH	…ÀüNà¬àXô[à›ö[ô¬à⁄[ô[éàôXX›õŸBà€ê€X⁄Œà
+
+HOàõ⁄Yà\ÿXõYŒàõ€€X[Çà€\‹”ò[YOŒà›ö[ô¬üJH¬àô]\õà
+àù]€Çà\OHòù]€àÇà€\‹”ò[YO^ÿX€€ãXù]€à	ÿ€\‹”ò[Y_XBà\öXK[Xô[^€Xô[Bà]O^€Xô[Bà€ê€X⁄œ^€€ê€X⁄ﬂBà\ÿXõY^Ÿ\ÿXõYBàÇàÿ⁄[ô[üBàÿù]€èÇà
+BüBÇôù[ò›[€àõŸ‹ô\‹‘ö[ô »ò[YK⁄^ôHHÃàNà»ò[YNàù[Xô\é»⁄^ôOŒàù[Xô\àJH¬à€€ú›ÿYôUò[YHH€[\ù[Xô\äX]úõ›[ô
+ò[YJKL
+Bàô]\õà
+à]Çà€\‹”ò[YOHúõŸ‹ô\‹À\ö[ô»Çà›[O^ﬁ¬à⁄Yà⁄^ôKàZY⁄à⁄^ôKàòX⁄Ÿ‹õ›[ôà€€öXÀY‹òYY[ù
+ò\äKXXÿŸ[ù\›õ€ô H	‹ÿYôUò[YH
+àÀçüYYÀò\äK]òX⁄ HY Xà_Bà\öXK[Xô[^ÿ	‹ÿYôUò[Y_Hõﬁô[ùõ‹ùÿ⁄ö]Bàõ€OHö[Y»ÇàÇà]à€\‹”ò[YOHúõŸ‹ô\‹À\ö[ô◊◊⁄[õô\àèÇà›õ€ôœû‹ÿYôUò[Y_IO‹›õ€ôœÇà‹[èö]]O‹‹[èÇàŸ]èÇàŸ]èÇà
+BüBÇôù[ò›[€àŸX›[€ï]J¬à^YXúõ›Àà]KàX›[€ãüNà¬à^YXúõ›œŒà›ö[ô¬à]Nà›ö[ô¬àX›[€èŒàôXX›õŸBüJH¬àô]\õà
+à]à€\‹”ò[YOHúŸX›[€ã]]HèÇà]èÇàŸ^YXúõ›»	âà‹[à€\‹”ò[YOHô^YXúõ›»èûŸ^YXúõ›ﬂO‹‹[èüBàèû›]_O⁄èÇàŸ]èÇàÿX›[€üBàŸ]èÇà
+BüBÇôù[ò›[€àö[‹ö]PòYŸJ»ö[‹ö]K€êﬁX€HNà»ö[‹ö]Nà\⁄õÿ\ô\‘ö[‹ö]N»€êﬁX€Nà
+
+HOàõ⁄YJH¬à€€ú›Y]HHíS‘íUW”QUV‹ö[‹ö]WHœ»íS‘íUW”QUKú¬àô]\õà
+àù]€Çà\OHòù]€àÇà€\‹”ò[YOHúö[‹ö]KXòYŸHÇà›[O^ﬁ»	ÀK\ö[‹ö]KX€€‹âŒàY]Kò€€‹àH\»‘‘‘õ‹\ùY\ﬂBà€ê€X⁄œ^€€êﬁX€_Bà\öXK[Xô[^ÿö[‹ö]0È	€Y]KõXô[H8†%€X⁄Ÿ[àù[H0·ô\õòBà]O^ÿö[‹ö]0È	€Y]KõXô[XBàÇà€Y]KõXô[Bàÿù]€èÇà
+BüBÇôù[ò›[€à[\T›]J¬à]Kà^àX›[€ãüNà¬à]Nà›ö[ô¬à^à›ö[ô¬àX›[€èŒàôXX›õŸBüJH¬àô]\õà
+à]à€\‹”ò[YOHô[\K\›]HèÇà]à€\‹”ò[YOHô[\K\›]W◊⁄X€€àèÇàXYà⁄^ôO^ÃåüHœÇàŸ]èÇàœû›]_O⁄œÇàû›^O‹ÇàÿX›[€üBàŸ]èÇà
+BüBÇôù[ò›[€à\
+
+H¬à€€ú›»[ùöY\Àﬁ[ò‘›]\À\”€õ[ôKÿ]ôQ[ùûKô[ÿY[ﬁ[ò”õ›»HH\ŸQ[ùöY\ 
+Bà€€ú››öY]ÀŸ]öY]◊HH\ŸT›]OöY]œä
+
+HOàöY]—úõ€R\⁄
+
+JBà€€ú›‹Ÿ[X›Y]KŸ]Ÿ[X›Y]WHH\ŸT›]J
+
+HOà]RŸ^Jô]»]J
+JJBà€€ú›‹Ÿ][ô‹ÀŸ]Ÿ][ô‹◊HH\ŸT›]O\Ÿ][ô‹œäÿYŸ][ô‹ Bà€€ú›Ÿ\⁄õÿ\ô\ÀŸ]\⁄õÿ\ô\◊HH\ŸT›]O\⁄õÿ\ô\‘›]OäÿY\⁄õÿ\ô\‘›]JBà€€ú›‹Ÿ][ô‹”‹[ãŸ]Ÿ][ô‹”‹[óHH\ŸT›]Jò[ŸJBà€€ú››\⁄—Y]‹ãŸ]\⁄—Y]‹óHH\ŸT›]O»[ô^àù[Xô\àù[»ò[YNà›ö[ôŒ»Z[ù]\Œàù[Xô\àHù[äù[
+Bà€€ú›‹]ZX⁄–Y‹[ãŸ]]ZX⁄–Y‹[óHH\ŸT›]Jò[ŸJBà€€ú›Ÿõÿ›\‘Ÿ\‹⁄[€ãŸ]õÿ›\‘Ÿ\‹⁄[€óHH\ŸT›]Oõÿ›\‘Ÿ\‹⁄[€àù[äù[
+Bà€€ú››ÿ\›Ÿ]ÿ\›HH\ŸT›]Oÿ\››]Oäù[
+Bà€€ú›Ÿ]öXŸTﬁ[ò–‹ôYÀŸ]]öXŸTﬁ[ò–‹ôY◊HH\ŸT›]O]öXŸTﬁ[ò–‹ôY[ùX[»ù[ä
+
+HOàÿYﬁ[ò–‹ôY[ùX[ 
+JBà€€ú›X›[€êúöYŸTôYàH\ŸTôYè¬à\PX›[€éà
+X›[€éà\X›[€äHOàõ⁄YàHù[äù[
+Bà€€ú›€\›òX⁄›\]Ÿ]\›òX⁄›\]HH\ŸT›]O›ö[ô»ù[ä
+
+HOàŸ]\›òX⁄›\]
+
+JBà€€ú›‹‹\⁄\ŸKŸ]‹\⁄\ŸWHH\ŸT›]O	›ö\⁄XõI»	€X]ö[ô…»	Ÿ€ôIœä
+
+HOà¬àûH¬àô]\õàÿÿ[›‹òYŸKôŸ]][J‘T““—VJHOOH]RŸ^Jô]»]J
+JH»	Ÿ€ôI»à	›ö\⁄XõI¬àHÿ]⁄¬àô]\õà	›ö\⁄XõI¬àBàJBà€€ú›Ÿÿ]Tô]öY]ÀŸ]ÿ]Tô]öY]◊HH\ŸT›]Jò[ŸJBà€€ú›‹ô]öY]“[ô^Ÿ]ô]öY]“[ô^HH\ŸT›]J
+Bà€€ú›Ÿÿ]Pû\\‹ÀŸ]ÿ]Pû\\‹◊HH\ŸT›]J
+
+HOà⁄›[û\\‹”[‹õö[ô—ÿ]JYZ–\X›[€ä
+JJBà€€ú›Ÿÿ]T⁄⁄\YŸ]ÿ]T⁄⁄\YHH\ŸT›]J
+
+HOàÿY[‹õö[ô—ÿ]T⁄⁄\
+]RŸ^Jô]»]J
+JJJBà€€ú›‹ö]X[õŸ‹ô\‹ÀŸ]ö]X[õŸ‹ô\‹◊HH\ŸT›]O[‹õö[ô‘ö]X[õŸ‹ô\‹œä
+
+HOàÿY[‹õö[ô‘ö]X[õŸ‹ô\‹ ]RŸ^Jô]»]J
+JJJBà€€ú›ŸZ[Q]ô[ùÀŸ]Z[Q]ô[ù◊HH\ŸT›]OZ[Q]ô[ù◊Oä
+
+HOàÿYZ[Q]ô[ù 
+JBà€€ú›YôS‹»H\ŸSYôS‹ 
+Bà€€ú›‹[]S‹[ãŸ][]S‹[óHH\ŸT›]Jò[ŸJBà€€ú›ÿÿ\\ôS‹[ãŸ]ÿ\\ôS‹[óHH\ŸT›]Jò[ŸJBà€€ú›ÿÿ\\ôTô\Ÿ]Ÿ]ÿ\\ôTô\Ÿ]HH\ŸT›]J	… Bà€€ú›ÿÿ\\ôP€\‹⁄YûP\ÀŸ]ÿ\\ôP€\‹⁄YûP\◊HH\ŸT›]Oÿ\\ôU\ôŸ]\H[ôYö[ôYä[ôYö[ôY
+Bà€€ú›ÿÿ\\ôS[ŸKŸ]ÿ\\ôS[ŸWHH\ŸT›]O	ŸYò][	»	‹⁄‹[ô…»	‹›ÿ⁄…»	€YY[Ÿ…»	Ÿ€ÿ[	»	Ÿö[ò[òŸI»	€\›	œä	ŸYò][	 Bà€€ú›€Xë]TŸX›[€ãŸ]Xë]TŸX›[€óHH\ŸT›]OXë]TŸX›[€èä
+
+HOàXë]TŸX›[€ëúõ€R\⁄
+
+JBà€€ú›⁄õ–⁄[ôŸTŸ\‹⁄[€ãŸ]õ–⁄[ôŸTŸ\‹⁄[€óHH\ŸT›]Oõ–⁄[ôŸTŸ\‹⁄[€èäù[
+Bà€€ú›⁄õ–⁄[ôŸT\ŸKŸ]õ–⁄[ôŸT\ŸWHH\ŸT›]O	‹ô]öY]…»	ÿ\YY	»	ÿ€ŸI»	Ÿ\úõ‹âœä	‹ô]öY]… Bà€€ú›⁄õ“€õ›€YŸP[ú›Ÿ\ãŸ]õ“€õ›€YŸP[ú›Ÿ\óHH\ŸT›]O»]Y\›[€éà›ö[ôŒ»[ú›Ÿ\éà€õ›€YŸT]Y\ûP[ú›Ÿ\àHù[äù[
+Bà€€ú›€\›\YY\›‹ûRYŸ]\›\YY\›‹ûRYHH\ŸT›]O›ö[ô»ù[äù[
+Bà€€ú›ÿY\]ôQ]ì[ŸWHH\ŸT›]J
+
+HOà¬àûH¬àô]\õàÿÿ[›‹òYŸKôŸ]][J	€YôK[‹ÀXY\]ôKY]â HOOH	ÃI¬àô]»TìŸX\ò⁄\ò[\ ⁄[ô›Àõÿÿ][€ãúŸX\ò⁄
+KôŸ]
+	ÿY\]ôQ]â HOOH	ÃI¬àHÿ]⁄¬àô]\õàò[ŸBàBàJBà€€ú›‹õ›][ôTŸ[X›‹ì‹[ãŸ]õ›][ôTŸ[X›‹ì‹[óHH\ŸT›]Jò[ŸJBà€€ú›Ÿ]ô[ö[ô—ÿ]S‹[ãŸ]]ô[ö[ô—ÿ]S‹[óHH\ŸT›]Jò[ŸJBà€€ú›‹ö]ò]Sõ›\”‹[ãŸ]ö]ò]Sõ›\”‹[óHH\ŸT›]Jò[ŸJBà€€ú›‹ö]ò]Sõ›Tô\Ÿ]Ÿ]ö]ò]Sõ›Tô\Ÿ]HH\ŸT›]J	… Bà€€ú›ö]ò]Sõ›Tÿ]ôYôYàH\ŸTôYè
+
+
+HOàõ⁄Y
+Hù[äù[
+Bà€€ú›\›ÿ\\ôPò]⁄ôYàH\ŸTôYèX⁄\⁄[€êò]⁄ù[äù[
+Bà€€ú›€YôS‹—[ù]RYŸ]YôS‹—[ù]RYHH\ŸT›]O›ö[ô»[ôYö[ôYä
+
+HOà[ù]RYúõ€R\⁄
+
+JBà€€ú›‹ô]öY]’\KŸ]ô]öY]’\WHH\ŸT›]Oô]öY]’\Oä	›ŸYZ€I Bà€€ú›‹ô]öY]—òYùŸ]ô]öY]—òYùHH\ŸT›]Oô]öY]»ù[äù[
+BÇà€€ú›Ÿ^HH]RŸ^Jô]»]J
+JBà€€ú›õ›“›\àHô]»]J
+KôŸ]›\ú 
+Bà€€ú›[ùûHH\ŸSY[[ à
+
+HOà[ùöY\Àôö[ô
+][HOà][Kô]HOOHŸ[X›Y]JHœ»‹ôX]QYò][[ùûJŸ[X›Y]JKàŸ[ùöY\ÀŸ[X›Y]WKà
+BÇà€€ú›ÿ€‹ôQ€ÿ[»H\ŸSY[[ à
+
+HOà
+»õ›Z[ë€ÿ[àŸ][ô‹Àúõ›Z[ë€ÿ[X›]ôRXö]ŒàŸ][ô‹ÀòX›]ôRXö]»JKà‹Ÿ][ô‹Àúõ›Z[ë€ÿ[Ÿ][ô‹ÀòX›]ôRXö]◊Kà
+Bà€€ú›ÿ€‹ôHH€[\ù[Xô\äÿ[›[]Tÿ€‹ôJ[ùûKÿ€‹ôQ€ÿ[ KL
+Bà€€ú›[ò⁄‹ú»H[ùûKò[ò⁄‹ú»œ»◊Bà€€ú›[ò⁄‹ú—€ôHH[ùûKò[ò⁄‹ú—€ôHœ»◊Bà€€ú›[ò⁄‹ìZ[ù]\»Hõ‹õX[^ôP[ò⁄‹ìZ[ù]\ [ùûKò[ò⁄‹ìZ[ù]\À[ò⁄‹úÀõ[ô›Ÿ][ô‹Àôõÿ›\”Z[ù]\ Bà€€ú›€€\]Y[ò⁄‹ú»H[ò⁄‹úÀôö[\ä
+À[ô^
+HOàõ€€X[ä[ò⁄‹ú—€ôV⁄[ô^JJKõ[ô›à€€ú›Xö]—YUŸ^HH\ŸSY[[ à
+
+HOàö[\íXö]—õ‹ë]JŸ][ô‹ÀòX›]ôRXö]ÀŸ[X›Y]KŸ][ô‹ÀöXö]ÿ⁄Y[\ Kà‹Ÿ][ô‹ÀòX›]ôRXö]ÀŸ][ô‹ÀöXö]ÿ⁄Y[\ÀŸ[X›Y]WKà
+Bà€€ú›^T€XﬁHH\ŸSY[[ à
+
+HOàŸ]^T€XﬁJ¬à[ô\ôﬁNà[ùûKô[ô\ôﬁS]ô[àX›]ôRXö]ŒàXö]—YUŸ^Kàò\ŸQõÿ›\”Z[ù]\ŒàŸ][ô‹Àôõÿ›\”Z[ù]\Àà›\éàŸ[X›Y]HOOHŸ^H»õ›“›\ààLãàJKàŸ[ùûKô[ô\ôﬁS]ô[Xö]—YUŸ^KŸ][ô‹Àôõÿ›\”Z[ù]\ÀŸ[X›Y]KŸ^Kõ›“›\óKà
+BÇà€€ú›[‹õö[ô—ÿ]SYY»H\ŸSY[[ à
+
+HOà\⁄õÿ\ô\ÀõYYXÿ][€úÀõX\
+][HOà
+¬àYà][KöYàò[YNà][Kõò[YKà‹ÿYŸNà][Kô‹ÿYŸKà[YNà][Kù[YKàZŸ[éà\”YYXÿ][€ïZŸ[ïŸ^J][KŸ^JKàJJKàŸ\⁄õÿ\ô\ÀõYYXÿ][€úÀŸ^WKà
+BÇà€€ú›ö]X[›\»H\ŸSY[[ à
+
+HOàö]X[Ÿ\]Y[òŸJŸ][ô‹Àõ[‹õö[ô‘ö]X[
+Kà‹Ÿ][ô‹Àõ[‹õö[ô‘ö]X[Kà
+Bà€€ú›ö]X[ô^H\ŸSY[[ à
+
+HOàô^[‹õö[ô‘ö]X[›\
+¬à[òXõYàŸ][ô‹Àõ[‹õö[ô—ÿ]Q[òXõYà⁄⁄\Yàÿ]T⁄⁄\Yàô]öY]Œàò[ŸKàõŸ‹ô\‹Œàö]X[õŸ‹ô\‹ÀàYYXÿ][€úŒà[‹õö[ô—ÿ]SYYÀàõ›Z[î⁄ZŸNàõ€€X[ä[ùûKúõ›Z[î⁄ZŸJKà‹ò]]YQ€ôNàõ€€X[ä[ùûKô‹ò]]YQ€ôJKà[ô\ôﬁTŸ]àõ€€X[ä[ùûKô[ô\ôﬁS]ô[
+KàXYôX€›ô\ûQ€ôNà\“XYôX€›ô\ûQ€ôJ[ùûJKàŸZY⁄Ÿ]à\[Ÿà[ùûKùŸZY⁄Ÿ»OOH	€ù[Xô\â»	âà[ùûKùŸZY⁄Ÿ»àà\⁄\—€ôNàõ€€X[ä[ùûKú\⁄\—€ôJKà€€⁄›Ÿ\ë€ôNàõ€€X[ä[ùûKò€€⁄›Ÿ\äKà⁄[õô\ì[ŸQ€ôNàõ€€X[ä[ùûKù⁄[õô\ì[ŸQ€ôJKà€€ôöYŒàŸ][ô‹Àõ[‹õö[ô‘ö]X[àJKà¬àŸ][ô‹Àõ[‹õö[ô—ÿ]Q[òXõYàŸ][ô‹Àõ[‹õö[ô‘ö]X[àÿ]T⁄⁄\Yàö]X[õŸ‹ô\‹Àà[‹õö[ô—ÿ]SYYÀà[ùûKúõ›Z[î⁄ZŸKà[ùûKô‹ò]]YQ€ôKà[ùûKô[ô\ôﬁS]ô[à[ùûKùŸZY⁄ŸÀà[ùûKõ[€Ÿà[ùûKú€Y\]X[]Kà[ùûKú€Y\\ò][€ãà[ùûKòôY[YKà[ùûKùÿZŸU[YKà[ùûKú\⁄\—€ôKà[ùûKò€€⁄›Ÿ\ãà[ùûKù⁄[õô\ì[ŸQ€ôKàKà
+BÇà€€ú›ö]X[›\Hÿ]Tô]öY]¬à»ö]X[›\÷”X]õZ[äô]öY]“[ô^X]õX^
+ö]X[›\Àõ[ô›HJJWBààö]X[ô^à€€ú›ö]X[\ŸHHö]X[›\»[‹õö[ô‘ö]X[\ŸJö]X[›\
+Hàù[à€€ú›⁄›”[‹õö[ô—ÿ]HH‹\⁄\ŸHOOH	Ÿ€ôI¬à	âàYÿ]Pû\\‹¬à	âàõ€€X[äö]X[›\
+Bà	âà
+ÿ]Tô]öY]»
+ö]X[›\»ïS–‘ëQSó‘’T“QÀö[ò€Y\ ö]X[›\
+Hàò[ŸJJBà€€ú›ö]X[]]Sÿ⁄»HYÿ]Tô]öY]»	âàYÿ]Pû\\‹»	âà‹\⁄\ŸHOOH	Ÿ€ôI»	âà
+ö]X[\ŸHOOH	⁄]]I Bà»ö]X[›\ààù[Çà€€ú››ôXZ–ûRŸ^HH\ŸSY[[ 
+
+HOà¬à€€ú›X\àôX€‹ô›ö[ôÀù[Xô\èàHﬂBàõ‹à
+€€ú›Ÿ^HŸà’ëPR◊“PíU“—VT H¬àX\⁄Ÿ^WHHÿ[›[]T›ôXZ—õ‹íXö]
+[ùöY\ÀŸ^KŸ^JBàBàô]\õàX\àKŸ[ùöY\ÀŸ^WJBÇà€€ú›Xõ‹ì‹[êõÿ\ô»H\ŸSY[[ à
+
+HOà\⁄õÿ\ô\Àòõÿ\ôÀôö[\äõÿ\ôOàõÿ\ôù\⁄‹Àú€€YJ\⁄»Oà]\⁄Àô€ôJJKõ[ô›àŸ\⁄õÿ\ô\Àòõÿ\ô◊Kà
+BÇà€€ú›Xõ‹ì]ôHH\ŸSY[[ à
+
+HOà\ö]ôSXõ‹ì›ô\ùöY] ¬à[ùöY\ÀàŸ^KàX›]ôRXö]Œàö[\íXö]—õ‹ë]JŸ][ô‹ÀòX›]ôRXö]ÀŸ^KŸ][ô‹ÀöXö]ÿ⁄Y[\ Kà‹[êõÿ\ô€›[ùàXõ‹ì‹[êõÿ\ôÀà€ÿ[Œàÿ€‹ôQ€ÿ[Ààﬁ[ò”Xô[à›‹òYŸT›]\”Xô[
+ﬁ[ò‘›]\À\”€õ[ôKõ€€X[ä]öXŸTﬁ[ò–‹ôY JKàﬁ[ò’[YNà	…ÀàJKàŸ[ùöY\ÀŸ^KŸ][ô‹ÀòX›]ôRXö]ÀŸ][ô‹ÀöXö]ÿ⁄Y[\ÀXõ‹ì‹[êõÿ\ôÀÿ€‹ôQ€ÿ[Àﬁ[ò‘›]\À\”€õ[ôK]öXŸTﬁ[ò–‹ôY◊Kà
+BÇà€€ú›Xõ‹î›]»H\ŸSY[[ à
+
+HOà\ö]ôSXõ‹î›] »[ùöY\ÀŸ^K€ÿ[Œàÿ€‹ôQ€ÿ[»JKàŸ[ùöY\ÀŸ^Kÿ€‹ôQ€ÿ[◊Kà
+BÇà\ŸQYôôX›
+
+
+HOà¬à€€ú›€€ú›[YPX›[€àH
+
+HOà¬à€€ú›X›[€àHZŸP\X›[€ëúõ€Sÿÿ][€ä
+BàYà
+XX›[€äHô]\õÇàYà
+⁄›[û\\‹”[‹õö[ô—ÿ]JX›[€äJHŸ]ÿ]Pû\\‹ ùYJBà⁄[ô›ÀúŸ][Y[›]
+
+
+HOàX›[€êúöYŸTôYãò›\úô[ùÀò\PX›[€äX›[€äK
+BàBÇà€€ú›€í\⁄H
+
+HOà¬àŸ]öY] öY]—úõ€R\⁄
+
+JBàŸ]YôS‹—[ù]RY
+[ù]RYúõ€R\⁄
+
+JBàŸ]Xë]TŸX›[€äXë]TŸX›[€ëúõ€R\⁄
+
+JBà€€ú›[YPX›[€ä
+BàBÇà⁄[ô›ÀòY]ô[ù\›[ô\ä	⁄\⁄⁄[ôŸIÀ€í\⁄
+BàYà
+]⁄[ô›Àõÿÿ][€ãö\⁄
+Hò]öYÿ]R\⁄
+öY]ÀùYJBà[ŸH€€ú›[YPX›[€ä
+Bàô]\õà
+
+HOà⁄[ô›Àúô[[›ôQ]ô[ù\›[ô\ä	⁄\⁄⁄[ôŸIÀ€í\⁄
+BàK◊JBÇà\ŸQYôôX›
+
+
+HOà¬à€€ú›€íŸ^HH
+]ô[ùàŸ^Xõÿ\ô]ô[ù
+HOà¬àYà
+
+]ô[ùõY]RŸ^H]ô[ùò›õŸ^JH	âà]ô[ùöŸ^Kù”›Ÿ\êÿ\ŸJ
+HOOH	⁄… H¬à]ô[ùúô]ô[ùYò][
+
+BàŸ][]S‹[äùYJBàBàBà⁄[ô›ÀòY]ô[ù\›[ô\ä	⁄Ÿ^Y›€âÀ€íŸ^JBàô]\õà
+
+HOà⁄[ô›Àúô[[›ôQ]ô[ù\›[ô\ä	⁄Ÿ^Y›€âÀ€íŸ^JBàK◊JBÇà\ŸQYôôX›
+
+
+HOà¬à€€ú›€ê⁄[ôŸHH
+
+HOà¬à⁄[ô›ÀúŸ][Y[›]
+
+
+HOà»õ⁄Y\⁄]öXŸTﬁ[ò 
+Kòÿ]⁄
+
+
+HOàﬂJHKå
+BàBà⁄[ô›ÀòY]ô[ù\›[ô\äQëW”‘◊–“Së—W—UëSï€ê⁄[ôŸJBàô]\õà
+
+HOà⁄[ô›Àúô[[›ôQ]ô[ù\›[ô\äQëW”‘◊–“Së—W—UëSï€ê⁄[ôŸJBàK◊JBÇà\ŸQYôôX›
+
+
+HOà¬àYà
+\⁄]€õJ⁄[ô›Àõÿÿ][€ãö\⁄
+HOOH\⁄úõ€UöY] öY] JHò]öYÿ]R\⁄
+öY]ÀùYJBàK›öY]◊JBÇà€€ú›Ÿ][ô‹“Yò]YH\ŸTôYäò[ŸJBà€€ú›Xõ‹íYò]YH\ŸTôYäò[ŸJBà€€ú›ö]X[õŸ‹ô\‹“Yò]YH\ŸTôYäò[ŸJBà€€ú›\›ô[[›QŸ[îŸ][ô‹»H\ŸTôYä
+Bà€€ú›\›ô[[›QŸ[ìXõ‹àH\ŸTôYä
+Bà€€ú›\›ô[[›QŸ[îö]X[H\ŸTôYä
+BÇà\ŸQYôôX›
+
+
+HOà¬àÿYôSÿÿ[›‹òYŸTŸ]][J—USë‘◊“—VKî””ãú›ö[ô⁄YûJŸ][ô‹ JBàYà
+\Ÿ][ô‹“Yò]Yò›\úô[ù
+H¬àŸ][ô‹“Yò]Yò›\úô[ùHùYBàô]\õÇàBà€€ú›Ÿ[àHô[[›P\QŸ[ô\ò][€ìõ› 
+BàYà
+Ÿ[àOOH\›ô[[›QŸ[îŸ][ô‹Àò›\úô[ù
+H¬à\›ô[[›QŸ[îŸ][ô‹Àò›\úô[ùHŸ[Çàô]\õÇàBàYà
+\—]öXŸTﬁ[ò—[òXõY
+
+JH¬à⁄[ô›ÀúŸ][Y[›]
+
+
+HOà¬àõ⁄Y\⁄]öXŸTﬁ[ò 
+Kòÿ]⁄
+
+
+HOàﬂJBàKL
+BàBàK‹Ÿ][ô‹◊JBÇà\ŸQYôôX›
+
+
+HOà¬àÿYôSÿÿ[›‹òYŸTŸ]][JT“ì–Të‘T◊“—VKî””ãú›ö[ô⁄YûJ\⁄õÿ\ô\ JBàYà
+[Xõ‹íYò]Yò›\úô[ù
+H¬àXõ‹íYò]Yò›\úô[ùHùYBàô]\õÇàBà€€ú›Ÿ[àHô[[›P\QŸ[ô\ò][€ìõ› 
+BàYà
+Ÿ[àOOH\›ô[[›QŸ[ìXõ‹ãò›\úô[ù
+H¬à\›ô[[›QŸ[ìXõ‹ãò›\úô[ùHŸ[Çàô]\õÇàBàYà
+\—]öXŸTﬁ[ò—[òXõY
+
+JH¬à⁄[ô›ÀúŸ][Y[›]
+
+
+HOà¬àõ⁄Y\⁄]öXŸTﬁ[ò 
+Kòÿ]⁄
+
+
+HOàﬂJBàKL
+BàBàKŸ\⁄õÿ\ô\◊JBÇà\ŸQYôôX›
+
+
+HOà¬àÿ]ôS[‹õö[ô‘ö]X[õŸ‹ô\‹ ö]X[õŸ‹ô\‹ BàYà
+\ö]X[õŸ‹ô\‹“Yò]Yò›\úô[ù
+H¬àö]X[õŸ‹ô\‹“Yò]Yò›\úô[ùHùYBàô]\õÇàBà€€ú›Ÿ[àHô[[›P\QŸ[ô\ò][€ìõ› 
+BàYà
+Ÿ[àOOH\›ô[[›QŸ[îö]X[ò›\úô[ù
+H¬à\›ô[[›QŸ[îö]X[ò›\úô[ùHŸ[Çàô]\õÇàBàYà
+\—]öXŸTﬁ[ò—[òXõY
+
+JH¬à⁄[ô›ÀúŸ][Y[›]
+
+
+HOà¬àõ⁄Y\⁄]öXŸTﬁ[ò 
+Kòÿ]⁄
+
+
+HOàﬂJBàKL
+BàBàK‹ö]X[õŸ‹ô\‹◊JBÇà\ŸQYôôX›
+
+
+HOà¬à€€ú›ô[ÿY^ò\»H
+
+HOà¬àŸ]Ÿ][ô‹ ÿYŸ][ô‹ 
+JBàŸ]\⁄õÿ\ô\ ÿY\⁄õÿ\ô\‘›]J
+JBàŸ]]öXŸTﬁ[ò–‹ôY ÿYﬁ[ò–‹ôY[ùX[ 
+JBàŸ]ö]X[õŸ‹ô\‹ ÿY[‹õö[ô‘ö]X[õŸ‹ô\‹ Ÿ^JJBàŸ]Z[Q]ô[ù ÿYZ[Q]ô[ù 
+JBàBà€€ú›ô[ÿY]ô[ù»H
+
+HOàŸ]Z[Q]ô[ù ÿYZ[Q]ô[ù 
+JBà⁄[ô›ÀòY]ô[ù\›[ô\äQëW”‘◊‘÷Sê◊—VêT◊—UëSïô[ÿY^ò\ Bà⁄[ô›ÀòY]ô[ù\›[ô\äQëW”‘◊—RSW—UëSï◊—UëSïô[ÿY]ô[ù Bà€€ú›€î›‹òYŸHH
+]ô[ùà›‹òYŸQ]ô[ù
+HOà¬àYà
+à]ô[ùöŸ^HOOH—USë‘◊“—VBà]ô[ùöŸ^HOOHT“ì–Të‘T◊“—VBà]ô[ùöŸ^HOOHS‘ìíSë◊‘íUPS‘ì—‘ëT‘◊“—VBà]ô[ùöŸ^HOOHRSW—UëSï◊“—VBà]ô[ùöŸ^HOOHù[à
+H¬àô[ÿY^ò\ 
+BàBàBà⁄[ô›ÀòY]ô[ù\›[ô\ä	‹›‹òYŸIÀ€î›‹òYŸJBàô]\õà
+
+HOà¬à⁄[ô›Àúô[[›ôQ]ô[ù\›[ô\äQëW”‘◊‘÷Sê◊—VêT◊—UëSïô[ÿY^ò\ Bà⁄[ô›Àúô[[›ôQ]ô[ù\›[ô\äQëW”‘◊—RSW—UëSï◊—UëSïô[ÿY]ô[ù Bà⁄[ô›Àúô[[›ôQ]ô[ù\›[ô\ä	‹›‹òYŸIÀ€î›‹òYŸJBàBàK›Ÿ^WJBÇà\ŸQYôôX›
+
+
+HOà¬à€€ú›õ€›Hÿ›[Y[ùôÿ›[Y[ù[[Y[ùà€€ú›YYXHH⁄[ô›ÀõX]⁄YYXJ	 ôYô\úÀX€€‹ã\ÿ⁄[YNà\ö I BÇà€€ú›\U[YHH
+
+HOà¬à€€ú›ô\€€ôYHŸ][ô‹Àù[YHOOH	‹ﬁ\›[I»»
+YYXKõX]⁄\»»	Ÿ\ö…»à	€Y⁄	 HàŸ][ô‹Àù[YBàõ€›ô]\Ÿ]ù[YHHô\€€ôYàõ€›ú›[Kò€€‹îÿ⁄[YHHô\€€ôYàBÇà\U[YJ
+BàYYXKòY]ô[ù\›[ô\ä	ÿ⁄[ôŸIÀ\U[YJBàô]\õà
+
+HOàYYXKúô[[›ôQ]ô[ù\›[ô\ä	ÿ⁄[ôŸIÀ\U[YJBàK‹Ÿ][ô‹Àù[YWJBÇà\ŸQYôôX›
+
+
+HOà¬àÿ›[Y[ùôÿ›[Y[ù[[Y[ùô]\Ÿ]òXÿŸ[ùHŸ][ô‹ÀòXÿŸ[ùàK‹Ÿ][ô‹ÀòXÿŸ[ùJBÇà\ŸQYôôX›
+
+
+HOà¬àYà
+‹\⁄\ŸHOOH	›ö\⁄XõI H¬à€€ú›[Y\àH⁄[ô›ÀúŸ][Y[›]
+
+
+HOàŸ]‹\⁄\ŸJ	€X]ö[ô… KåL
+Bàô]\õà
+
+HOà⁄[ô›Àò€X\ï[Y[›]
+[Y\äBàBàYà
+‹\⁄\ŸHOOH	€X]ö[ô… H¬à€€ú›[Y\àH⁄[ô›ÀúŸ][Y[›]
+
+
+HOà¬àŸ]‹\⁄\ŸJ	Ÿ€ôI BàÿYôSÿÿ[›‹òYŸTŸ]][J‘T““—VKŸ^JBàKML
+Bàô]\õà
+
+HOà⁄[ô›Àò€X\ï[Y[›]
+[Y\äBàBàK‹‹\⁄\ŸKŸ^WJBÇà€€ú›\€Z\‹‘‹\⁄H
+
+HOà¬àYà
+‹\⁄\ŸHOOH	›ö\⁄XõI HŸ]‹\⁄\ŸJ	€X]ö[ô… BàBÇà\ŸQYôôX›
+
+
+HOà¬àŸ]ÿ]T⁄⁄\Y
+ÿY[‹õö[ô—ÿ]T⁄⁄\
+Ÿ^JJBàŸ]ö]X[õŸ‹ô\‹ ÿY[‹õö[ô‘ö]X[õŸ‹ô\‹ Ÿ^JJBàK›Ÿ^WJBÇà\ŸQYôôX›
+
+
+HOà¬àYà
+]ÿ\›
+Hô]\õÇà€€ú›[Y\àH⁄[ô›ÀúŸ][Y[›]
+
+
+HOàŸ]ÿ\›
+ù[
+Kÿ\›òX›[€ìXô[»åàå
+Bàô]\õà
+
+HOà⁄[ô›Àò€X\ï[Y[›]
+[Y\äBàK›ÿ\›JBÇà€€ú›⁄›’ÿ\›H
+Y\‹ÿYŸNà›ö[ôÀX›[€ìXô[Œà›ö[ôÀ€êX›[€èŒà
+
+HOàõ⁄Y
+HOà¬àŸ]ÿ\›
+»Y\‹ÿYŸKX›[€ìXô[€êX›[€àJBàBÇà\ŸQYôôX›
+
+
+HOà¬àYà
+\Ÿ][ô‹ÀõYY\‘ô[Z[ô\ú—[òXõY
+Hô]\õÇÇà€€ú›X⁄»H
+
+HOà¬à€€ú›YHHYSYYXÿ][€îô[Z[ô\ú \⁄õÿ\ô\ÀõYYXÿ][€úÀŸ^JBàôö[\ä][HOà¬àûH¬àô]\õà[ÿÿ[›‹òYŸKôŸ]][Jô[Z[ô\î›‹òYŸRŸ^J][KöYŸ^JJBàHÿ]⁄¬àô]\õàùYBàBàJBàYà
+YKõ[ô›OOH
+Hô]\õÇÇàõ‹à
+€€ú›][HŸàYJH¬àûH¬àÿÿ[›‹òYŸKúŸ]][Jô[Z[ô\î›‹òYŸRŸ^J][KöYŸ^JK	ÃI BàHÿ]⁄» àY€õ‹ôH
+ã»BàBÇà€€ú›Xô[HYKõ[ô›OOHBà»YYZÿ[Y[ùà	ŸYVÃKõò[Y_H
+	ŸYVÃKù[Y_JXààYYZÿ[Y[ùNà	ŸYKõX\
+][HOà][Kõò[YJKöõ⁄[ä	À	 _XàŸ]ÿ\›
+»Y\‹ÿYŸNàXô[JBÇàYà
+	”õ›YöXÿ][€â»[à⁄[ô›»	âàõ›YöXÿ][€ãú\õZ\‹⁄[€àOOH	Ÿ‹ò[ùY	 H¬àûH¬àô]»õ›YöXÿ][€äYKõ[ô›OOHH»	”YYZÿ[Y[ù	»à	”YYZÿ[Y[ùIÀ»õŸNàXô[JBàHÿ]⁄» àY€õ‹ôH
+ã»BàBàBÇàX⁄ 
+Bà€€ú›[Y\àH⁄[ô›ÀúŸ][ù\ùò[
+X⁄ÀåÃ
+Bà€€ú›€ïö\⁄XõHH
+
+HOà¬àYà
+ÿ›[Y[ùùö\⁄Xö[]T›]HOOH	›ö\⁄XõI HX⁄ 
+BàBàÿ›[Y[ùòY]ô[ù\›[ô\ä	›ö\⁄Xö[]X⁄[ôŸIÀ€ïö\⁄XõJBàô]\õà
+
+HOà¬à⁄[ô›Àò€X\í[ù\ùò[
+[Y\äBàÿ›[Y[ùúô[[›ôQ]ô[ù\›[ô\ä	›ö\⁄Xö[]X⁄[ôŸIÀ€ïö\⁄XõJBàBàK‹Ÿ][ô‹ÀõYY\‘ô[Z[ô\ú—[òXõY\⁄õÿ\ô\ÀõYYXÿ][€úÀŸ^WJBÇà€€ú›\]Q[ùûHH
+à]⁄à\ùX[\⁄õÿ\ô[ùûOãà€›\òŸNàZ[Q]ô[ù€›\òŸHH	›ZIÀà‹[€úœŒà»[ô”ŸèŒà›ö[ôŒ»Ÿôô\ï[ôœŒàõ€€X[é»ÿ\›Y\‹ÿYŸOŒà›ö[ô»Kà
+HOà¬à€€ú›ô^]⁄H	‹õ›Z[î⁄ZŸI»[à]⁄à»¬àããú]⁄àããúﬁ[ò‘õ›Z[î⁄ZŸSù]ö][€äà[ùûKàõ€€X[ä]⁄úõ›Z[î⁄ZŸJKàŸ][ô‹Àõ[‹õö[ô‘ö]X[ú⁄ZŸSYX[àŸ][ô‹Àúõ›Z[ë€ÿ[à
+KàBàà]⁄à€€ú›ôYõ‹ôHHÿY
+
+Bà€€ú›ô]ö[›\»Hÿ\\ôTô]ö[›\’ò[Y\ à[ùûH\»[ö€õ›€à\»ôX€‹ô›ö[ôÀ[ö€õ›€èãàô^]⁄\»ôX€‹ô›ö[ôÀ[ö€õ›€èãà
+Bàõ⁄Yÿ]ôQ[ùûJ»ããô[ùûKããõô^]⁄JKù[ä⁄»Oà¬àYà
+[⁄ H¬à⁄›’ÿ\›
+	‘‹ZX⁄\õàôZŸ\ÿ⁄YŸ[à8†%‹ZX⁄\àõ€Ÿ\àõÿ⁄⁄Y\ùâ Bàô]\õÇàBà€€ú›]ô[ùH‹ôX]Q[ùûT]⁄]ô[ù
+¬à]Nà[ùûKô]Kà⁄[ôŸ\Œàô^]⁄\»ôX€‹ô›ö[ôÀ[ö€õ›€èãàô]ö[›\Àà€›\òŸKà[ô”Ÿéà‹[€úœÀù[ô”ŸãàJBà\[ôZ[Q]ô[ù
+]ô[ù
+Bà€€ú›Yù\àHÿY
+
+Bà€€ú›ÿZ[ôYHYù\ãù›[HôYõ‹ôKù›[àYà
+‹[€úœÀù[ô”ŸäH¬à⁄›’ÿ\›
+	·ô\ù[ô»∞Ô⁄ŸÈô⁄Y»Ÿ[XX⁄â Bàô]\õÇàBàYà
+Yù\ãõ]ô[àôYõ‹ôKõ]ô[
+H¬à⁄›’ÿ\›
+]ô[	ÿYù\ãõ]ô[H0≠»
+…ŸÿZ[ôYH
+Bàô]\õÇàBàYà
+ÿZ[ôYà
+H¬à⁄›’ÿ\›
+
+…ŸÿZ[ôYH
+Bàô]\õÇàBàYà
+‹[€úœÀõŸôô\ï[ô»	âà]ô[ù	âàÿöôX›öŸ^\ ô]ö[›\ Kõ[ô›à
+H¬à⁄›’ÿ\›
+‹[€úÀùÿ\›Y\‹ÿYŸHœ»	—Ÿ\‹ZX⁄\ùâÀ	‘∞Ô⁄ŸÈô⁄Y…À
+
+HOà¬à[ô—Z[Q]ô[ù
+]ô[ù
+BàJBàô]\õÇàBàYà
+‹[€úœÀùÿ\›Y\‹ÿYŸJH⁄›’ÿ\›
+‹[€úÀùÿ\›Y\‹ÿYŸJBàJBàBÇà\ŸQYôôX›
+
+
+HOà¬àYà
+Y[ùûKúõ›Z[î⁄ZŸH[ùûR\”YX[
+[ùûK“R—W”QPS“Q
+JHô]\õÇà\]Q[ùûJ»õ›Z[î⁄ZŸNàùYHK	€[‹õö[ô◊Ÿÿ]I BàKŸ[ùûKô]K[ùûKúõ›Z[î⁄ZŸK[ùûKò\YYYX[◊JBÇà€€ú›ÿ]ôQ[ùûQõ‹ë]HH\ﬁ[ò»
+à]Nà›ö[ôÀà]⁄à\ùX[\⁄õÿ\ô[ùûOãà€›\òŸNàZ[Q]ô[ù€›\òŸHH	›ZIÀà‹[€úœŒà»[ô”ŸèŒà›ö[ô»Kà
+HOà¬à€€ú›ò\ŸHH[ùöY\Àôö[ô
+][HOà][Kô]HOOH]JHœ»‹ôX]QYò][[ùûJ]JBà€€ú›ô]ö[›\»Hÿ\\ôTô]ö[›\’ò[Y\ àò\ŸH\»[ö€õ›€à\»ôX€‹ô›ö[ôÀ[ö€õ›€èãà]⁄\»ôX€‹ô›ö[ôÀ[ö€õ›€èãà
+Bà€€ú›⁄»H]ÿZ]ÿ]ôQ[ùûJ»ããòò\ŸKããú]⁄JBàYà
+[⁄ H¬à⁄›’ÿ\›
+	‘‹ZX⁄\õàôZŸ\ÿ⁄YŸ[à8†%‹ZX⁄\àõ€Ÿ\àõÿ⁄⁄Y\ùâ BàH[ŸH¬à\[ôZ[Q]ô[ù
+‹ôX]Q[ùûT]⁄]ô[ù
+¬à]Kà⁄[ôŸ\Œà]⁄\»ôX€‹ô›ö[ôÀ[ö€õ›€èãàô]ö[›\Àà€›\òŸKà[ô”Ÿéà‹[€úœÀù[ô”ŸãàJJBàBàô]\õà⁄¬àBÇà€€ú›[ô—Z[Q]ô[ùH
+]ô[ùà[ùûT]⁄]ô[ù
+HOà¬àYà
+Xÿ[ï[ô—[ùûT]⁄
+]ô[ùÿYZ[Q]ô[ù 
+JJH¬à⁄›’ÿ\›
+	–ô\ôZ]»∞Ô⁄ŸÈô⁄Y»Ÿ\àöX⁄YZàpÌô€X⁄â Bàô]\õÇàBà€€ú›]⁄HùZ[[ô‘]⁄
+]ô[ù
+BàYà
+\]⁄
+H¬à⁄›’ÿ\›
+	—Y\ŸH0·ô\ù[ô»0È‹›⁄X⁄öX⁄∞Ô⁄ŸÈô⁄Y»XX⁄[ãâ Bàô]\õÇàBàYà
+]ô[ùô]HOOH[ùûKô]JH¬à\]Q[ùûJ]⁄\»\ùX[\⁄õÿ\ô[ùûOã	›ZIÀ»[ô”Ÿéà]ô[ùöYJBàô]\õÇàBàõ⁄Yÿ]ôQ[ùûQõ‹ë]J]ô[ùô]K]⁄\»\ùX[\⁄õÿ\ô[ùûOã	›ZIÀ»[ô”Ÿéà]ô[ùöYJKù[ä⁄»Oà¬àYà
+⁄ H⁄›’ÿ\›
+	·ô\ù[ô»∞Ô⁄ŸÈô⁄Y»Ÿ[XX⁄â BàJBàBÇà€€ú›[ô‘ö]X[]ô[ùH
+]ô[ùàZ[Q]ô[ù
+HOà¬àYà
+Xÿ[ï[ô‘ö]X[›\
+]ô[ùÿYZ[Q]ô[ù 
+JJH¬à⁄›’ÿ\›
+	–ô\ôZ]»∞Ô⁄ŸÈô⁄Y»Ÿ\àöX⁄YZàpÌô€X⁄â Bàô]\õÇàBà\[ôZ[Q]ô[ù
+‹ôX]Tö]X[›\]ô[ù
+¬à]Nà]ô[ùô]Kà›\Yà]ô[ùú›\Yà›]\Œà	‹ô[‹[ôY	ÀàJJBàYà
+]ô[ùô]HOOHŸ^JH¬àŸ]ö]X[õŸ‹ô\‹ ›\úô[ùOà¬à€€ú›ô^H¬àããò›\úô[ùà€ôNà›\úô[ùô€ôKôö[\ä›\Oà›\OOH]ô[ùú›\Y
+KàBàÿ]ôS[‹õö[ô‘ö]X[õŸ‹ô\‹ ô^
+Bàô]\õàô^àJBàBà⁄›’ÿ\›
+	‘ö]X[ÿ⁄ö]⁄YY\àŸpÌôôõô]â BàBÇà€€ú›[ôQ^‹ùH
+
+HOà¬à^‹ùòX⁄›\ù[ôJ¬à[ùöY\ÀàŸ][ô‹Àà\⁄õÿ\ô\ÀàJBàŸ]\›òX⁄›\]
+ô]»]J
+Kù“T”‘›ö[ô 
+JBà⁄›’ÿ\›
+	’õ€›0ÈôYŸ\»òX⁄›\^‹ùY\ùâ BàBÇà€€ú›[ôR[\‹ùH\ﬁ[ò»
+ö[Nàö[JHOà¬àûH¬à€€ú›[\‹ùYH]ÿZ][\‹ùòX⁄›\ö[Jö[JBà€€ú›ô\XŸP[H⁄[ô›Àò€€ôö\õJà	⁄[\‹ùYô[ùûP€›[ùHYŸHŸYù[ô[à
+	⁄[\‹ùYõ[ŸHOOH	ÿù[ôI»»	’õ€òX⁄›\	»à	€ù\àZ[ù∞ÈŸIﬂJKóóì“»H[\»\úŸ]ô[óêXòúôX⁄[àHòX⁄][HY\ôŸ[òà
+BÇàÀ»ÿ€‹ôH⁄][\‹ùY€ÿ[»⁄[àô\Ÿ[ù8†%€â›‹ö]HŸ][ô‹»[ù[\Ÿ\à€€ôö\õYYÇà€€ú›[\‹ùYŸ][ô‹»H[\‹ùYúŸ][ô‹»\»\ùX[\Ÿ][ô‹œà[ôYö[ôYà€€ú›€ÿ[—õ‹îÿ€‹ôHH[\‹ùYõ[ŸHOOH	ÿù[ôI»	âà[\‹ùYŸ][ô‹¬à»¬àõ›Z[ë€ÿ[à€[\ù[Xô\äù[Xô\ä[\‹ùYŸ][ô‹Àúõ›Z[ë€ÿ[
+Hÿ€‹ôQ€ÿ[Àúõ›Z[ë€ÿ[L
+KàX›]ôRXö]Œà\úò^Kö\–\úò^J[\‹ùYŸ][ô‹ÀòX›]ôRXö] Bà»[\‹ùYŸ][ô‹ÀòX›]ôRXö]ÀõX\
+›ö[ô Bààÿ€‹ôQ€ÿ[ÀòX›]ôRXö]ÀàBààÿ€‹ôQ€ÿ[¬Çà€€ú›õ‹õX[^ôYH[\‹ùYô[ùöY\ÀõX\
+][HOà
+¬àããö][KàZ[Tÿ€‹ôNàÿ[›[]Tÿ€‹ôJ][K€ÿ[—õ‹îÿ€‹ôJKàJJBà€€ú›ö[ò[[ùöY\»Hô\XŸP[»õ‹õX[^ôYàY\ôŸQ[ùöY\–ûQ]J[ùöY\Àõ‹õX[^ôY
+BÇàYà
+\ÿ]ôP[[ùöY\ ö[ò[[ùöY\ JHõ›»ô]»\úõ‹ä	€ÿÿ[›‹òYŸH[ò]òZ[XõI BàYà
+[\‹ùYõ[ŸHOOH	ÿù[ôI H¬à\PòX⁄›\^ò\ [\‹ùY
+BàYà
+[\‹ùYúŸ][ô‹ HŸ]Ÿ][ô‹ ÿYŸ][ô‹ 
+JBàYà
+[\‹ùYô\⁄õÿ\ô\ HŸ]\⁄õÿ\ô\ ÿY\⁄õÿ\ô\‘›]J
+JBàBàôX€€\]Vúõ€Q[ùöY\ ö[ò[[ùöY\ÀŸ^JBàŸ]\›òX⁄›\]
+ô]»]J
+Kù“T”‘›ö[ô 
+JBà]ÿZ]ô[ÿY[
+
+Bà⁄›’ÿ\›
+[\‹ùYõ[ŸHOOH	ÿù[ôI»»	’õ€òX⁄›\[\‹ùY\ù0≠»ô]Hô\ôX⁄ô]â»à	—Z[ù∞ÈŸH[\‹ùY\ù0≠»ô]Hô\ôX⁄ô]â BàHÿ]⁄¬à⁄›’ÿ\›
+	“[\‹ùôZŸ\ÿ⁄YŸ[ãâ BàBàBÇà€€ú›Ÿ][ò⁄‹ú»H
+ô^[ò⁄‹úŒà›ö[ô÷◊Kô^€ôNàõ€€X[ñ◊Kô^Z[ù]\œŒàù[Xô\ñ◊JHOà¬à€€ú›õ‹õX[^ôY€ôHHô^[ò⁄‹úÀõX\
+
+À[ô^
+HOàõ€€X[äô^€ôV⁄[ô^JJBà€€ú›€›\òŸSZ[ù]\»Hô^Z[ù]\»œ»ô^[ò⁄‹úÀõX\
+
+À[ô^
+HOà[ò⁄‹ìZ[ù]\÷⁄[ô^Hœ»Ÿ][ô‹Àôõÿ›\”Z[ù]\ Bà\]Q[ùûJ¬à[ò⁄‹úŒàô^[ò⁄‹úÀà[ò⁄‹ú—€ôNàõ‹õX[^ôY€ôKà[ò⁄‹ìZ[ù]\Œàõ‹õX[^ôP[ò⁄‹ìZ[ù]\ €›\òŸSZ[ù]\Àô^[ò⁄‹úÀõ[ô›Ÿ][ô‹Àôõÿ›\”Z[ù]\ Kà\⁄‹—€ôNàõ‹õX[^ôY€ôKôö[\äõ€€X[äKõ[ô›àJBàBÇà€€ú›ŸŸ€P[ò⁄‹àH
+[ô^àù[Xô\äHOà¬à€€ú›ô^€ôHH[ò⁄‹úÀõX\
+
+À][R[ô^
+HOÇà][R[ô^OOH[ô^»X[ò⁄‹ú—€ôV⁄][R[ô^HàHX[ò⁄‹ú—€ôV⁄][R[ô^Kà
+BàŸ][ò⁄‹ú [ò⁄‹úÀô^€ôK[ò⁄‹ìZ[ù]\ BàBÇà€€ú›ÿ]ôU\⁄»H
+ò[YNà›ö[ôÀ[ô^àù[Xô\àù[Z[ù]\œŒàù[Xô\äHOà¬à€€ú›€X[àHò[YKùö[J
+BàYà
+X€X[äHô]\õÇà€€ú›\⁄”Z[ù]\»H€[\ù[Xô\äZ[ù]\»œ»^T€XﬁKôõÿ›\”Z[ù]\ÀKLå
+BÇàYà
+[ô^OOHù[
+H¬àYà
+[ò⁄‹úÀõ[ô›èH^T€XﬁKõX^[ò⁄‹ú H¬à⁄›’ÿ\›
+à^T€XﬁKô[ô\ôﬁHOOH	€›…¬à»	–ôZHöYYöYŸ\à[ô\ô⁄YHôZX⁄[àX^[X[ùŸZH[öŸ\ãâ¬àà^T€XﬁKô[ô\ôﬁHOOH	€⁄ÿ^I¬à»	“]]HX^[X[ôZH[öŸ\à8†%0È[àY»XX⁄ò\ãâ¬àà	”X^[X[∞ÔôàYŸ\ÿ[öŸ\à[[à[àY»0Ôô\ú⁄X⁄X⁄âÀà
+Bàô]\õÇàBàŸ][ò⁄‹ú Àããò[ò⁄‹úÀ€X[óKÀããò[ò⁄‹ú—€ôKò[ŸWKÀããò[ò⁄‹ìZ[ù]\À\⁄”Z[ù]\◊JBà⁄›’ÿ\›
+	–]YôÿXôH[ûùYŸY∞Ô›â BàH[ŸH¬à€€ú›ô^H[ò⁄‹úÀõX\
+
+][K][R[ô^
+HOà
+][R[ô^OOH[ô^»€X[àà][JJBà€€ú›ô^Z[ù]\»H[ò⁄‹ìZ[ù]\ÀõX\
+
+][K][R[ô^
+HOà
+][R[ô^OOH[ô^»\⁄”Z[ù]\»à][JJBàŸ][ò⁄‹ú ô^[ò⁄‹úÀõX\
+
+À][R[ô^
+HOàõ€€X[ä[ò⁄‹ú—€ôV⁄][R[ô^JJKô^Z[ù]\ Bà⁄›’ÿ\›
+	–]YôÿXôHZ›X[\⁄Y\ùâ BàBàŸ]\⁄—Y]‹äù[
+BàBÇà€€ú›]ZX⁄–Y\⁄»H
+]Nà›ö[ô HOà¬àÿ]ôU\⁄ ]Kù[
+BàŸ]]ZX⁄–Y‹[äò[ŸJBàBÇà€€ú›]ZX⁄–YŸZY⁄H
+ò[YNàù[Xô\äHOà¬à\]Q[ùûJ»ŸZY⁄ŸŒàò[YHK	‹]ZX⁄◊ÿY	À¬àŸôô\ï[ôŒàùYKàÿ\›Y\‹ÿYŸNàŸ]⁄X⁄Ÿ\‹ZX⁄\ùà	›ò[Y_HŸÿàJBàŸ]]ZX⁄–Y‹[äò[ŸJBàBÇà€€ú›]ZX⁄–Yÿ[‹öY\»H
+ò[YNàù[Xô\äHOà¬à\]Q[ùûJ»ÿ[‹öY\Œàò[YKÿ[‹öY\‘ôXX⁄Yàò[YHèHŸ][ô‹Àòÿ[‹öYQ€ÿ[K	‹]ZX⁄◊ÿY	À¬àŸôô\ï[ôŒàùYKàÿ\›Y\‹ÿYŸNàÿ[‹öY[àŸ\‹ZX⁄\ùà	›ò[Y_Hÿÿ[àJBàŸ]]ZX⁄–Y‹[äò[ŸJBàBÇà€€ú›]ZX⁄–Yÿ]\àH
+ò[YNàù[Xô\äHOà¬à\]Q[ùûJ»ÿ]\ì]\úŒàò[YHK	‹]ZX⁄◊ÿY	À¬àŸôô\ï[ôŒàùYKàÿ\›Y\‹ÿYŸNàÿ\‹Ÿ\àŸ\‹ZX⁄\ùà	›ò[Y_HàJBàŸ]]ZX⁄–Y‹[äò[ŸJBàBÇà€€ú›]ZX⁄–Yõ›Z[àH
+ò[YNàù[Xô\äHOà¬à\]Q[ùûJ»õ›Z[ë‹ò[\Œàò[YKõ›Z[îôXX⁄Yàò[YHèHŸ][ô‹Àúõ›Z[ë€ÿ[K	‹]ZX⁄◊ÿY	À¬àŸôô\ï[ôŒàùYKàÿ\›Y\‹ÿYŸNàõ›Z[àŸ\‹ZX⁄\ùà	›ò[Y_HÿàJBàŸ]]ZX⁄–Y‹[äò[ŸJBàBÇà€€ú›]ZX⁄–Yò]H
+ò[YNàù[Xô\äHOà¬à\]Q[ùûJ»ò]‹ò[\Œàò[YHK	‹]ZX⁄◊ÿY	À¬àŸôô\ï[ôŒàùYKàÿ\›Y\‹ÿYŸNàô]Ÿ\‹ZX⁄\ùà	›ò[Y_HÿàJBàŸ]]ZX⁄–Y‹[äò[ŸJBàBÇà€€ú›]ZX⁄–Yÿ\òú»H
+ò[YNàù[Xô\äHOà¬à\]Q[ùûJ»ÿ\òú—‹ò[\Œàò[YHK	‹]ZX⁄◊ÿY	À¬àŸôô\ï[ôŒàùYKàÿ\›Y\‹ÿYŸNà€⁄[öYò]HŸ\‹ZX⁄\ùà	›ò[Y_HÿàJBàŸ]]ZX⁄–Y‹[äò[ŸJBàBÇà€€ú›]ZX⁄–YöXô\àH
+ò[YNàù[Xô\äHOà¬à\]Q[ùûJ»öXô\ë‹ò[\Œàò[YHK	‹]ZX⁄◊ÿY	À¬àŸôô\ï[ôŒàùYKàÿ\›Y\‹ÿYŸNàò[\››ŸôôHŸ\‹ZX⁄\ùà	›ò[Y_HÿàJBàŸ]]ZX⁄–Y‹[äò[ŸJBàBÇà€€ú›]ZX⁄–Y›\»H
+ò[YNàù[Xô\äHOà¬à\]Q[ùûJ»›\Œàò[YHK	‹]ZX⁄◊ÿY	À¬àŸôô\ï[ôŒàùYKàÿ\›Y\‹ÿYŸNàÿ⁄ö]HŸ\‹ZX⁄\ùà	›ò[Y_XàJBàŸ]]ZX⁄–Y‹[äò[ŸJBàBÇà€€ú›[]U\⁄»H
+[ô^àù[Xô\äHOà¬à€€ú›[]YH[ò⁄‹ú÷⁄[ô^Bà€€ú›ÿ\—€ôHHõ€€X[ä[ò⁄‹ú—€ôV⁄[ô^JBà€€ú›[]YZ[ù]\»H[ò⁄‹ìZ[ù]\÷⁄[ô^Hœ»Ÿ][ô‹Àôõÿ›\”Z[ù]\¬à€€ú›ô^[ò⁄‹ú»H[ò⁄‹úÀôö[\ä
+À][R[ô^
+HOà][R[ô^OOH[ô^
+Bà€€ú›ô^€ôHH[ò⁄‹ú—€ôKôö[\ä
+À][R[ô^
+HOà][R[ô^OOH[ô^
+Bà€€ú›ô^Z[ù]\»H[ò⁄‹ìZ[ù]\Àôö[\ä
+À][R[ô^
+HOà][R[ô^OOH[ô^
+BàŸ][ò⁄‹ú ô^[ò⁄‹úÀô^€ôKô^Z[ù]\ Bà⁄›’ÿ\›
+	–]YôÿXôH[ùô\õùâÀ	‘∞Ô⁄ŸÈô⁄Y…À
+
+HOà¬à€€ú›ô\›‹ôY[ò⁄‹ú»HÀããõô^[ò⁄‹ú◊Bà€€ú›ô\›‹ôY€ôHHÀããõô^€ôWBà€€ú›ô\›‹ôYZ[ù]\»HÀããõô^Z[ù]\◊Bàô\›‹ôY[ò⁄‹úÀú‹XŸJ[ô^[]Y
+Bàô\›‹ôY€ôKú‹XŸJ[ô^ÿ\—€ôJBàô\›‹ôYZ[ù]\Àú‹XŸJ[ô^[]YZ[ù]\ BàŸ][ò⁄‹ú ô\›‹ôY[ò⁄‹úÀô\›‹ôY€ôKô\›‹ôYZ[ù]\ BàJBàBÇà€€ú›[›ôU\⁄»H
+[ô^àù[Xô\ã\ôX›[€éàLHJHOà¬à€€ú›\ôŸ]H[ô^
+»\ôX›[€ÇàYà
+\ôŸ]\ôŸ]èH[ò⁄‹úÀõ[ô›
+Hô]\õÇà€€ú›ô^[ò⁄‹ú»HÀããò[ò⁄‹ú◊Bà€€ú›ô^€ôHH[ò⁄‹úÀõX\
+
+À][R[ô^
+HOàõ€€X[ä[ò⁄‹ú—€ôV⁄][R[ô^JJBà€€ú›ô^Z[ù]\»HÀããò[ò⁄‹ìZ[ù]\◊Bà÷€ô^[ò⁄‹ú÷⁄[ô^Kô^[ò⁄‹ú÷›\ôŸ]WHH€ô^[ò⁄‹ú÷›\ôŸ]Kô^[ò⁄‹ú÷⁄[ô^WBà÷€ô^€ôV⁄[ô^Kô^€ôV›\ôŸ]WHH€ô^€ôV›\ôŸ]Kô^€ôV⁄[ô^WBà÷€ô^Z[ù]\÷⁄[ô^Kô^Z[ù]\÷›\ôŸ]WHH€ô^Z[ù]\÷›\ôŸ]Kô^Z[ù]\÷⁄[ô^WBàŸ][ò⁄‹ú ô^[ò⁄‹úÀô^€ôKô^Z[ù]\ BàBÇà€€ú›‹[ëõÿ›\»H
+]Nà›ö[ôÀ\⁄“[ô^Œàù[Xô\ãõ›][ôRŸ^OŒàõ›][ôRŸ^K›ô\úöYSZ[ù]\œŒàù[Xô\äHOà¬àŸ]õÿ›\‘Ÿ\‹⁄[€ä¬à]KàZ[ù]\Œà€[\ù[Xô\ä›ô\úöYSZ[ù]\»œ»^T€XﬁKôõÿ›\”Z[ù]\ÀKLå
+Kà\⁄“[ô^àõ›][ôRŸ^KàJBàBÇà€€ú›ö[ö\⁄õÿ›\»H
+
+HOà¬àYà
+Yõÿ›\‘Ÿ\‹⁄[€äHô]\õÇàYà
+\[Ÿàõÿ›\‘Ÿ\‹⁄[€ãù\⁄“[ô^OOH	€ù[Xô\â H¬à€€ú›[ô^Hõÿ›\‘Ÿ\‹⁄[€ãù\⁄“[ô^à€€ú›ô^€ôHH[ò⁄‹úÀõX\
+
+À][R[ô^
+HOÇà][R[ô^OOH[ô^»ùYHàõ€€X[ä[ò⁄‹ú—€ôV⁄][R[ô^JKà
+BàŸ][ò⁄‹ú [ò⁄‹úÀô^€ôK[ò⁄‹ìZ[ù]\ Bà\]Q[ùûJ»õÿ›\—€ôNàùYHH\»\ùX[\⁄õÿ\ô[ùûOã	Ÿõÿ›\… BàH[ŸHYà
+õÿ›\‘Ÿ\‹⁄[€ãúõ›][ôRŸ^JH¬à\]Q[ùûJ¬àŸõÿ›\‘Ÿ\‹⁄[€ãúõ›][ôRŸ^WNàùYKàH\»\ùX[\⁄õÿ\ô[ùûOã	Ÿõÿ›\… BàH[ŸH¬à\]Q[ùûJ»õÿ›\—€ôNàùYHH\»\ùX[\⁄õÿ\ô[ùûOã	Ÿõÿ›\… BàBàŸ]õÿ›\‘Ÿ\‹⁄[€äù[
+BàYôS‹ÀòYX›]ö]J¬à]Nàõÿ›\‘Ÿ\‹⁄[€ãù]Kà]NàŸ^Kà⁄[ôà	Ÿõÿ›\…Àà[õôY\ò][€ìZ[éàõÿ›\‘Ÿ\‹⁄[€ãõZ[ù]\ÀàX›X[\ò][€ìZ[éàõÿ›\‘Ÿ\‹⁄[€ãõZ[ù]\Àà€›\òŸNà	›[Y\âÀàJBà⁄›’ÿ\›
+	—õ⁄›\ÿõÿ⁄»XôŸ\ÿ⁄‹‹Ÿ[à8†%\õYY›â BàBÇà€€ú›ô\€€ôY[YHHÿ›[Y[ùôÿ›[Y[ù[[Y[ùô]\Ÿ]ù[YHœ»	€Y⁄	¬à€€ú›]ZX⁄’ŸŸ€U[YHH
+
+HOà¬àŸ]Ÿ][ô‹ ›\úô[ùOà
+¬àããò›\úô[ùà[YNàô\€€ôY[YHOOH	Ÿ\ö…»»	€Y⁄	»à	Ÿ\ö…ÀàJJBàBÇà€€ú››\úô[ùöY]”Xô[HíQU◊”PëS÷›öY]◊Hœ»êUó“USTÀôö[ô
+][HOà][KöYOOHöY] OÀõXô[œ»	“]]I¬à€€ú›ò]öYÿ]U»H
+ô^öY]ŒàöY]À[ù]RYŒà›ö[ô HOà¬àŸ]öY] ô^öY] BàŸ]YôS‹—[ù]RY
+[ù]RY
+BàYà
+[ù]RY
+Hò]öYÿ]R\⁄⁄]Y
+ô^öY]À[ù]RY
+Bà[ŸHò]öYÿ]R\⁄
+ô^öY] BàYà
+ô^öY]»OOH	›Ÿ^I»ô^öY]»OOH	Ÿ\⁄õÿ\ô\… HŸ]Ÿ[X›Y]JŸ^JBàYà
+ô^öY]»OOH	ÿ⁄X⁄⁄[â»	âàŸ[X›Y]HàŸ^JHŸ]Ÿ[X›Y]JŸ^JBàBÇà€€ú›‹[ï[ö]ô\úÿ[ÿ\\ôHH
+‹[€úœŒà¬àò]œŒà›ö[ô¬à€\‹⁄YûP\œŒàÿ\\ôU\ôŸ]\Bà[ŸOŒà\[Ÿàÿ\\ôS[ŸBàJHOà¬àŸ]ÿ\\ôTô\Ÿ]
+‹[€úœÀúò]»œ»	… BàŸ]ÿ\\ôP€\‹⁄YûP\ ‹[€úœÀò€\‹⁄YûP\ BàŸ]ÿ\\ôS[ŸJ‹[€úœÀõ[ŸHœ»	ŸYò][	 BàŸ]ÿ\\ôS‹[äùYJBàBÇà€€ú›[ôSXî]ZX⁄–X›[€àH
+X›[€éàXë]T]ZX⁄–X›[€äHOà¬à›⁄]⁄
+X›[€äH¬àÿ\ŸH	ÿÿ\\ôK]\⁄…ŒÇà‹[ï[ö]ô\úÿ[ÿ\\ôJ»€\‹⁄YûP\Œà	›\⁄…À[ŸNà	ŸYò][	Àò]Œà	…»JBàô]\õÇàÿ\ŸH	ÿÿ\\ôK\⁄‹[ô…ŒÇà‹[ï[ö]ô\úÿ[ÿ\\ôJ»[ŸNà	‹⁄‹[ô…»JBàô]\õÇàÿ\ŸH	ÿÿ\\ôK\›ÿ⁄…ŒÇà‹[ï[ö]ô\úÿ[ÿ\\ôJ»[ŸNà	‹›ÿ⁄…À€\‹⁄YûP\Œà	€õ›I»JBàô]\õÇàÿ\ŸH	ÿÿ\\ôK[YY[Ÿ…ŒÇà‹[ï[ö]ô\úÿ[ÿ\\ôJ»[ŸNà	€YY[Ÿ…À€\‹⁄YûP\Œà	€õ›IÀò]Œà	—Z[ôŸ[õ€[Y[éà	»JBàô]\õÇàÿ\ŸH	ÿÿ\\ôKY€ÿ[	ŒÇà‹[ï[ö]ô\úÿ[ÿ\\ôJ»[ŸNà	Ÿ€ÿ[	À€\‹⁄YûP\Œà	Ÿ€ÿ[	»JBàô]\õÇàÿ\ŸH	ÿÿ\\ôKYö[ò[òŸIŒÇà‹[ï[ö]ô\úÿ[ÿ\\ôJ»[ŸNà	Ÿö[ò[òŸIÀ€\‹⁄YûP\Œà	€õ›I»JBàô]\õÇàÿ\ŸH	ÿÿ\\ôK[\›	ŒÇà‹[ï[ö]ô\úÿ[ÿ\\ôJ»[ŸNà	€\›	À€\‹⁄YûP\Œà	€õ›I»JBàô]\õÇàYò][à¬à€€ú›Ÿ^]\›]ôNàô]ô\àHX›[€Çàô]\õàŸ^]\›]ôBàBàBàBÇà€€ú›ÿ\\ôQX⁄\⁄[€ê€€ù^H
+
+HOà
+¬àõ›][ôSYzﬂè6∂âûÀk∫wµÁH›õ€ô»€\‹”ò[YOHôö[ò[òŸKZ‹W◊›ò[YHè∏†´Ÿõ‹õX][€ô^Jö[ò[òŸT›[[X\ûKõ[€ùQö^Y
+_O‹›õ€ôœÇà€X[€\‹”ò[YOHôö[ò[òŸKZ‹W◊€Y]HèûŸö[ò[òŸT›[[X\ûKúôX›\úö[ô–€›[ùHö^€‹›[è‹€X[ÇàŸ]èÇà]à€\‹”ò[YOHôö[ò[òŸKZ‹HèÇà‹[à€\‹”ò[YOHôö[ò[òŸKZ‹W◊€Xô[èìŸôô[è‹‹[èÇà›õ€ô»€\‹”ò[YOHôö[ò[òŸKZ‹W◊›ò[YHè∏†´Ÿõ‹õX][€ô^Jö[ò[òŸT›[[X\ûKõ‹[î›[J_O‹›õ€ôœÇà€X[€\‹”ò[YOHôö[ò[òŸKZ‹W◊€Y]HèûŸö[ò[òŸT›[[X\ûKõ‹[ê€›[ùHŸôô[è‹€X[ÇàŸ]èÇà]à€\‹”ò[YO^ÿö[ò[òŸKZ‹IŸö[ò[òŸT›[[X\ûKõ›ô\ôYP€›[ùà»	»\À]ÿ\õö[ô…»à	…ﬂXOÇà‹[à€\‹”ò[YOHôö[ò[òŸKZ‹W◊€Xô[è∞Áô\ô∞ÈYœ‹‹[èÇà›õ€ô»€\‹”ò[YOHôö[ò[òŸKZ‹W◊›ò[YHè∏†´Ÿõ‹õX][€ô^Jö[ò[òŸT›[[X\ûKõ›ô\ôYT›[J_O‹›õ€ôœÇà€X[€\‹”ò[YOHôö[ò[òŸKZ‹W◊€Y]HèÇàŸö[ò[òŸT›[[X\ûKõ›ô\ôYP€›[ùH0Ôô\ô∞ÈY¬àŸö[ò[òŸT›[[X\ûKúô\‹›\ôHà»0≠»ùX⁄»	Ÿö[ò[òŸT›[[X\ûKúô\‹›\ô_IXà	…ﬂBà‹€X[ÇàŸ]èÇàŸ]èÇÇàŸö[ò[òŸT›[[X\ûKõô^YH	âà
+à]à€\‹”ò[YOHôö[ò[òŸK[ô^èÇà‹[à€\‹”ò[YOHô^YXúõ›»èê[»∞È⁄›\œ‹‹[èÇà]à€\‹”ò[YOHôö[ò[òŸK[ô^◊‹õ›»èÇà›õ€ôœûŸö[ò[òŸT›[[X\ûKõô^YKõò[Y_O‹›õ€ôœÇà‹[èÇà8†´Ÿõ‹õX][€ô^Jö[ò[òŸT›[[X\ûKõô^YKò[[›[ù
+_H0≠»Ÿö[ò[òŸT›[[X\ûKõô^YKôY_Bà‹‹[èÇàŸ]èÇàŸ]èÇà
+_BÇàŸö[ò[òŸT›[[X\ûKö[ùÀõ[ô›à	âà
+à]à€\‹”ò[YOHôö[ò[òŸKZ[ù»èÇàŸö[ò[òŸT›[[X\ûKö[ùÀõX\
+[ùOà
+àŸ^O^⁄[ùOÇà[\ù⁄\ò€H⁄^ôO^ÃMH\öXKZY[èHùùYHàœÇà‹[èû⁄[ùO‹‹[èÇà‹Çà
+J_BàŸ]èÇà
+_BÇà]à€\‹”ò[YOHôö[ò[òŸK[\›»èÇà]à€\‹”ò[YOHôö[ò[òŸK[\›Xõÿ⁄»èÇà]à€\‹”ò[YOHôö[ò[òŸK[\›ZXYèÇà]à€\‹”ò[YOHôö[ã\ŸX›[€ã[Xô[èÇà‹ôY]ÿ\ô⁄^ôO^ÃMH\öXKZY[èHùùYHàœÇà‹[èëö^€‹›[è‹‹[èÇàŸ]èÇàù]€à\OHòù]€àà€\‹”ò[YOHú€X[Xù]€àà€ê€X⁄œ^ 
+HOà€î]ZX⁄–X›[€ä	ÿÿ\\ôKYö[ò[òŸI _OÇà\»⁄^ôO^ÃMHœàö^€‹›[Çàÿù]€èÇàŸ]èÇàŸ\⁄õÿ\ôôö[ò[òŸ\ÀúôX›\úö[ôÀõ[ô›OOH»
+à€\‹”ò[YOHô\⁄õÿ\ô\\ÀY[\KZ[ùèÇàõÿ⁄ŸZ[ôHö^€‹›[à8†%ãàãàZY]Kô\ú⁄X⁄\ù[ôÀXõÀÇà‹Çà
+Hà
+à]à€\‹”ò[YOHô\⁄õÿ\ô\\ÀXö[[\›èÇàŸ\⁄õÿ\ôôö[ò[òŸ\ÀúôX›\úö[ôÀõX\
+
+ö[[ô^
+HOÇàô[ô\êö[õ› ö[[ô^\]TôX›\úö[ô–ö[ô[[›ôTôX›\úö[ô–ö[
+Kà
+_BàŸ]èÇà
+_BàŸ]èÇÇà]à€\‹”ò[YOHôö[ò[òŸK[\›Xõÿ⁄»èÇà]à€\‹”ò[YOHôö[ò[òŸK[\›ZXYèÇà]à€\‹”ò[YOHôö[ã\ŸX›[€ã[Xô[èÇàôXŸZ\⁄^ôO^ÃMH\öXKZY[èHùùYHàœÇà‹[èìŸôô[ôH‹›[è‹‹[èÇàŸ]èÇàù]€à\OHòù]€àà€\‹”ò[YOHú€X[Xù]€àà€ê€X⁄œ^ 
+HOà€î]ZX⁄–X›[€ä	ÿÿ\\ôKYö[ò[òŸI _OÇà\»⁄^ôO^ÃMHœàôX⁄ù[ô¬àÿù]€èÇàŸ]èÇàŸ\⁄õÿ\ôôö[ò[òŸ\Àõ‹[êö[Àõ[ô›OOH»
+à€\‹”ò[YOHô\⁄õÿ\ô\\ÀY[\KZ[ùèÇàŸZ[ôHŸôô[ô[àôX⁄ù[ôŸ[à8†%Z[õX[‹›[àY\à\ôò\‹Ÿ[ãÇà‹Çà
+Hà
+à]à€\‹”ò[YOHô\⁄õÿ\ô\\ÀXö[[\›èÇàŸ\⁄õÿ\ôôö[ò[òŸ\Àõ‹[êö[ÀõX\
+
+ö[[ô^
+HOÇàô[ô\êö[õ› ö[[ô^\]S‹[êö[ô[[›ôS‹[êö[
+Kà
+_BàŸ]èÇà
+_BàŸ]èÇàŸ]èÇà‹ŸX›[€èÇàŸ]èÇà
+_BÇà»[Xõ‹îŸX\ò⁄[ô»	âà
+›\úô[ùŸX›[€àOOH	›Ÿ‹…»›\úô[ùŸX›[€àOOH	€\›… H	âà
+à€\‹”ò[YOHô\⁄õÿ\ô\\ÀYõ€›\àèï⁄\ÿ⁄[éà[ö‹»\õYYŸ[ãôX⁄»ô\úÿ⁄YXô[à0≠»[ôŸH∞Ô⁄Ÿ[éàY[∞Ô‹Çà
+_BàŸ]èÇàŸ]èÇÇà›\⁄”Y[ùH	âà
+
+
+HOà¬à€€ú›][\Œà€€ù^Y[ùR][V◊HH¬à»Yà	›ŸŸ€IÀXô[à	—\õYY›[\ÿ⁄[[â»Kà»Yà	‹ö[‹ö]IÀXô[à	‘ö[‹ö]0ÈŸX⁄Ÿ[â»Kà¬àYà	€[›ôIÀàXô[à\⁄”Y[ùKö⁄[ôOOH	Ÿõÿ›\…»»	÷ù[HZ›]ô[àõÿ\ô	»à	÷ù[Hõ⁄›\…ÀàKà»Yà	Ÿ[]IÀXô[à	”0Ìúÿ⁄[âÀ[ôŸ\éàùYHKàBàô]\õà
+à€€ù^Y[ùBà^›\⁄”Y[ùKûBàO^›\⁄”Y[ùKû_Bà]O^›\⁄”Y[ùKù]H	–]YôÿXôIﬂBà][\œ^⁄][\ﬂBà€ê€‹ŸO^ 
+HOàŸ]\⁄”Y[ùJù[
+_Bà€îŸ[X›^⁄YOà¬àYà
+\⁄”Y[ùKö⁄[ôOOH	Ÿõÿ›\… H¬à€€ú›\⁄»H\⁄õÿ\ôôõÿ›\’Ÿ‹÷›\⁄”Y[ùKö[ô^BàYà
+]\⁄ Hô]\õÇàYà
+YOOH	›ŸŸ€I H\]Qõÿ›\’\⁄ \⁄”Y[ùKö[ô^»€ôNà]\⁄Àô€ôHJBàYà
+YOOH	‹ö[‹ö]I H\]Qõÿ›\’\⁄ \⁄”Y[ùKö[ô^»ö[‹ö]Nàô^ö[‹ö]J\⁄Àúö[‹ö]JHJBàYà
+YOOH	€[›ôI H[›ôQõÿ›\’–õÿ\ô
+\⁄”Y[ùKö[ô^
+BàYà
+YOOH	Ÿ[]I Hô[[›ôQõÿ›\’\⁄ \⁄”Y[ùKö[ô^
+Bàô]\õÇàBà€€ú›\⁄»HX›]ôPõÿ\ôÀù\⁄‹÷›\⁄”Y[ùKö[ô^BàYà
+]\⁄»XX›]ôPõÿ\ô
+Hô]\õÇàYà
+YOOH	›ŸŸ€I H\]Põÿ\ô\⁄ X›]ôPõÿ\ôöY\⁄”Y[ùKö[ô^»€ôNà]\⁄Àô€ôHJBàYà
+YOOH	‹ö[‹ö]I H\]Põÿ\ô\⁄ X›]ôPõÿ\ôöY\⁄”Y[ùKö[ô^»ö[‹ö]Nàô^ö[‹ö]J\⁄Àúö[‹ö]JHJBàYà
+YOOH	€[›ôI H[›ôPõÿ\ô—õÿ›\ X›]ôPõÿ\ôöY\⁄”Y[ùKö[ô^
+BàYà
+YOOH	Ÿ[]I Hô[[›ôPõÿ\ô\⁄ X›]ôPõÿ\ôöY\⁄”Y[ùKö[ô^
+Bà_BàœÇà
+BàJJ
+_BàŸ]èÇà
+BüBÇôù[ò›[€à\⁄—Y]‹ä¬à[ö]X[ò[YKà[ö]X[Z[ù]\Àà\—Y][ôÀà€ê€‹ŸKà€îÿ]ôKüNà¬à[ö]X[ò[YNà›ö[ô¬à[ö]X[Z[ù]\Œàù[Xô\Çà\—Y][ôŒàõ€€X[Çà€ê€‹ŸNà
+
+HOàõ⁄Yà€îÿ]ôNà
+ò[YNà›ö[ôÀZ[ù]\Œàù[Xô\äHOàõ⁄YüJH¬à€€ú››ò[YKŸ]ò[YWHH\ŸT›]J[ö]X[ò[YJBà€€ú›€Z[ù]\ÀŸ]Z[ù]\◊HH\ŸT›]J
+
+HOà€[\ù[Xô\ä[ö]X[Z[ù]\ÀKLå
+JBà\ŸS[Ÿ[ôZ]ö[‹ä€ê€‹ŸJBÇà€€ú››XõZ]H
+]ô[ùàõ‹õQ]ô[ù
+HOà¬à]ô[ùúô]ô[ùYò][
+
+Bà€îÿ]ôJò[YKZ[ù]\ BàBàô]\õà
+à]à€\‹”ò[YOHõ[Ÿ[XòX⁄Ÿõ‹àõ€OHúô\Ÿ[ù][€àà€ì[›\ŸQ›€è^Ÿ]ô[ùOà]ô[ùù\ôŸ]OOH]ô[ùò›\úô[ù\ôŸ]	âà€ê€‹ŸJ
+_OÇàõ‹õH€\‹”ò[YOHõ[Ÿ[[Ÿ[K\€X[à€î›XõZ]^‹›XõZ]Hõ€OHôX[Ÿ»à\öXK[[Ÿ[HùùYHà\öXK[Xô[YûOHù\⁄ÀYY]‹ã]]HèÇà]à€\‹”ò[YOHõ[Ÿ[ZXY\àèÇà]èÇà‹[à€\‹”ò[YOHô^YXúõ›»èïYŸ\ÿ[öŸ\è‹‹[èÇààYHù\⁄ÀYY]‹ã]]Hèû⁄\—Y][ô»»	–]YôÿXôHôX\òôZ][â»à	”ô]YH]YôÿXôIﬂO⁄èÇàŸ]èÇàX€€êù]€àXô[Hîÿ⁄YpÁŸ[àà€ê€X⁄œ^€€ê€‹Ÿ_Oè⁄^ôO^ÃNHœè“X€€êù]€èÇàŸ]èÇàXô[€\‹”ò[YOHù^YöY[èÇà‹[èê]YôÿXôO‹‹[èÇà[ú]]]—õÿ›\»ò[YO^›ò[Y_H€ê⁄[ôŸO^Ÿ]ô[ùOàŸ]ò[YJ]ô[ùù\ôŸ]ùò[YJ_HX^[ô›^ÃLåHXŸZ€\èHñù[HôZ\‹Y[à‹ôX][ôHô\›[[ààœÇà€Xô[Çà]à€\‹”ò[YOHù\⁄ÀYY]‹ãY\ò][€àèÇà‹[à€\‹”ò[YOHù\⁄ÀYY]‹ãY\ò][€ó◊€Xô[èëõ⁄›\Ÿ]Y\è‹‹[èÇà]à€\‹”ò[YOHô\ò][€ãY‹öYèÇà’T“◊—ì–’T◊—TêUS”îÀõX\
+‹[€àOà
+àù]€Çà\OHòù]€àÇàŸ^O^€‹[€üBà€\‹”ò[YO^€Z[ù]\»OOH‹[€à»	Ÿ\ò][€ãXù]€à\ÀXX›]ôI»à	Ÿ\ò][€ãXù]€âﬂBà€ê€X⁄œ^ 
+HOàŸ]Z[ù]\ ‹[€ä_Bà\öXK\ô\‹ŸY^€Z[ù]\»OOH‹[€üBàÇà›õ€ôœû€‹[€üO‹›õ€ôœÇà‹[èìZ[ãè‹‹[èÇàÿù]€èÇà
+J_BàŸ]èÇàXô[€\‹”ò[YOHù^YöY[èÇà‹[èëZYŸ[ôHZ[ù][è‹‹[èÇà[ú]à\OHõù[Xô\àÇàZ[è^Õ_BàX^^ÃLåBà›\^Õ_Bàò[YO^€Z[ù]\ﬂBà€ê⁄[ôŸO^Ÿ]ô[ùOàŸ]Z[ù]\ €[\ù[Xô\äù[Xô\ä]ô[ùù\ôŸ]ùò[YJHçKKLå
+J_BàœÇà€Xô[ÇàŸ]èÇà€\‹”ò[YOHôöY[Z[ùèëõ‹õ][Y\ôH€»€Z[ã\‹»H⁄ôHòX⁄[öŸ[à[ôò[ôŸ[àÿ[õú›è‹Çà]à€\‹”ò[YOHõ[Ÿ[XX›[€ú»èÇàù]€à\OHòù]€àà€\‹”ò[YOHúŸX€€ô\ûKXù]€àà€ê€X⁄œ^€€ê€‹Ÿ_OêXòúôX⁄[èÿù]€èÇàù]€à\OHú›XõZ]à€\‹”ò[YOHúö[X\ûKXù]€àà\ÿXõY^»]ò[YKùö[J
+_Oè⁄X⁄»⁄^ôO^ÃMﬂHœà‹ZX⁄\õèÿù]€èÇàŸ]èÇàŸõ‹õOÇàŸ]èÇà
+BüBÇôù[ò›[€à]ZX⁄–Y[Ÿ[
+¬à€ê€‹ŸKà€î›XõZ]\⁄Àà€î›XõZ]ŸZY⁄à€î›XõZ]ÿ[‹öY\Àà€î›XõZ]õ›Z[ãà€î›XõZ]ò]à€î›XõZ]ÿ\òúÀà€î›XõZ]öXô\ãà€î›XõZ]ÿ]\ãà€î›XõZ]›\ÀüNà¬à€ê€‹ŸNà
+
+HOàõ⁄Yà€î›XõZ]\⁄Œà
+]Nà›ö[ô HOàõ⁄Yà€î›XõZ]ŸZY⁄à
+ò[YNàù[Xô\äHOàõ⁄Yà€î›XõZ]ÿ[‹öY\Œà
+ò[YNàù[Xô\äHOàõ⁄Yà€î›XõZ]õ›Z[éà
+ò[YNàù[Xô\äHOàõ⁄Yà€î›XõZ]ò]à
+ò[YNàù[Xô\äHOàõ⁄Yà€î›XõZ]ÿ\òúŒà
+ò[YNàù[Xô\äHOàõ⁄Yà€î›XõZ]öXô\éà
+ò[YNàù[Xô\äHOàõ⁄Yà€î›XõZ]ÿ]\éà
+ò[YNàù[Xô\äHOàõ⁄Yà€î›XõZ]›\Œà
+ò[YNàù[Xô\äHOàõ⁄YüJH¬à€€ú››ò[YKŸ]ò[YWHH\ŸT›]J	… Bà\ŸS[Ÿ[ôZ]ö[‹ä€ê€‹ŸJBÇà€€ú›\úŸYH\úŸT]ZX⁄–Y
+ò[YJBà€€ú›ô]öY]»Hò[YKùö[J
+HOOH	…¬à»	—\öŸ[õùŸ]⁄X⁄ÿÿ[õ›Z[ãô]“ò[\››ŸôôKÿ\‹Ÿ\à[ôÿ⁄ö]H8†%€€ú›⁄\ôZ[ôH]YôÿXôH\ò]\Àâ¬àà\ÿ‹öXôT]ZX⁄–Y
+\úŸY
+BÇà€€ú››XõZ]H
+]ô[ùàõ‹õQ]ô[ù
+HOà¬à]ô[ùúô]ô[ùYò][
+
+BàYà
+]ò[YKùö[J
+JHô]\õÇà›⁄]⁄
+\úŸYö⁄[ô
+H¬àÿ\ŸH	›ŸZY⁄	ŒÇà€î›XõZ]ŸZY⁄
+\úŸYùò[YJBàô]\õÇàÿ\ŸH	ÿÿ[‹öY\…ŒÇà€î›XõZ]ÿ[‹öY\ \úŸYùò[YJBàô]\õÇàÿ\ŸH	‹õ›Z[âŒÇà€î›XõZ]õ›Z[ä\úŸYùò[YJBàô]\õÇàÿ\ŸH	Ÿò]	ŒÇà€î›XõZ]ò]
+\úŸYùò[YJBàô]\õÇàÿ\ŸH	ÿÿ\òú…ŒÇà€î›XõZ]ÿ\òú \úŸYùò[YJBàô]\õÇàÿ\ŸH	ŸöXô\âŒÇà€î›XõZ]öXô\ä\úŸYùò[YJBàô]\õÇàÿ\ŸH	›ÿ]\âŒÇà€î›XõZ]ÿ]\ä\úŸYùò[YJBàô]\õÇàÿ\ŸH	‹›\…ŒÇà€î›XõZ]›\ \úŸYùò[YJBàô]\õÇàÿ\ŸH	›\⁄…ŒÇà€î›XõZ]\⁄ \úŸYù]JBàô]\õÇàYò][à¬à€€ú›Ÿ^]\›]ôNàô]ô\àH\úŸYàô]\õàŸ^]\›]ôBàBàBàBÇàô]\õà
+à]à€\‹”ò[YOHõ[Ÿ[XòX⁄Ÿõ‹àõ€OHúô\Ÿ[ù][€àà€ì[›\ŸQ›€è^Ÿ]ô[ùOà]ô[ùù\ôŸ]OOH]ô[ùò›\úô[ù\ôŸ]	âà€ê€‹ŸJ
+_OÇàõ‹õH€\‹”ò[YOHõ[Ÿ[[Ÿ[K\€X[à€î›XõZ]^‹›XõZ]Hõ€OHôX[Ÿ»à\öXK[[Ÿ[HùùYHà\öXK[Xô[YûOHú]ZX⁄ÀXY]]HèÇà]à€\‹”ò[YOHõ[Ÿ[ZXY\àèÇà]èÇà‹[à€\‹”ò[YOHô^YXúõ›»èî]ZX⁄»Y‹‹[èÇààYHú]ZX⁄ÀXY]]Hèïÿ\»⁄Xù	‹œœ⁄èÇàŸ]èÇàX€€êù]€àXô[Hîÿ⁄YpÁŸ[àà€ê€X⁄œ^€€ê€‹Ÿ_Oè⁄^ôO^ÃNHœè“X€€êù]€èÇàŸ]èÇàXô[€\‹”ò[YOHù^YöY[èÇà‹[èëZ[ùòYœ‹‹[èÇà[ú]]]—õÿ›\»ò[YO^›ò[Y_H€ê⁄[ôŸO^Ÿ]ô[ùOàŸ]ò[YJ]ô[ùù\ôŸ]ùò[YJ_HX^[ô›^ÃLåHXŸZ€\èHûãàãà8†'çÕåöŸ¯†'Ÿ\à8†'ñòZò\ûù[úùYô[∏†'àœÇà€Xô[Çà€\‹”ò[YOHôöY[Z[ùèû‹ô]öY]ﬂO‹Çà]à€\‹”ò[YOHõ[Ÿ[XX›[€ú»èÇàù]€à\OHòù]€àà€\‹”ò[YOHúŸX€€ô\ûKXù]€àà€ê€X⁄œ^€€ê€‹Ÿ_OêXòúôX⁄[èÿù]€èÇàù]€à\OHú›XõZ]à€\‹”ò[YOHúö[X\ûKXù]€àà\ÿXõY^»]ò[YKùö[J
+_Oè⁄X⁄»⁄^ôO^ÃMﬂHœà[ûùY∞ÔŸ[èÿù]€èÇàŸ]èÇàŸõ‹õOÇàŸ]èÇà
+BüBÇôù[ò›[€àõÿ›\”[Ÿ[
+¬àŸ\‹⁄[€ãà€ê⁄[ôŸSZ[ù]\Àà€ê€‹ŸKà€ëö[ö\⁄à€ë^‹ù–ÿ[[ô\ãüNà¬àŸ\‹⁄[€éàõÿ›\‘Ÿ\‹⁄[€Çà€ê⁄[ôŸSZ[ù]\Œà
+Z[ù]\Œàù[Xô\äHOàõ⁄Yà€ê€‹ŸNà
+
+HOàõ⁄Yà€ëö[ö\⁄à
+
+HOàõ⁄Yà€ë^‹ù–ÿ[[ô\éà
+
+HOàõ⁄YüJH¬à€€ú›‹ŸX€€ô”YùŸ]ŸX€€ô”YùHH\ŸT›]JŸ\‹⁄[€ãõZ[ù]\»
+àå
+Bà€€ú›‹ù[õö[ôÀŸ]ù[õö[ô◊HH\ŸT›]Jò[ŸJBà€€ú›ŸY][ô—\ò][€ãŸ]Y][ô—\ò][€óHH\ŸT›]Jò[ŸJBà€€ú›ŸòYùZ[ù]\ÀŸ]òYùZ[ù]\◊HH\ŸT›]J›ö[ô Ÿ\‹⁄[€ãõZ[ù]\ JBà€€ú›ö[ö\⁄YôYàH\ŸTôYäò[ŸJBà€€ú›ÿZŸSÿ⁄‘ôYàH\ŸTôYè]ÿZ]Yô]\õï\O\[Ÿàô\]Y\›ÿ‹ôY[ïÿZŸSÿ⁄œèèäù[
+Bà€€ú›\ò][€í[ú]ôYàH\ŸTôYèS[ú][[Y[ùù[äù[
+Bà\ŸS[Ÿ[ôZ]ö[‹ä€ê€‹ŸJBÇà\ŸQYôôX›
+
+
+HOà¬àÀ»\€[ùY\ÿXõK[ô^[[ôHôXX›Z€⁄‹À‹Ÿ]\›]KZ[ãYYôôX›àŸ]ŸX€€ô”Yù
+Ÿ\‹⁄[€ãõZ[ù]\»
+àå
+BàÀ»\€[ùY\ÿXõK[ô^[[ôHôXX›Z€⁄‹À‹Ÿ]\›]KZ[ãYYôôX›àŸ]ù[õö[ô ò[ŸJBàö[ö\⁄YôYãò›\úô[ùHò[ŸBàŸ]òYùZ[ù]\ ›ö[ô Ÿ\‹⁄[€ãõZ[ù]\ JBàŸ]Y][ô—\ò][€äò[ŸJBàK‹Ÿ\‹⁄[€ãõZ[ù]\◊JBÇà\ŸQYôôX›
+
+
+HOà¬àYà
+YY][ô—\ò][€äHô]\õÇà\ò][€í[ú]ôYãò›\úô[ùÀôõÿ›\ 
+Bà\ò][€í[ú]ôYãò›\úô[ùÀúŸ[X›
+
+BàKŸY][ô—\ò][€óJBÇà\ŸQYôôX›
+
+
+HOà¬à]ÿ[òŸ[YHò[ŸBÇà€€ú›ﬁ[ò’ÿZŸSÿ⁄»H\ﬁ[ò»
+
+HOà¬àYà
+\ù[õö[ô H¬à]ÿZ]ô[X\ŸTÿ‹ôY[ïÿZŸSÿ⁄ ÿZŸSÿ⁄‘ôYãò›\úô[ù
+BàÿZŸSÿ⁄‘ôYãò›\úô[ùHù[àô]\õÇàBà€€ú›Ÿ[ù[ô[H]ÿZ]ô\]Y\›ÿ‹ôY[ïÿZŸSÿ⁄ 
+BàYà
+ÿ[òŸ[Y
+H¬à]ÿZ]ô[X\ŸTÿ‹ôY[ïÿZŸSÿ⁄ Ÿ[ù[ô[
+Bàô]\õÇàBàÿZŸSÿ⁄‘ôYãò›\úô[ùHŸ[ù[ô[àBÇàõ⁄Yﬁ[ò’ÿZŸSÿ⁄ 
+BÇà€€ú›€ïö\⁄Xö[]HH
+
+HOà¬àYà
+ÿ›[Y[ùùö\⁄Xö[]T›]HOOH	›ö\⁄XõI»	âàù[õö[ô Hõ⁄Yﬁ[ò’ÿZŸSÿ⁄ 
+BàBàÿ›[Y[ùòY]ô[ù\›[ô\ä	›ö\⁄Xö[]X⁄[ôŸIÀ€ïö\⁄Xö[]JBÇàô]\õà
+
+HOà¬àÿ[òŸ[YHùYBàÿ›[Y[ùúô[[›ôQ]ô[ù\›[ô\ä	›ö\⁄Xö[]X⁄[ôŸIÀ€ïö\⁄Xö[]JBàõ⁄Yô[X\ŸTÿ‹ôY[ïÿZŸSÿ⁄ ÿZŸSÿ⁄‘ôYãò›\úô[ù
+BàÿZŸSÿ⁄‘ôYãò›\úô[ùHù[àBàK‹ù[õö[ô◊JBÇà\ŸQYôôX›
+
+
+HOà¬àYà
+\ù[õö[ô Hô]\õÇà€€ú›[Y\àH⁄[ô›ÀúŸ][ù\ùò[
+
+
+HOà¬àŸ]ŸX€€ô”Yù
+›\úô[ùOà¬àYà
+›\úô[ùHJH¬à⁄[ô›Àò€X\í[ù\ùò[
+[Y\äBàŸ]ù[õö[ô ò[ŸJBàYà
+Yö[ö\⁄YôYãò›\úô[ù
+H¬àö[ö\⁄YôYãò›\úô[ùHùYBàYà
+	”õ›YöXÿ][€â»[à⁄[ô›»	âàõ›YöXÿ][€ãú\õZ\‹⁄[€àOOH	Ÿ‹ò[ùY	 H¬àô]»õ›YöXÿ][€ä	—õ⁄›\ÿõÿ⁄»ôY[ô]	À»õŸNàŸ\‹⁄[€ãù]HJBàBà⁄[ô›ÀúŸ][Y[›]
+
+
+HOà€ëö[ö\⁄
+
+K
+BàBàô]\õààBàô]\õà›\úô[ùHBàJBàKL
+Bàô]\õà
+
+HOà⁄[ô›Àò€X\í[ù\ùò[
+[Y\äBàK‹ù[õö[ôÀŸ\‹⁄[€ãù]K€ëö[ö\⁄JBÇà€€ú›€€[Z]òYùZ[ù]\»H
+
+HOà¬à€€ú›ô^H€[\ù[Xô\äù[Xô\äòYùZ[ù]\ HŸ\‹⁄[€ãõZ[ù]\ÀKLå
+BàŸ]Y][ô—\ò][€äò[ŸJBàYà
+ô^OOHŸ\‹⁄[€ãõZ[ù]\ H€ê⁄[ôŸSZ[ù]\ ô^
+Bà[ŸHŸ]òYùZ[ù]\ ›ö[ô Ÿ\‹⁄[€ãõZ[ù]\ JBàBÇà€€ú›Yù\›Z[ù]\»H
+[Nàù[Xô\äHOà¬àYà
+ù[õö[ô Hô]\õÇàŸ]Y][ô—\ò][€äò[ŸJBà€ê⁄[ôŸSZ[ù]\ €[\ù[Xô\äŸ\‹⁄[€ãõZ[ù]\»
+»[KKLå
+JBàBÇà€€ú››\ùY][ô»H
+
+HOà¬àYà
+ù[õö[ô Hô]\õÇàŸ]òYùZ[ù]\ ›ö[ô Ÿ\‹⁄[€ãõZ[ù]\ JBàŸ]Y][ô—\ò][€äùYJBàBÇà€€ú›\‹^SZ[ù]\»HX]ôõ€‹äŸX€€ô”Yù»å
+Bà€€ú›\‹^TŸX€€ô»HŸX€€ô”Yù	Håà€€ú›õŸ‹ô\‹»HHHŸX€€ô”Yù»
+Ÿ\‹⁄[€ãõZ[ù]\»
+àå
+Bà€€ú››]\”Xô[Hù[õö[ô¬à»	–õZXàôZHY\Ÿ[Hÿ⁄ö]	¬ààŸX€€ô”YùOOHà»	÷ôZ]\›[I¬ààY][ô—\ò][€Çà»	”Z[ù][àZ[ôŸXô[à0≠»[ù\â¬àà	’\[àŸ\à0¨Hù[H[ú\‹Ÿ[â¬Çàô]\õà
+à]à€\‹”ò[YOHôõÿ›\À[›ô\õ^Hàõ€OHôX[Ÿ»à\öXK[[Ÿ[HùùYHà\öXK[Xô[YûOHôõÿ›\À]]HèÇà]à€\‹”ò[YOHôõÿ›\À[õ⁄\ŸHà\öXKZY[èHùùYHàœÇà]à€\‹”ò[YOHôõÿ›\À]‹ò\àèÇà]à€\‹”ò[YOHòúò[ôúò[ôKYõÿ›\»èè]à€\‹”ò[YOHòúò[ô◊€X\ö»èè‹[àœèŸ]èè›õ€ôœìYôH‘œ‹›õ€ôœèŸ]èÇàX€€êù]€àXô[Hëõ⁄›\€[Ÿ\»ÿ⁄YpÁŸ[àà€ê€X⁄œ^€€ê€‹Ÿ_Oè⁄^ôO^ÃN_Hœè“X€€êù]€èÇàŸ]èÇà]à€\‹”ò[YOHôõÿ›\ÀX€€ù[ùèÇà‹[à€\‹”ò[YOHô^YXúõ›»èìù\àô]ù‹‹[èÇàHYHôõÿ›\À]]Hèû‹Ÿ\‹⁄[€ãù]_O⁄OÇà]Çà€\‹”ò[YO^‹ù[õö[ô»»	Ÿõÿ›\À][Y\â»à	Ÿõÿ›\À][Y\àõÿ›\À][Y\ãKYY]XõIﬂBà›[O^ﬁ»	ÀKYõÿ›\À\õŸ‹ô\‹…Œà	‹õŸ‹ô\‹»
+àÕåYYÿH\»‘‘‘õ‹\ùY\ﬂBàÇà]à€\‹”ò[YOHôõÿ›\À][Y\ó◊⁄[õô\àèÇà»\ù[õö[ô»	âà
+àù]€Çà\OHòù]€àÇà€\‹”ò[YOHôõÿ›\À][Y\ó◊‹›\Çà€ê€X⁄œ^ 
+HOàYù\›Z[ù]\ MJ_Bà\öXK[Xô[HçHZ[ù][àŸ[öYŸ\àÇà\ÿXõY^‹Ÿ\‹⁄[€ãõZ[ù]\»H_BàÇà8¢$Çàÿù]€èÇà
+_Bà]à€\‹”ò[YOHôõÿ›\À][Y\ó◊‹ôXY›]èÇàŸY][ô—\ò][€à»
+àõ‹õBà€\‹”ò[YOHôõÿ›\À][Y\ó◊ŸY]Çà€î›XõZ]^Ÿ]ô[ùOà¬à]ô[ùúô]ô[ùYò][
+
+Bà€€[Z]òYùZ[ù]\ 
+Bà_BàÇà[ú]àôYè^Ÿ\ò][€í[ú]ôYüBà\OHõù[Xô\àÇàZ[è^Õ_BàX^^ÃLåBà›\^Ã_Bà[ú][ŸOHõù[Y\öX»Çà\öXK[Xô[Hëõ⁄›\Ÿ]Y\à[àZ[ù][àÇàò[YO^ŸòYùZ[ù]\ﬂBà€ê⁄[ôŸO^Ÿ]ô[ùOàŸ]òYùZ[ù]\ ]ô[ùù\ôŸ]ùò[YJ_Bà€êõ\è^ÿ€€[Z]òYùZ[ù]\ﬂBà€íŸ^Q›€è^Ÿ]ô[ùOà¬àYà
+]ô[ùöŸ^HOOH	—\ÿÿ\I H¬àŸ]Y][ô—\ò][€äò[ŸJBàŸ]òYùZ[ù]\ ›ö[ô Ÿ\‹⁄[€ãõZ[ù]\ JBàBà_BàœÇà‹[à€\‹”ò[YOHôõÿ›\À][Y\ó◊›[ö]èìZ[ãè‹‹[èÇàŸõ‹õOÇà
+Hà
+àù]€Çà\OHòù]€àÇà€\‹”ò[YOHôõÿ›\À][Y\ó◊›[YHÇà€ê€X⁄œ^‹›\ùY][ôﬂBà\ÿXõY^‹ù[õö[ôﬂBà\öXK[Xô[^‹ù[õö[ô»»	’ô\òõZXô[ôHôZ]	»à	—õ⁄›\Ÿ]Y\à[ú\‹Ÿ[âﬂBàÇà›õ€ôœû‘›ö[ô \‹^SZ[ù]\ KúY›\ù
+ã	Ã	 _Nû‘›ö[ô \‹^TŸX€€ô KúY›\ù
+ã	Ã	 _O‹›õ€ôœÇàÿù]€èÇà
+_Bà‹[èû‹›]\”Xô[O‹‹[èÇàŸ]èÇà»\ù[õö[ô»	âà
+àù]€Çà\OHòù]€àÇà€\‹”ò[YOHôõÿ›\À][Y\ó◊‹›\Çà€ê€X⁄œ^ 
+HOàYù\›Z[ù]\ J_Bà\öXK[Xô[HçHZ[ù][àYZàÇà\ÿXõY^‹Ÿ\‹⁄[€ãõZ[ù]\»èHLåBàÇà
+¬àÿù]€èÇà
+_BàŸ]èÇàŸ]èÇà]à€\‹”ò[YOHôõÿ›\ÀY\ò][€ã\õ›»èÇà÷ÃLMKçKKåKõX\
+ò[YHOà
+àù]€à\OHòù]€ààŸ^O^›ò[Y_H€\‹”ò[YO^‹Ÿ\‹⁄[€ãõZ[ù]\»OOHò[YH»	⁄\ÀXX›]ôI»à	…ﬂH€ê€X⁄œ^ 
+HOà€ê⁄[ôŸSZ[ù]\ ò[YJ_H\ÿXõY^‹ù[õö[ôﬂOÇà›ò[Y_HZ[ãÇàÿù]€èÇà
+J_BàŸ]èÇà]à€\‹”ò[YOHôõÿ›\ÀX€€ùõ€»èÇàù]€à\OHòù]€àà€\‹”ò[YOHúŸX€€ô\ûKXù]€àà€ê€X⁄œ^ 
+HOà»Ÿ]ù[õö[ô ò[ŸJN»Ÿ]ŸX€€ô”Yù
+Ÿ\‹⁄[€ãõZ[ù]\»
+àå
+H_OÇàõ›]Pÿ›»⁄^ôO^ÃMﬂHœàô\Ÿ]àÿù]€èÇàù]€Çà\OHòù]€àÇà€\‹”ò[YOHôõÿ›\À\^HÇà€ê€X⁄œ^ 
+HOà¬àŸ]Y][ô—\ò][€äò[ŸJBàŸ]ù[õö[ô ›\úô[ùOàX›\úô[ù
+Bà_BàÇà‹ù[õö[ô»»]\ŸH⁄^ôO^ÃçHö[Hò›\úô[ù€€‹ààœàà^H⁄^ôO^ÃçHö[Hò›\úô[ù€€‹ààœüBàÿù]€èÇàù]€à\OHòù]€àà€\‹”ò[YOHúö[X\ûKXù]€àà€ê€X⁄œ^€€ëö[ö\⁄OÇà⁄X⁄»⁄^ôO^ÃMﬂHœàô\ùY¬àÿù]€èÇàŸ]èÇàù]€à\OHòù]€àà€\‹”ò[YOHù^Xù]€àõÿ›\ÀXÿ[[ô\ã[[ö»à€ê€X⁄œ^€€ë^‹ù–ÿ[[ô\üOÇàÿ[[ô\î\»⁄^ôO^ÃM_Hœà[àÿ[[ô\àYŸ[Çàÿù]€èÇàŸ]èÇàŸ]èÇà
+BüBÇôù[ò›[€àö]X[\ò][€ëöY[ ¬àYà€€ôöYÀà€ê⁄[ôŸKüNà¬àYà[‹õö[ô‘ö]X[›\Yà€€ôöYŒà[‹õö[ô‘ö]X[€€ôöY¬à€ê⁄[ôŸNà
+€€ôöYŒà[‹õö[ô‘ö]X[€€ôöY HOàõ⁄YüJH¬à€€ú›Ÿ]Z[ù]\»H
+Ÿ^Nà	ÿ€€ŸX€€ô…»	›⁄[õô\îŸX€€ô…»	‹ò^Y\îŸX€€ô…»	⁄›⁄›Ÿ\îŸX€€ô…Àò[YNàù[Xô\ãZ[éàù[Xô\ãX^àù[Xô\äHOà¬à€ê⁄[ôŸJ»ããò€€ôöYÀ⁄Ÿ^WNà€[\ù[Xô\äX]úõ›[ô
+ò[YH
+àå
+KZ[ãX^
+HJBàBà€€ú›[õôY[YHH
+àXô[€\‹”ò[YOHúö]X[Y\ò][€àèÇà‹[èî[ûôZ]Z[ãè‹‹[èÇà[ú]à\OHõù[Xô\àÇàZ[è^Ã_BàX^^ÃLåBàò[YO^ÿ€€ôöYÀú›\Z[ù]\÷⁄Y_Bà€ê⁄[ôŸO^Ÿ]ô[ùOà€ê⁄[ôŸJ¬àããò€€ôöYÀà›\Z[ù]\Œà¬àããò€€ôöYÀú›\Z[ù]\Àà⁄YNà€[\ù[Xô\äù[Xô\ä]ô[ùù\ôŸ]ùò[YJHKKLå
+KàKàJ_BàœÇà€Xô[Çà
+BÇà›⁄]⁄
+Y
+H¬àÿ\ŸH	ÿ€€⁄›Ÿ\âŒÇàô]\õà
+àXô[€\‹”ò[YOHúö]X[Y\ò][€àèÇà‹[èìZ[ù][è‹‹[èÇà[ú]à\OHõù[Xô\àÇàZ[è^Ã_BàX^^ÃLBàò[YO^”X]úõ›[ô
+€€ôöYÀò€€ŸX€€ô»»å
+_Bà€ê⁄[ôŸO^Ÿ]ô[ùOàŸ]Z[ù]\ 	ÿ€€ŸX€€ô…Àù[Xô\ä]ô[ùù\ôŸ]ùò[YJHÀÃå
+_BàœÇà€Xô[Çà
+Bàÿ\ŸH	›⁄[õô\î‹ŸIŒÇàô]\õà
+àXô[€\‹”ò[YOHúö]X[Y\ò][€àèÇà‹[èìZ[ù][è‹‹[èÇà[ú]à\OHõù[Xô\àÇàZ[è^Ã_BàX^^ÃLBàò[YO^”X]úõ›[ô
+€€ôöYÀù⁄[õô\îŸX€€ô»»å
+_Bà€ê⁄[ôŸO^Ÿ]ô[ùOàŸ]Z[ù]\ 	›⁄[õô\îŸX€€ô…Àù[Xô\ä]ô[ùù\ôŸ]ùò[YJHÀÃå
+_BàœÇà€Xô[Çà
+Bàÿ\ŸH	‹ò^Y\âŒÇàô]\õà
+àXô[€\‹”ò[YOHúö]X[Y\ò][€àèÇà‹[èìZ[ù][è‹‹[èÇà[ú]à\OHõù[Xô\àÇàZ[è^Ã_BàX^^ÃåBàò[YO^”X]úõ›[ô
+€€ôöYÀúò^Y\îŸX€€ô»»å
+_Bà€ê⁄[ôŸO^Ÿ]ô[ùOàŸ]Z[ù]\ 	‹ò^Y\îŸX€€ô…Àù[Xô\ä]ô[ùù\ôŸ]ùò[YJHÀåLå
+_BàœÇà€Xô[Çà
+Bàÿ\ŸH	›€‹ö€›]	ŒÇàô]\õà
+à]à€\‹”ò[YOHúö]X[Y\ò][€ã\õ›»èÇà‹[õôY[Y_BàXô[€\‹”ò[YOHúö]X[Y\ò][€àèÇà‹[èî\⁄\œ‹‹[èÇà[ú]à\OHõù[Xô\àÇàZ[è^Õ_BàX^^ÃåBàò[YO^ÿ€€ôöYÀú\⁄\\ôŸ]Bà€ê⁄[ôŸO^Ÿ]ô[ùOà€ê⁄[ôŸJ¬àããò€€ôöYÀà\⁄\\ôŸ]à€[\ù[Xô\äù[Xô\ä]ô[ùù\ôŸ]ùò[YJHLKå
+KàJ_BàœÇà€Xô[ÇàXô[€\‹”ò[YOHúö]X[Y\ò][€àèÇà‹[èí”œ‹‹[èÇà[ú]à\OHõù[Xô\àÇàZ[è^Ã_BàX^^ÃLBàò[YO^ÿ€€ôöYÀö€’\ôŸ]Bà€ê⁄[ôŸO^Ÿ]ô[ùOà€ê⁄[ôŸJ¬àããò€€ôöYÀà€’\ôŸ]à€[\ù[Xô\äù[Xô\ä]ô[ùù\ôŸ]ùò[YJHLKL
+KàJ_BàœÇà€Xô[ÇàŸ]èÇà
+Bàÿ\ŸH	‹‹›⁄›Ÿ\âŒÇàô]\õà
+à]à€\‹”ò[YOHúö]X[Y\ò][€ã\õ›»èÇàXô[€\‹”ò[YOHúö]X[Y\ò][€àèÇà‹[èíZpÁ»Z[è‹‹[èÇà[ú]à\OHõù[Xô\àÇàZ[è^Ã_BàX^^ÃLBàò[YO^”X]úõ›[ô
+€€ôöYÀö›⁄›Ÿ\îŸX€€ô»»å
+_Bà€ê⁄[ôŸO^Ÿ]ô[ùOàŸ]Z[ù]\ 	⁄›⁄›Ÿ\îŸX€€ô…Àù[Xô\ä]ô[ùù\ôŸ]ùò[YJHÀÃå
+_BàœÇà€Xô[ÇàXô[€\‹”ò[YOHúö]X[Y\ò][€àèÇà‹[èíÿ[ŸZœ‹‹[èÇà[ú]à\OHõù[Xô\àÇàZ[è^ŒBàX^^Õ_Bàò[YO^ÿ€€ôöYÀò€€ö[úŸTŸX€€ôﬂBà€ê⁄[ôŸO^Ÿ]ô[ùOà€ê⁄[ôŸJ¬àããò€€ôöYÀà€€ö[úŸTŸX€€ôŒà€[\ù[Xô\äù[Xô\ä]ô[ùù\ôŸ]ùò[YJHåJKàJ_BàœÇà€Xô[ÇàŸ]èÇà
+Bàÿ\ŸH	€YY‘⁄ZŸIŒÇàÿ\ŸH	›ŸZY⁄	ŒÇàÿ\ŸH	Ÿ‹ò]]YIŒÇàÿ\ŸH	Ÿ[ô\ôﬁIŒÇàÿ\ŸH	⁄XYôX€›ô\ûIŒÇàÿ\ŸH	›Ÿ‹…ŒÇàÿ\ŸH	‹Ÿ[òÿ\ôIŒÇàÿ\ŸH	€]—€…ŒÇàô]\õà[õôY[YBàYò][à¬à€€ú›Ÿ^]\›]ôNàô]ô\àHYàô]\õàŸ^]\›]ôBàBàBüBÇôù[ò›[€àö]X[\ŸSXô[
+Yà[‹õö[ô‘ö]X[›\Y
+Nà›ö[ô»¬à€€ú›\ŸHH[‹õö[ô‘ö]X[\ŸJY
+Bà›⁄]⁄
+\ŸJH¬àÿ\ŸH	Ÿÿ]IŒÇàô]\õà	‘›\ù	¬àÿ\ŸH	⁄]]IŒÇàô]\õà	‘[ù[ô…¬àÿ\ŸH	›òX⁄…ŒÇàô]\õà	–Z›]â¬àYò][à¬à€€ú›Ÿ^]\›]ôNàô]ô\àH\ŸBàô]\õàŸ^]\›]ôBàBàBüBÇù\HŸ][ô‹–ÿ]Y€‹ûHH	ŸŸ[ô\ò[	»	€ù]ö][€â»	‹õ›][ôI»	‹ö]X[…»	Ÿ\⁄õÿ\ô	»	Ÿ]öXŸ\…»	Ÿ]I¬Çò€€ú›—USë‘◊––UQ”‘íQTŒà¬àYàŸ][ô‹–ÿ]Y€‹ûBàXô[à›ö[ô¬à[ùà›ö[ô¬àX€€éàX⁄YRX€€ÇüV◊HH¬à»Yà	ŸŸ[ô\ò[	ÀXô[à	–[Ÿ[YZ[âÀ[ùà	”ò[YH[ô\ú›[[ô…ÀX€€éà\Ÿ\àKà»Yà	€ù]ö][€âÀXô[à	—\õ∞Èù[ô…À[ùà	”XZ‹õ‹»[ôŸ]⁄X⁄	ÀX€€éà][ú⁄[»Kà»Yà	‹õ›][ôIÀXô[à	‘õ›][ôIÀ[ùà	“Xö]»[ôõ⁄›\…ÀX€€éà›[àKà»Yà	‹ö]X[…ÀXô[à	‘ö]X[IÀ[ùà	”[‹ôŸ[ãH[ôXô[ôQÿ]IÀX€€éà[€€àKà»Yà	Ÿ\⁄õÿ\ô	ÀXô[à	—\⁄õÿ\ô	À[ùà	‘ôZ]\à[ô^[›]	ÀX€€éà^[›]‹öYKà»Yà	Ÿ]öXŸ\…ÀXô[à	—Ÿ\∞ÈIÀ[ùà	‘ﬁ[ò»[ô⁄‹ù›]…ÀX€€éà€X\ù€ôHKà»Yà	Ÿ]IÀXô[à	—][âÀ[ùà	–òX⁄›\[ôXãQ][âÀX€€éà]Xò\ŸHKóBÇôù[ò›[€àŸ][ô‹”[Ÿ[
+¬àŸ][ô‹Àà\›òX⁄›\]à]öXŸTﬁ[òÀà€ê⁄[ôŸKà€ë^‹ùà€í[\‹ùà€îô\Ÿ]Xõ‹ãà€ë]öXŸTﬁ[ò–⁄[ôŸKà€îﬁ[ò”õ›Àà⁄›’ÿ\›à€ê€‹ŸKà€îô]öY]”[‹õö[ô—ÿ]Kà€ì‹[í[ùY‹ò][€úÀüNà¬àŸ][ô‹Œà\Ÿ][ô‹¬à\›òX⁄›\]à›ö[ô»ù[à]öXŸTﬁ[òŒà]öXŸTﬁ[ò–‹ôY[ùX[»ù[à€ê⁄[ôŸNà
+Ÿ][ô‹Œà\Ÿ][ô‹ HOàõ⁄Yà€ë^‹ùà
+
+HOàõ⁄Yà€í[\‹ùà
+ö[Nàö[JHOàõ€Z\ŸOõ⁄YÇà€îô\Ÿ]Xõ‹éà
+
+HOàõ⁄Yà€ë]öXŸTﬁ[ò–⁄[ôŸNà
+‹ôYŒà]öXŸTﬁ[ò–‹ôY[ùX[»ù[
+HOàõ⁄Yà€îﬁ[ò”õ›Œà
+
+HOàõ⁄Yà⁄›’ÿ\›à
+Y\‹ÿYŸNà›ö[ô HOàõ⁄Yà€ê€‹ŸNà
+
+HOàõ⁄Yà€îô]öY]”[‹õö[ô—ÿ]Nà
+
+HOàõ⁄Yà€ì‹[í[ùY‹ò][€úŒà
+
+HOàõ⁄YüJH¬à\ŸS[Ÿ[ôZ]ö[‹ä€ê€‹ŸJBà€€ú›[\‹ù[ú]ôYàH\ŸTôYèS[ú][[Y[ùù[äù[
+Bà€€ú›Ÿ][ô‹–õŸTôYàH\ŸTôYèS]ë[[Y[ùù[äù[
+Bà€€ú›^[›]HŸ][ô‹Àô\⁄õÿ\ô\”^[›]à€€ú›ÿÿ]Y€‹ûKŸ]ÿ]Y€‹ûWHH\ŸT›]OŸ][ô‹–ÿ]Y€‹ûOä	ŸŸ[ô\ò[	 Bà€€ú›ÿ€‹YY⁄‹ù›]Ÿ]€‹YY⁄‹ù›]HH\ŸT›]O›ö[ô»ù[äù[
+Bà€€ú›‹Z\ê€ŸKŸ]Z\ê€ŸWHH\ŸT›]O›ö[ô»ù[äù[
+Bà€€ú›‹Z\ë^\ô\–]Ÿ]Z\ë^\ô\–]HH\ŸT›]O›ö[ô»ù[äù[
+Bà€€ú›⁄õ⁄[ê€ŸKŸ]õ⁄[ê€ŸWHH\ŸT›]J	… Bà€€ú›‹ﬁ[ò–ù\ﬁKŸ]ﬁ[ò–ù\ﬁWHH\ŸT›]Jò[ŸJBà€€ú›‹Ÿ[òÿ\ôQòYùŸ]Ÿ[òÿ\ôQòYùHH\ŸT›]J	… Bà€€ú›ö]X[€€ôöY»Hõ‹õX[^ôS[‹õö[ô‘ö]X[€€ôöY Ÿ][ô‹Àõ[‹õö[ô‘ö]X[
+BÇà\ŸQYôôX›
+
+
+HOà¬àŸ][ô‹–õŸTôYãò›\úô[ùÀúÿ‹õ€ »‹àJBàKÿÿ]Y€‹ûWJBÇà€€ú›[›ôQ\⁄õÿ\ôXàH
+[ô^àù[Xô\ã\ôX›[€éàLHJHOà¬à€€ú›\ôŸ]H[ô^
+»\ôX›[€ÇàYà
+\ôŸ]\ôŸ]èH^[›]õ‹ô\ãõ[ô›
+Hô]\õÇà€€ú›ô^‹ô\àHÀããõ^[›]õ‹ô\óBà€€ú›€[›ôYHHô^‹ô\ãú‹XŸJ[ô^JBàô^‹ô\ãú‹XŸJ\ôŸ][›ôY
+Bà€ê⁄[ôŸJ»ããúŸ][ô‹À\⁄õÿ\ô\”^[›]à»ããõ^[›]‹ô\éàô^‹ô\àHJBàBÇà€€ú›ŸŸ€Q\⁄õÿ\ôXíY[àH
+Yà\⁄õÿ\ô\‘ŸX›[€äHOà¬à€€ú›\“Y[àH^[›]öY[ãö[ò€Y\ Y
+BàYà
+Z\“Y[à	âà^[›]öY[ãõ[ô›èHT“ì–Të‘T◊‘—P’S”ó“QÀõ[ô›HJHô]\õÇà€€ú›ô^Y[àH\“Y[à»^[›]öY[ãôö[\äY[íYOàY[íYOOHY
+HàÀããõ^[›]öY[ãYBà€ê⁄[ôŸJ»ããúŸ][ô‹À\⁄õÿ\ô\”^[›]à»ããõ^[›]Y[éàô^Y[àHJBàBÇàô]\õà
+à]à€\‹”ò[YOHõ[Ÿ[XòX⁄Ÿõ‹àõ€OHúô\Ÿ[ù][€àà€ì[›\ŸQ›€è^Ÿ]ô[ùOà]ô[ùù\ôŸ]OOH]ô[ùò›\úô[ù\ôŸ]	âà€ê€‹ŸJ
+_OÇà]à€\‹”ò[YOHõ[Ÿ[Ÿ][ô‹À[[Ÿ[àõ€OHôX[Ÿ»à\öXK[[Ÿ[HùùYHà\öXK[Xô[YûOHúŸ][ô‹À]]HèÇà]à€\‹”ò[YOHõ[Ÿ[ZXY\àèÇà]èè‹[à€\‹”ò[YOHô^YXúõ›»èìYôH‘œ‹‹[èèàYHúŸ][ô‹À]]HèëZ[ú›[[ôŸ[è⁄èèŸ]èÇàX€€êù]€àXô[Hîÿ⁄YpÁŸ[àà€ê€X⁄œ^€€ê€‹Ÿ_Oè⁄^ôO^ÃNHœè“X€€êù]€èÇàŸ]èÇÇà]à€\‹”ò[YOHúŸ][ô‹À\⁄[èÇàò]à€\‹”ò[YOHúŸ][ô‹À[ò]ààõ€OHùXõ\›à\öXK[Xô[HëZ[ú›[[ô‹⁄ÿ]Y€‹öY[àèÇà‘—USë‘◊––UQ”‘íQTÀõX\
+][HOà¬à€€ú›X€€àH][KöX€€Çà€€ú›X›]ôHHÿ]Y€‹ûHOOH][KöYàô]\õà
+àù]€Çà\OHòù]€àÇàŸ^O^⁄][KöYBàY^ÿŸ][ô‹ÀXÿ]I⁄][KöYXBàõ€OHùXàÇà€\‹”ò[YO^ÿX›]ôH»	‹Ÿ][ô‹À[ò]ãZ][H\ÀXX›]ôI»à	‹Ÿ][ô‹À[ò]ãZ][IﬂBà\öXK\Ÿ[X›Y^ÿX›]ô_Bà]O^⁄][Kö[ùBà€ê€X⁄œ^ 
+HOàŸ]ÿ]Y€‹ûJ][KöY
+_BàÇàX€€à⁄^ôO^ÃMüH\öXKZY[èHùùYHàœÇà‹[èÇà›õ€ôœû⁄][KõXô[O‹›õ€ôœÇà€X[û⁄][Kö[ùO‹€X[Çà‹‹[èÇàÿù]€èÇà
+BàJ_Bà€ò]èÇÇà]Çà€\‹”ò[YOHúŸ][ô‹ÀXõŸHÇàôYè^‹Ÿ][ô‹–õŸTôYüBàõ€OHùXú[ô[Çà\öXK[Xô[YûO^ÿŸ][ô‹ÀXÿ]Iÿÿ]Y€‹û_XBàÇà]à€\‹”ò[YOHúŸ][ô‹À\ŸX›[€ààY[è^ÿÿ]Y€‹ûHOOH	Ÿ]öXŸ\…ﬂOÇàœí[ùY‹ò][€ô[è⁄œÇà›[O^ﬁ»X\ô⁄[éà	ÀMúLú	Àõ€ù⁄^ôNàLK€€‹éà	›ò\äK]^[]]Y
+IÀ[ôRZY⁄àKçH_OÇà€€õôX›‹ô[ãŸXö€⁄‹»[ô›]õ›[ôQ]ô[ùÀàYH›\ùŸZ]HõZXù[ùô\∞Èô\ùÇà‹Çàù]€à\OHòù]€àà€\‹”ò[YOHúŸX€€ô\ûKXù]€àà€ê€X⁄œ^€€ì‹[í[ùY‹ò][€úﬂOÇà[ùY‹ò][€ô[à0Ìôôõô[Çàÿù]€èÇàŸ]èÇÇà]à€\‹”ò[YOHúŸ][ô‹À\ŸX›[€ààY[è^ÿÿ]Y€‹ûHOOH	‹õ›][ôIﬂOÇàœï0È€X⁄HŸ]€⁄öZ][è⁄œÇà›[O^ﬁ»X\ô⁄[éà	ÀMúLú	Àõ€ù⁄^ôNàLK€€‹éà	›ò\äK]^[]]Y
+IÀ[ôRZY⁄àKçH_OÇàZ›]ôHXö]»\úÿ⁄Z[ô[à[à\àõ›][ôKà€ÿ⁄[ùYŸH›]Y\õã[àŸ[⁄[àYŸ[à⁄YH∞ÈY»⁄[ô
+Y\àHôY[àY KÇà‹Çà]à€\‹”ò[YOHöXö]\Ÿ][ô‹À[\›èÇà—RSW“PíUÀõX\
+Oà¬à€€ú›X›]ôHHŸ][ô‹ÀòX›]ôRXö]Àö[ò€Y\ öY
+Bà€€ú›ÿ⁄Y[HHŸ][ô‹ÀöXö]ÿ⁄Y[\÷⁄öYBàô]\õà
+à]à€\‹”ò[YOHöXö]\Ÿ][ô‹À\õ›»àŸ^O^⁄öYOÇàù]€Çà\OHòù]€àÇà€\‹”ò[YO^ÿX›]ôH»	ÿ⁄⁄XŸKXù]€à\ÀXX›]ôI»à	ÿ⁄⁄XŸKXù]€âﬂBà€ê€X⁄œ^ 
+HOà€ê⁄[ôŸJ¬àããúŸ][ô‹ÀàX›]ôRXö]ŒàX›]ôBà»Ÿ][ô‹ÀòX›]ôRXö]Àôö[\äYOàYOOHöY
+BààÀããúŸ][ô‹ÀòX›]ôRXö]ÀöYKàJ_Bà\öXK\ô\‹ŸY^ÿX›]ô_BàÇà⁄õXô[Bàÿù]€èÇàÿX›]ôH	âà
+à]à€\‹”ò[YOHùŸYZŸ^KX⁄\\õ›»àõ€OHô‹õ›\à\öXK[Xô[^ÿ	⁄õXô[H€ÿ⁄[ùYŸXOÇà’—QR—VW”PëSÀõX\
+^HOà¬à€€ú›Ÿ[X›YH\ÿ⁄Y[Hÿ⁄Y[Kö[ò€Y\ ^Kùò[YJBàô]\õà
+àù]€Çà\OHòù]€àÇàŸ^O^Ÿ^Kùò[Y_Bà€\‹”ò[YO^‹Ÿ[X›Y»	›ŸYZŸ^KX⁄\\ÀXX›]ôI»à	›ŸYZŸ^KX⁄\	ﬂBà€ê€X⁄œ^ 
+HOà€ê⁄[ôŸJ¬àããúŸ][ô‹ÀàXö]ÿ⁄Y[\ŒàŸŸ€Tÿ⁄Y[Q^JŸ][ô‹ÀöXö]ÿ⁄Y[\ÀöY^Kùò[YJKàJ_Bà\öXK\ô\‹ŸY^‹Ÿ[X›YBàÇàŸ^Kú⁄‹ùBàÿù]€èÇà
+BàJ_BàŸ]èÇà
+_BàŸ]èÇà
+BàJ_BàŸ]èÇàŸ]èÇÇà]à€\‹”ò[YOHúŸ][ô‹À\ŸX›[€ààY[è^ÿÿ]Y€‹ûHOOH	Ÿ\⁄õÿ\ô	ﬂOÇàœë\⁄õÿ\ô
+»ôZ]\è⁄œÇà›[O^ﬁ»X\ô⁄[éà	ÀMúLú	Àõ€ù⁄^ôNàLK€€‹éà	›ò\äK]^[]]Y
+IÀ[ôRZY⁄àKçH_OÇàôZZ[ôõ€ŸH[ô⁄X⁄ò\öŸZ]\à\⁄õÿ\ô
+»ô\ôZX⁄H[ú\‹Ÿ[ãàZ[ô\›[ú»Z[àôZ]\àõZXù⁄X⁄ò\ãÇà‹Çà[€\‹”ò[YOHúô[‹ô\ã[\›èÇà€^[›]õ‹ô\ãõX\
+
+Y[ô^
+HOà¬à€€ú›XàHT“ì–Të‘T◊’PîÀôö[ô
+OàöYOOHY
+BàYà
+]XäHô]\õàù[à€€ú›Y[àH^[›]öY[ãö[ò€Y\ Y
+Bàô]\õà
+àHŸ^O^⁄YH€\‹”ò[YO^⁄Y[à»	‹ô[‹ô\ã\õ›»\ÀZY[â»à	‹ô[‹ô\ã\õ›…ﬂOÇàXãöX€€à⁄^ôO^ÃMüHœÇà‹[à€\‹”ò[YOHúô[‹ô\ã\õ›◊◊€Xô[èû›XãõXô[O‹‹[èÇà]à€\‹”ò[YOHúô[‹ô\ã\õ›◊◊ÿX›[€ú»èÇàX€€êù]€ÇàXô[^ÿ	›XãõXô[HòX⁄ÿô[àô\úÿ⁄YXô[òBà€ê€X⁄œ^ 
+HOà[›ôQ\⁄õÿ\ôXä[ô^LJ_Bà\ÿXõY^⁄[ô^OOHBàÇà⁄]úõ€ï\⁄^ôO^ÃM_HœÇà“X€€êù]€èÇàX€€êù]€ÇàXô[^ÿ	›XãõXô[HòX⁄[ù[àô\úÿ⁄YXô[òBà€ê€X⁄œ^ 
+HOà[›ôQ\⁄õÿ\ôXä[ô^J_Bà\ÿXõY^⁄[ô^OOH^[›]õ‹ô\ãõ[ô›H_BàÇà⁄]úõ€ë›€à⁄^ôO^ÃM_HœÇà“X€€êù]€èÇàX€€êù]€ÇàXô[^⁄Y[à»	›XãõXô[HZ[òõ[ô[òà	›XãõXô[H]\ÿõ[ô[òBà€ê€X⁄œ^ 
+HOàŸŸ€Q\⁄õÿ\ôXíY[äY
+_Bà€\‹”ò[YO^⁄Y[à»	…»à	⁄\ÀXX›]ôIﬂBàÇà⁄Y[à»^YSŸôà⁄^ôO^ÃM_Hœàà^YH⁄^ôO^ÃM_HœüBà“X€€êù]€èÇàŸ]èÇà€OÇà
+BàJ_Bà›[ÇàŸ]èÇÇà]à€\‹”ò[YOHúŸ][ô‹À\ŸX›[€ààY[è^ÿÿ]Y€‹ûHOOH	ŸŸ[ô\ò[	ﬂOÇàœîõŸö[⁄œÇà€\‹”ò[YOHúŸ][ô‹ÀZ[èìò[YH\úÿ⁄Z[ù[à\àôY‹∞Ô0Á›[ô»[ô[HYŸ\ÿXõ]Yãè‹ÇàXô[€\‹”ò[YOHù^YöY[èÇà‹[èìò[YO‹‹[èÇà[ú]ò[YO^‹Ÿ][ô‹Àõò[Y_HXŸZ€\èHëZ[àò[YHà€ê⁄[ôŸO^Ÿ]ô[ùOà€ê⁄[ôŸJ»ããúŸ][ô‹Àò[YNà]ô[ùù\ôŸ]ùò[YHJ_HœÇà€Xô[ÇàŸ]èÇÇà]à€\‹”ò[YOHúŸ][ô‹À\ŸX›[€ààY[è^ÿÿ]Y€‹ûHOOH	ŸŸ[ô\ò[	ﬂOÇàœë\ú›[[ôœ⁄œÇà]à€\‹”ò[YOHù[YK\ŸY€Y[ùàõ€OHô‹õ›\à\öXK[Xô[Hëò\òúÿ⁄[XHèÇà …€Y⁄	À	Ÿ\ö…À	‹ﬁ\›[I◊H\»[YTôYô\ô[òŸV◊JKõX\
+[YHOà
+àù]€Çà\OHòù]€àÇàŸ^O^›[Y_Bà€\‹”ò[YO^‹Ÿ][ô‹Àù[YHOOH[YH»	⁄\ÀXX›]ôI»à	…ﬂBà€ê€X⁄œ^ 
+HOà€ê⁄[ôŸJ»ããúŸ][ô‹À[YHJ_Bà\öXK\ô\‹ŸY^‹Ÿ][ô‹Àù[YHOOH[Y_BàÇà›[YHOOH	€Y⁄	»»›[à⁄^ôO^ÃMüHœàà[YHOOH	Ÿ\ö…»»[€€à⁄^ôO^ÃMüHœàà‹\ö€\»⁄^ôO^ÃMüHœüBà›[YHOOH	€Y⁄	»»	“[	»à[YHOOH	Ÿ\ö…»»	—[öŸ[	»à	‘ﬁ\›[IﬂBàÿù]€èÇà
+J_BàŸ]èÇà€\‹”ò[YOHúŸ][ô‹ÀZ[à›[O^ﬁ»X\ô⁄[ï‹àM_OêZﬁô[ùò\òôO‹Çà]à€\‹”ò[YOHòXÿŸ[ù\›ÿ]⁄\õ›»àõ€OHô‹õ›\à\öXK[Xô[HêZﬁô[ùò\òôHèÇà–P–—Sï”‘S”îÀõX\
+‹[€àOà
+àù]€Çà\OHòù]€àÇàŸ^O^€‹[€ãöYBà€\‹”ò[YO^‹Ÿ][ô‹ÀòXÿŸ[ùOOH‹[€ãöY»	ÿXÿŸ[ù\›ÿ]⁄\ÀXX›]ôI»à	ÿXÿŸ[ù\›ÿ]⁄	ﬂBà›[O^ﬁ»…ÀK\›ÿ]⁄	»\»›ö[ô◊Nà‹[€ãú›ÿ]⁄_Bà€ê€X⁄œ^ 
+HOà€ê⁄[ôŸJ»ããúŸ][ô‹ÀXÿŸ[ùà‹[€ãöYJ_Bà\öXK\ô\‹ŸY^‹Ÿ][ô‹ÀòXÿŸ[ùOOH‹[€ãöYBà\öXK[Xô[^ÿZﬁô[ùò\òôH	€‹[€ãõXô[XBà]O^€‹[€ãõXô[BàÇà‹Ÿ][ô‹ÀòXÿŸ[ùOOH‹[€ãöY	âà⁄X⁄»⁄^ôO^ÃMHœüBàÿù]€èÇà
+J_BàŸ]èÇàŸ]èÇÇà]à€\‹”ò[YOHúŸ][ô‹À\ŸX›[€ààY[è^ÿÿ]Y€‹ûHOOH	‹õ›][ôIﬂOÇàœî›[ô\ôQõ⁄›\œ⁄œÇà€\‹”ò[YOHúŸ][ô‹ÀZ[èÇàò[òX⁄»∞Ôàô]YH[öŸ\à[ôŸ[õàŸZ[ôHZYŸ[ôH]Y\àŸ\Ÿ]ù\›àõ»]YôÿXôHÿ[õú›HYH]Y\àôZ[HôX\òôZ][à0Ôô\úÿ⁄ôZXô[ãÇà‹Çà]à€\‹”ò[YOHô\ò][€ãY‹öYŸ][ô‹ÀYõÿ›\ÀY\ò][€àèÇà÷ÃLçKWKõX\
+Z[ù]\»Oà
+àù]€Çà\OHòù]€àÇàŸ^O^€Z[ù]\ﬂBà€\‹”ò[YO^‹Ÿ][ô‹Àôõÿ›\”Z[ù]\»OOHZ[ù]\»»	Ÿ\ò][€ãXù]€à\ÀXX›]ôI»à	Ÿ\ò][€ãXù]€âﬂBà€ê€X⁄œ^ 
+HOà€ê⁄[ôŸJ»ããúŸ][ô‹Àõÿ›\”Z[ù]\ŒàZ[ù]\»J_Bà\öXK\ô\‹ŸY^‹Ÿ][ô‹Àôõÿ›\”Z[ù]\»OOHZ[ù]\ﬂBàÇà›õ€ôœû€Z[ù]\ﬂO‹›õ€ôœÇà‹[èìZ[ãè‹‹[èÇàÿù]€èÇà
+J_BàŸ]èÇàXô[€\‹”ò[YOHù^YöY[à›[O^ﬁ»X\ô⁄[ï‹àLà_OÇà‹[èëZYŸ[ôHZ[ù][è‹‹[èÇà[ú]à\OHõù[Xô\àÇàZ[è^Õ_BàX^^ÃLåBà›\^Õ_Bàò[YO^‹Ÿ][ô‹Àôõÿ›\”Z[ù]\ﬂBà€ê⁄[ôŸO^Ÿ]ô[ùOà€ê⁄[ôŸJ¬àããúŸ][ô‹Ààõÿ›\”Z[ù]\Œà€[\ù[Xô\äù[Xô\ä]ô[ùù\ôŸ]ùò[YJHçKKLå
+KàJ_BàœÇà€Xô[ÇàŸ]èÇÇà]à€\‹”ò[YOHúŸ][ô‹À\ŸX›[€ààY[è^ÿÿ]Y€‹ûHOOH	€ù]ö][€âﬂOÇàœìXZ‹õ‹œ⁄œÇà€\‹”ò[YOHúŸ][ô‹ÀZ[èïYŸ\ﬁöY[H∞Ôàõ›Z[ãÿ[‹öY[à[ô€⁄[öYò]Kè‹Çà]à€\‹”ò[YOHúŸ][ô‹ÀY‹öYèÇàXô[€\‹”ò[YOHù^YöY[èè‹[èîõ›Z[ûöY[[àœ‹‹[èè[ú]\OHõù[Xô\ààZ[èHçLàX^Hçà›\HçHàò[YO^‹Ÿ][ô‹Àúõ›Z[ë€ÿ[H€ê⁄[ôŸO^Ÿ]ô[ùOà€ê⁄[ôŸJ»ããúŸ][ô‹Àõ›Z[ë€ÿ[à€[\ù[Xô\äù[Xô\ä]ô[ùù\ôŸ]ùò[YJHMLL
+HJ_Hœè€Xô[ÇàXô[€\‹”ò[YOHù^YöY[èè‹[èíÿ[‹öY[ûöY[‹‹[èè[ú]\OHõù[Xô\ààZ[èHåLàX^Héà›\HçLàò[YO^‹Ÿ][ô‹Àòÿ[‹öYQ€ÿ[H€ê⁄[ôŸO^Ÿ]ô[ùOà€ê⁄[ôŸJ»ããúŸ][ô‹Àÿ[‹öYQ€ÿ[à€[\ù[Xô\äù[Xô\ä]ô[ùù\ôŸ]ùò[YJHÕLL
+HJ_Hœè€Xô[ÇàXô[€\‹”ò[YOHù^YöY[èè‹[èëô]öY[[àœ‹‹[èè[ú]\OHõù[Xô\ààZ[èHååàX^Hååà›\HçHàò[YO^‹Ÿ][ô‹Àôò]€ÿ[H€ê⁄[ôŸO^Ÿ]ô[ùOà€ê⁄[ôŸJ»ããúŸ][ô‹Àò]€ÿ[à€[\ù[Xô\äù[Xô\ä]ô[ùù\ôŸ]ùò[YJHÃåå
+HJ_Hœè€Xô[ÇàXô[€\‹”ò[YOHù^YöY[èè‹[èí“VöY[[àœ‹‹[èè[ú]\OHõù[Xô\ààZ[èHçLàX^HçLà›\HçHàò[YO^‹Ÿ][ô‹Àòÿ\òú—€ÿ[H€ê⁄[ôŸO^Ÿ]ô[ùOà€ê⁄[ôŸJ»ããúŸ][ô‹Àÿ\òú—€ÿ[à€[\ù[Xô\äù[Xô\ä]ô[ùù\ôŸ]ùò[YJHçLLL
+HJ_Hœè€Xô[ÇàXô[€\‹”ò[YOHù^YöY[èè‹[èêò[\››ŸôôH[àœ‹‹[èè[ú]\OHõù[Xô\ààZ[èHåLàX^Héà›\HåHàò[YO^‹Ÿ][ô‹ÀôöXô\ë€ÿ[H€ê⁄[ôŸO^Ÿ]ô[ùOà€ê⁄[ôŸJ»ããúŸ][ô‹ÀöXô\ë€ÿ[à€[\ù[Xô\äù[Xô\ä]ô[ùù\ôŸ]ùò[YJHÃL
+HJ_Hœè€Xô[ÇàŸ]èÇàŸ]èÇÇà]à€\‹”ò[YOHúŸ][ô‹À\ŸX›[€ààY[è^ÿÿ]Y€‹ûHOOH	€ù]ö][€âﬂOÇàœíÌúú\è⁄œÇà€\‹”ò[YOHúŸ][ô‹ÀZ[èë‹∞Ì∞ÁŸH∞Ôà[àìRK›\ùH[ôöY[Ÿ]⁄X⁄∞ÔàXãè‹Çà]à€\‹”ò[YOHúŸ][ô‹ÀY‹öYèÇàXô[€\‹”ò[YOHù^YöY[èè‹[èíÌúú\ô‹∞Ì∞ÁŸH[à€O‹‹[èè[ú]\OHõù[Xô\ààZ[èHåàX^HåçLà›\HåHàò[YO^‹Ÿ][ô‹ÀöZY⁄€H	…ﬂHXŸZ€\èHô∞ÔàìRHà€ê⁄[ôŸO^Ÿ]ô[ùOà€ê⁄[ôŸJ»ããúŸ][ô‹ÀZY⁄€Nà€[\ù[Xô\äù[Xô\ä]ô[ùù\ôŸ]ùò[YJHçL
+HJ_Hœè€Xô[ÇàXô[€\‹”ò[YOHù^YöY[èè‹[èëŸ]⁄X⁄ﬁöY[[àŸœ‹‹[èè[ú]\OHõù[Xô\ààZ[èHåàX^HåÃà›\HååHàò[YO^‹Ÿ][ô‹ÀùŸZY⁄€ÿ[Ÿ»	…ﬂHXŸZ€\èHûãàãàÃà€ê⁄[ôŸO^Ÿ]ô[ùOà€ê⁄[ôŸJ»ããúŸ][ô‹ÀŸZY⁄€ÿ[ŸŒà€[\ù[Xô\äù[Xô\ä]ô[ùù\ôŸ]ùò[YJHÃ
+HJ_Hœè€Xô[ÇàXô[€\‹”ò[YOHù^YöY[èè‹[èî›\ùŸ]⁄X⁄[àŸœ‹‹[èè[ú]\OHõù[Xô\ààZ[èHåàX^HåÃà›\HååHàò[YO^‹Ÿ][ô‹ÀùŸZY⁄›\ùŸ»	…ﬂHXŸZ€\èHõY\àH\ú›\àŸ\ùà€ê⁄[ôŸO^Ÿ]ô[ùOà€ê⁄[ôŸJ»ããúŸ][ô‹ÀŸZY⁄›\ùŸŒà€[\ù[Xô\äù[Xô\ä]ô[ùù\ôŸ]ùò[YJHÃ
+HJ_Hœè€Xô[ÇàŸ]èÇàŸ]èÇÇà]à€\‹”ò[YOHúŸ][ô‹À\ŸX›[€ààY[è^ÿÿ]Y€‹ûHOOH	‹ö]X[…ﬂOÇàœêXô[ôQÿ]O⁄œÇà€\‹”ò[YOHúŸ][ô‹ÀZ[èÇàXàY\Ÿ\àZûôZ]\úÿ⁄Z[ù\àYŸ\ÿXúÿ⁄\‹Àà[ö›H›]Y\õãÿ\»õÿ⁄∞ÈÇà‹Çà]à€\‹”ò[YOHúŸ][ô‹ÀXX›[€ú»èÇàù]€Çà\OHòù]€àÇà€\‹”ò[YO^‹Ÿ][ô‹Àô]ô[ö[ô—ÿ]Kô[òXõY»	ÿ⁄⁄XŸKXù]€à\ÀXX›]ôI»à	ÿ⁄⁄XŸKXù]€âﬂBà\öXK\ô\‹ŸY^‹Ÿ][ô‹Àô]ô[ö[ô—ÿ]Kô[òXõYBà€ê€X⁄œ^ 
+HOà€ê⁄[ôŸJ¬àããúŸ][ô‹Àà]ô[ö[ô—ÿ]Nà»ããúŸ][ô‹Àô]ô[ö[ô—ÿ]K[òXõYà\Ÿ][ô‹Àô]ô[ö[ô—ÿ]Kô[òXõYKàJ_BàÇà‹Ÿ][ô‹Àô]ô[ö[ô—ÿ]Kô[òXõY»	—ÿ]H[â»à	—ÿ]H]\…ﬂBàÿù]€èÇàŸ]èÇà‹Ÿ][ô‹Àô]ô[ö[ô—ÿ]Kô[òXõY	âà
+àÇàXô[€\‹”ò[YOHúŸ[X›YöY[à›[O^ﬁ»X\ô⁄[ï‹àM_OÇà‹[èêXàZûôZ]‹‹[èÇàŸ[X›àò[YO^‹Ÿ][ô‹Àô]ô[ö[ô—ÿ]Kôúõ€R›\üBà€ê⁄[ôŸO^Ÿ]ô[ùOà€ê⁄[ôŸJ¬àããúŸ][ô‹Àà]ô[ö[ô—ÿ]Nà¬àããúŸ][ô‹Àô]ô[ö[ô—ÿ]Kàúõ€R›\éà€[\ù[Xô\äù[Xô\ä]ô[ùù\ôŸ]ùò[YJHMÀMKåäKàKàJ_BàÇà÷ÃMKMãMÀNNKååKåóKõX\
+›\àOà
+à‹[€àŸ^O^⁄›\üHò[YO^⁄›\üOÇàÿ	‘›ö[ô ›\äKúY›\ù
+ã	Ã	 _NåBà€‹[€èÇà
+J_Bà‹Ÿ[X›Çà€Xô[Çà€\‹”ò[YOHúŸ][ô‹ÀZ[à›[O^ﬁ»X\ô⁄[ï‹àM_OêXúÿ⁄\‹ÀT[ö›O‹Çà]à€\‹”ò[YOHò⁄⁄XŸKY‹öYèÇà—UëSíSë◊–”‘—W–“P“◊“QÀõX\
+YOà¬à€€ú›Y]HHUëSíSë◊–”‘—W–“P“◊”QUV⁄YBà€€ú›X›]ôHH\Ÿ][ô‹Àô]ô[ö[ô—ÿ]KöY[ê⁄X⁄‹Àö[ò€Y\ Y
+Bàô]\õà
+àù]€Çà\OHòù]€àÇàŸ^O^⁄YBà€\‹”ò[YO^ÿX›]ôH»	ÿ⁄⁄XŸKXù]€à\ÀXX›]ôI»à	ÿ⁄⁄XŸKXù]€âﬂBà\öXK\ô\‹ŸY^ÿX›]ô_Bà€ê€X⁄œ^ 
+HOà¬à€€ú›Y[ê⁄X⁄‹»HX›]ôBà»ÀããúŸ][ô‹Àô]ô[ö[ô—ÿ]KöY[ê⁄X⁄‹ÀYBààŸ][ô‹Àô]ô[ö[ô—ÿ]KöY[ê⁄X⁄‹Àôö[\ä⁄X⁄»Oà⁄X⁄»OOHY
+Bà€€ú›ô^Y[àHY[ê⁄X⁄‹Àõ[ô›èHUëSíSë◊–”‘—W–“P“◊“QÀõ[ô›à»Ÿ][ô‹Àô]ô[ö[ô—ÿ]KöY[ê⁄X⁄‹Àôö[\ä⁄X⁄»Oà⁄X⁄»OOHY
+BààY[ê⁄X⁄‹¬à€ê⁄[ôŸJ¬àããúŸ][ô‹Àà]ô[ö[ô—ÿ]Nà»ããúŸ][ô‹Àô]ô[ö[ô—ÿ]KY[ê⁄X⁄‹Œàô^Y[à\»]ô[ö[ô–€‹ŸP⁄X⁄“Y◊HKàJBà_BàÇà€Y]KõXô[Bàÿù]€èÇà
+BàJ_BàŸ]èÇàœÇà
+_BàŸ]èÇÇà]à€\‹”ò[YOHúŸ][ô‹À\ŸX›[€ààY[è^ÿÿ]Y€‹ûHOOH	‹ö]X[…ﬂOÇàœì[‹ôŸ[ãTö]X[⁄œÇà€\‹”ò[YOHúŸ][ô‹ÀZ[èÇàôZZ[ôõ€ŸKôYŸ[à[ôôZ][à›]Y\ú›H[ù[ãàôY\à[Y\à⁄\ôŸZ]\ö[àX[ùY[Ÿ\›\ù]Çà‹Çà]à€\‹”ò[YOHúŸ][ô‹ÀXX›[€ú»èÇàù]€Çà\OHòù]€àÇà€\‹”ò[YO^‹Ÿ][ô‹Àõ[‹õö[ô—ÿ]Q[òXõY»	ÿ⁄⁄XŸKXù]€à\ÀXX›]ôI»à	ÿ⁄⁄XŸKXù]€âﬂBà\öXK\ô\‹ŸY^‹Ÿ][ô‹Àõ[‹õö[ô—ÿ]Q[òXõYBà€ê€X⁄œ^ 
+HOà€ê⁄[ôŸJ»ããúŸ][ô‹À[‹õö[ô—ÿ]Q[òXõYà\Ÿ][ô‹Àõ[‹õö[ô—ÿ]Q[òXõYJ_BàÇà‹Ÿ][ô‹Àõ[‹õö[ô—ÿ]Q[òXõY»	‘ö]X[[â»à	‘ö]X[]\…ﬂBàÿù]€èÇà‹Ÿ][ô‹Àõ[‹õö[ô—ÿ]Q[òXõY	âà
+àù]€à\OHòù]€àà€\‹”ò[YOHúŸX€€ô\ûKXù]€àà€ê€X⁄œ^€€îô]öY]”[‹õö[ô—ÿ]_OÇàXõ]Yàô]ù0Ìôôõô[Çàÿù]€èÇà
+_BàŸ]èÇà‹Ÿ][ô‹Àõ[‹õö[ô—ÿ]Q[òXõY	âà
+à]à€\‹”ò[YOHúŸ][ô‹ÀY‹öYà›[O^ﬁ»X\ô⁄[ï‹àM_OÇàXô[€\‹”ò[YOHù^YöY[èÇà‹[èî⁄ZŸHõ›Z[àœ‹‹[èÇà[ú]à\OHõù[Xô\àÇàZ[è^ÃBàX^^ŒBàò[YO^‹ö]X[€€ôöYÀú⁄ZŸSYX[úõ›Z[ë‹ò[\ﬂBà€ê⁄[ôŸO^Ÿ]ô[ùOà€ê⁄[ôŸJ¬àããúŸ][ô‹Àà[‹õö[ô‘ö]X[à¬àããúö]X[€€ôöYÀà⁄ZŸSYX[à¬àããúö]X[€€ôöYÀú⁄ZŸSYX[àõ›Z[ë‹ò[\Œà€[\ù[Xô\äù[Xô\ä]ô[ùù\ôŸ]ùò[YJH
+KàKàKàJ_BàœÇà€Xô[ÇàXô[€\‹”ò[YOHù^YöY[èÇà‹[èî⁄ZŸHÿÿ[‹‹[èÇà[ú]à\OHõù[Xô\àÇàZ[è^ÃBàX^^ŒBàò[YO^‹ö]X[€€ôöYÀú⁄ZŸSYX[òÿ[‹öY\ﬂBà€ê⁄[ôŸO^Ÿ]ô[ùOà€ê⁄[ôŸJ¬àããúŸ][ô‹Àà[‹õö[ô‘ö]X[à¬àããúö]X[€€ôöYÀà⁄ZŸSYX[à¬àããúö]X[€€ôöYÀú⁄ZŸSYX[àÿ[‹öY\Œà€[\ù[Xô\äù[Xô\ä]ô[ùù\ôŸ]ùò[YJH
+KàKàKàJ_BàœÇà€Xô[ÇàXô[€\‹”ò[YOHù^YöY[èÇà‹[èî⁄ZŸHô]œ‹‹[èÇà[ú]à\OHõù[Xô\àÇàZ[è^ÃBàX^^ÕBàò[YO^‹ö]X[€€ôöYÀú⁄ZŸSYX[ôò]‹ò[\ﬂBà€ê⁄[ôŸO^Ÿ]ô[ùOà€ê⁄[ôŸJ¬àããúŸ][ô‹Àà[‹õö[ô‘ö]X[à¬àããúö]X[€€ôöYÀà⁄ZŸSYX[à¬àããúö]X[€€ôöYÀú⁄ZŸSYX[àò]‹ò[\Œà€[\ù[Xô\äù[Xô\ä]ô[ùù\ôŸ]ùò[YJH
+KàKàKàJ_BàœÇà€Xô[ÇàXô[€\‹”ò[YOHù^YöY[èÇà‹[èî⁄ZŸH“œ‹‹[èÇà[ú]à\OHõù[Xô\àÇàZ[è^ÃBàX^^ŒBàò[YO^‹ö]X[€€ôöYÀú⁄ZŸSYX[òÿ\òú—‹ò[\ﬂBà€ê⁄[ôŸO^Ÿ]ô[ùOà€ê⁄[ôŸJ¬àããúŸ][ô‹Àà[‹õö[ô‘ö]X[à¬àããúö]X[€€ôöYÀà⁄ZŸSYX[à¬àããúö]X[€€ôöYÀú⁄ZŸSYX[àÿ\òú—‹ò[\Œà€[\ù[Xô\äù[Xô\ä]ô[ùù\ôŸ]ùò[YJH
+KàKàKàJ_BàœÇà€Xô[ÇàŸ]èÇà
+_Bà‹Ÿ][ô‹Àõ[‹õö[ô—ÿ]Q[òXõY	âà
+à]à€\‹”ò[YOHúö]X[Xÿ\ô[›ô\ùöY]»èÇà€\‹”ò[YOHúŸ][ô‹ÀZ[èÇà[Hÿ\ù[à[àXõ]YãTôZZ[ôõ€ŸKàôYŸ[à\úÿ⁄Z[ô[à\ôZ›]Yà\àô]ŸZ[YŸ[àÿ\ùKÇà[Y\ãVôZ][à›]Y\õà[àX⁄[à[Y\é»[ûôZ][à⁄[ôöX⁄Ÿ\ùKÇà‹Çà€€\‹”ò[YOHúö]X[Xÿ\ôY‹öYèÇà‹ö]X[€€ôöYÀú›\‹ô\ãõX\
+
+Y[ô^
+HOà¬à€€ú›Y[àHö]X[€€ôöYÀöY[î›\Àö[ò€Y\ Y
+Bà€€ú›Y]HH[‹õö[ô‘ö]X[Y]JYö]X[€€ôöY Bàô]\õà
+àHŸ^O^⁄YH€\‹”ò[YO^⁄Y[à»	‹ö]X[X€€ôöYÀXÿ\ô\ÀZY[â»à	‹ö]X[X€€ôöYÀXÿ\ô	ﬂOÇà]à€\‹”ò[YOHúö]X[X€€ôöYÀXÿ\ô◊⁄XYèÇà]à€\‹”ò[YOHúö]X[X€€ôöYÀXÿ\ô◊€ù[Xô\àà\öXKZY[èHùùYHèÇà‘›ö[ô [ô^
+»JKúY›\ù
+ã	Ã	 _BàŸ]èÇà]à€\‹”ò[YOHúö]X[X€€ôöYÀXÿ\ô◊›]HèÇà‹[èû‹ö]X[\ŸSXô[
+Y
+_O‹‹[èÇà›õ€ôœû€Y]KõXô[O‹›õ€ôœÇà€X[û⁄Y[à»	’⁄\ô0Ôô\ú‹ù[ôŸ[â»àY]Kö[ùO‹€X[ÇàŸ]èÇà]à€\‹”ò[YOHúö]X[X€€ôöYÀXÿ\ô◊ÿX›[€ú»èÇàX€€êù]€ÇàXô[^ÿ	€Y]KõXô[HòX⁄ÿô[òBà\ÿXõY^⁄[ô^OOHBà€ê€X⁄œ^ 
+HOà€ê⁄[ôŸJ¬àããúŸ][ô‹Àà[‹õö[ô‘ö]X[à¬àããúö]X[€€ôöYÀà›\‹ô\éà[›ôTö]X[›\
+ö]X[€€ôöYÀú›\‹ô\ã[ô^LJKàKàJ_BàÇà⁄]úõ€ï\⁄^ôO^ÃM_HœÇà“X€€êù]€èÇàX€€êù]€ÇàXô[^ÿ	€Y]KõXô[HòX⁄[ù[òBà\ÿXõY^⁄[ô^OOHö]X[€€ôöYÀú›\‹ô\ãõ[ô›H_Bà€ê€X⁄œ^ 
+HOà€ê⁄[ôŸJ¬àããúŸ][ô‹Àà[‹õö[ô‘ö]X[à¬àããúö]X[€€ôöYÀà›\‹ô\éà[›ôTö]X[›\
+ö]X[€€ôöYÀú›\‹ô\ã[ô^JKàKàJ_BàÇà⁄]úõ€ë›€à⁄^ôO^ÃM_HœÇà“X€€êù]€èÇàX€€êù]€ÇàXô[^⁄Y[à»	€Y]KõXô[HZ[òõ[ô[òà	€Y]KõXô[H]\ÿõ[ô[òBà€\‹”ò[YO^⁄Y[à»	…»à	⁄\ÀXX›]ôIﬂBà€ê€X⁄œ^ 
+HOà¬à€€ú›Y[î›\»HY[Çà»ö]X[€€ôöYÀöY[î›\Àôö[\ä›\Oà›\OOHY
+BààÀããúö]X[€€ôöYÀöY[î›\ÀYBà€ê⁄[ôŸJ¬àããúŸ][ô‹Àà[‹õö[ô‘ö]X[à»ããúö]X[€€ôöYÀY[î›\»KàJBà_BàÇà⁄Y[à»^YSŸôà⁄^ôO^ÃM_Hœàà^YH⁄^ôO^ÃM_HœüBà“X€€êù]€èÇàŸ]èÇàŸ]èÇÇà]à€\‹”ò[YOHúö]X[X€€ôöYÀXÿ\ô◊ÿõŸHèÇàXô[€\‹”ò[YOHù^YöY[ö]X[\ù[KYöY[èÇà‹[èëZYŸ[ôHôYŸ[‹‹[èÇà^\ôXBàõ›‹œ^ÃﬂBàX^[ô›^ÃçBàò[YO^‹ö]X[€€ôöYÀú›\ù[\÷⁄Y_Bà€ê⁄[ôŸO^Ÿ]ô[ùOà€ê⁄[ôŸJ¬àããúŸ][ô‹Àà[‹õö[ô‘ö]X[à¬àããúö]X[€€ôöYÀà›\ù[\Œà¬àããúö]X[€€ôöYÀú›\ù[\Àà⁄YNà]ô[ùù\ôŸ]ùò[YKú€XŸJç
+KàKàKàJ_BàœÇà€Xô[Çàö]X[\ò][€ëöY[¬àY^⁄YBà€€ôöYœ^‹ö]X[€€ôöYﬂBà€ê⁄[ôŸO^€[‹õö[ô‘ö]X[Oà€ê⁄[ôŸJ»ããúŸ][ô‹À[‹õö[ô‘ö]X[J_BàœÇÇà⁄YOOH	Ÿ‹ò]]YI»	âà
+àXô[€\‹”ò[YOHù^YöY[ö]X[Xÿ\ô]⁄YKYöY[èÇà‹[èï^ù[H]][àõ‹õ\Ÿ[è‹‹[èÇà^\ôXBàõ›‹œ^Õ_BàX^[ô›^ÃLåBàò[YO^‹ö]X[€€ôöYÀô‹ò]]YU^Bà€ê⁄[ôŸO^Ÿ]ô[ùOà€ê⁄[ôŸJ¬àããúŸ][ô‹Àà[‹õö[ô‘ö]X[à¬àããúö]X[€€ôöYÀà‹ò]]YU^à]ô[ùù\ôŸ]ùò[YKú€XŸJLå
+KàKàJ_BàœÇà€Xô[Çà
+_BÇà⁄YOOH	‹Ÿ[òÿ\ôI»	âà
+à]à€\‹”ò[YOHúö]X[Xÿ\ô]⁄YKYöY[èÇà‹[à€\‹”ò[YOHúö]X[X€€ôöYÀXÿ\ô◊ŸöY[[Xô[èê⁄X⁄€\›O‹‹[èÇà]à€\‹”ò[YOHöXö]\Ÿ][ô‹À[\›èÇà‹ö]X[€€ôöYÀúŸ[òÿ\ôR][\ÀõX\
+][HOà
+àù]€Çà\OHòù]€àÇàŸ^O^⁄][KöYBà€\‹”ò[YOHò⁄⁄XŸKXù]€à\ÀXX›]ôHÇà€ê€X⁄œ^ 
+HOà¬àYà
+ö]X[€€ôöYÀúŸ[òÿ\ôR][\Àõ[ô›HJHô]\õÇà€ê⁄[ôŸJ¬àããúŸ][ô‹Àà[‹õö[ô‘ö]X[à¬àããúö]X[€€ôöYÀàŸ[òÿ\ôR][\Œàö]X[€€ôöYÀúŸ[òÿ\ôR][\Àôö[\ä[ùûHOà[ùûKöYOOH][KöY
+KàKàJBà_BàÇà⁄][KõXô[Bàÿù]€èÇà
+J_BàŸ]èÇàXô[€\‹”ò[YOHù^YöY[à›[O^ﬁ»X\ô⁄[ï‹à_OÇà‹[èîŸ[òÿ\ôKT[ö›[ûùY∞ÔŸ[è‹‹[èÇà[ú]àò[YO^‹Ÿ[òÿ\ôQòYùBàXŸZ€\èHûãàãàX\à›[[àÇà€ê⁄[ôŸO^Ÿ]ô[ùOàŸ]Ÿ[òÿ\ôQòYù
+]ô[ùù\ôŸ]ùò[YJ_Bà€íŸ^Q›€è^Ÿ]ô[ùOà¬àYà
+]ô[ùöŸ^HOOH	—[ù\â Hô]\õÇà]ô[ùúô]ô[ùYò][
+
+Bà€€ú›Xô[HŸ[òÿ\ôQòYùùö[J
+BàYà
+[Xô[
+Hô]\õÇà€ê⁄[ôŸJ¬àããúŸ][ô‹Àà[‹õö[ô‘ö]X[à¬àããúö]X[€€ôöYÀàŸ[òÿ\ôR][\Œàõ‹õX[^ôTŸ[òÿ\ôR][\ ¬àããúö]X[€€ôöYÀúŸ[òÿ\ôR][\Àà»YàŸ[òÿ\ôKI—]Kõõ› 
+_XXô[KàJKàKàJBàŸ]Ÿ[òÿ\ôQòYù
+	… Bà_BàœÇà€Xô[ÇàŸ]èÇà
+_BàŸ]èÇà€OÇà
+BàJ_Bà€€ÇàŸ]èÇà
+_BàŸ]èÇÇà]à€\‹”ò[YOHúŸ][ô‹À\ŸX›[€ààY[è^ÿÿ]Y€‹ûHOOH	Ÿ]öXŸ\…ﬂOÇàœöT€ôH0≠»›\ûòôYôZO⁄œÇà€\‹”ò[YOHúŸ][ô‹ÀZ[èÇà[à›\ûòôYôZH8°§à8†'ïTì0Ìôôõô[∏†'àYôH‘»[»–H]Yà[H€YHÿ‹ôY[à‹ZX⁄\õà
+Z[[à8°§àù[H€YKPö[ÿ⁄\õJK[õàõZXô[à][à›Xö[\ãÇàò^KPò[à»Y]HRH⁄ôHﬁ[òŒàTìZ]€ŸOèÿX›[€è[õ›Iò[\›^x†)èÿ€ŸOà0Ìôôõô[ãàZ]ﬁ[òŒàŸXö€⁄»[ù[ãÇà‹Çà]à€\‹”ò[YOHú⁄‹ù›]\ôX⁄\K[\›èÇà‘“‘ï’U‘ëP“TTÀõX\
+ôX⁄\HOà¬à€€ú›\õHùZ[X›[€ï\õ
+ôX⁄\Kö⁄[ôôX⁄\Kù^»»^àôX⁄\Kù^Hà[ôYö[ôY
+Bàô]\õà
+à]àŸ^O^‹ôX⁄\Kö⁄[ôH€\‹”ò[YOHú⁄‹ù›]\ôX⁄\HèÇà]èÇà›õ€ôœû‹ôX⁄\KõXô[O‹›õ€ôœÇà‹[èû‹ôX⁄\Kö[ùO‹‹[èÇà€ŸOû›\õúô\XŸJ◊öœŒó◊÷◊ã◊JÀÀ	… _Oÿ€ŸOÇàŸ]èÇàù]€Çà\OHòù]€àÇà€\‹”ò[YOHú€X[Xù]€àÇà€ê€X⁄œ^ÿ\ﬁ[ò»
+
+HOà¬à€€ú›⁄»H]ÿZ]€‹U^
+\õ
+BàYà
+[⁄ Hô]\õÇàŸ]€‹YY⁄‹ù›]
+ôX⁄\Kö⁄[ô
+Bà⁄[ô›ÀúŸ][Y[›]
+
+
+HOàŸ]€‹YY⁄‹ù›]
+›\úô[ùOà
+›\úô[ùOOHôX⁄\Kö⁄[ô»ù[à›\úô[ù
+JKMå
+Bà_BàÇàÿ€‹YY⁄‹ù›]OOHôX⁄\Kö⁄[ô»	“€‹Y\ù	»à	’Tì€‹Y\ô[âﬂBàÿù]€èÇàŸ]èÇà
+BàJ_BàŸ]èÇà€\‹”ò[YOHúŸ][ô‹ÀZ[èÇàõ⁄›\»Z]]Y\éà€ŸOèÿX›[€èYõÿ›\…ò[\€Z[èLçOÿ€ŸOãàŸ\ùH⁄ôHRNÇà€ŸOèÿX›[€è[Ÿ…ò[\‹õ›Z[èLN	ò[\›ÿ]\èLãçOÿ€ŸOàŸ\Çà€ŸOèÿX›[€è[Ÿ…ò[\›^LN…Låõ›Z[èÿ€ŸOãà]YôÿXôH\ôZ›Çà€ŸOèÿX›[€èXY]\⁄…ò[\›]OP‹ôX][ôILå€[èÿ€ŸOãÇàõ›^à
+õ›\õò[
+»›\ûõõ›^äNà€ŸOèÿX›[€è[õ›Iò[\›^RYYOÿ€ŸOãÇà‹ÇàŸ]èÇÇà]à€\‹”ò[YOHúŸ][ô‹À\ŸX›[€ààY[è^ÿÿ]Y€‹ûHOOH	Ÿ]öXŸ\…ﬂOÇàœëŸ\∞ÈKTﬁ[òœ⁄œÇà€\‹”ò[YOHúŸ][ô‹ÀZ[èÇàZ[õX[€‹[ã[òX⁄]]€X]\ÿ⁄à‹ZX⁄\õà0Èÿ⁄0Âôôõô[ãÿ[Hå»€\]\ÀÇà‹ÇàŸ]öXŸTﬁ[ò»»
+àÇà€\‹”ò[YOHúŸ][ô‹ÀZ[èÇàô\òù[ô[àŸZ]€ô]»[ùë]U[YQõ‹õX]
+	ŸKQIÀ»]T›[Nà	€YY][IÀ[YT›[Nà	‹⁄‹ù	»JKôõ‹õX]
+ô]»]J]öXŸTﬁ[òÀúZ\ôY]
+J_BàŸ]öXŸTﬁ[òÀõ\›ﬁ[òŸY]à»0≠»ù[]ù	€ô]»[ùë]U[YQõ‹õX]
+	ŸKQIÀ»[YT›[Nà	‹⁄‹ù	»JKôõ‹õX]
+ô]»]J]öXŸTﬁ[òÀõ\›ﬁ[òŸY]
+J_HZòàà	…ﬂBà‹Çà‹Z\ê€ŸH	âà
+à]à€\‹”ò[YOHúﬁ[òÀ\Z\ãX€ŸHà\öXK[]ôOHú€]HèÇà›õ€ôœû‹Z\ê€Ÿ_O‹›õ€ôœÇà‹[èÇà€ŸHÔY»ö\ﬁ…»	ﬂBà‹Z\ë^\ô\–]à»ô]»[ùë]U[YQõ‹õX]
+	ŸKQIÀ»[YT›[Nà	‹⁄‹ù	»JKôõ‹õX]
+ô]»]JZ\ë^\ô\–]
+JBàà	¯†%	ﬂ^…»	ﬂBàZÇà‹‹[èÇàŸ]èÇà
+_Bà]à€\‹”ò[YOHúŸ][ô‹ÀXX›[€ú»èÇàù]€Çà\OHòù]€àÇà€\‹”ò[YOHúŸX€€ô\ûKXù]€àÇà\ÿXõY^‹ﬁ[ò–ù\ﬁ_Bà€ê€X⁄œ^ÿ\ﬁ[ò»
+
+HOà¬àŸ]ﬁ[ò–ù\ﬁJùYJBàûH¬à€€ú›ô\›[H]ÿZ]ôYúô\⁄Z\ê€ŸJ
+BàŸ]Z\ê€ŸJô\›[úZ\ê€ŸJBàŸ]Z\ë^\ô\–]
+ô\›[ô^\ô\–]
+Bà⁄›’ÿ\›
+	–€ŸH\ûô]Y›8†%]Yà[H[ô\ô[àŸ\∞ÈZ[ôŸXô[ãâ BàHÿ]⁄
+\úõ‹äH¬à⁄›’ÿ\›
+\úõ‹à[ú›[òŸ[Ÿà\úõ‹à»\úõ‹ãõY\‹ÿYŸHà	–€ŸHôZŸ\ÿ⁄YŸ[ãâ BàHö[ò[H¬àŸ]ﬁ[ò–ù\ﬁJò[ŸJBàBà_BàÇàŸZ]\ô\»Ÿ\∞È€‹[Çàÿù]€èÇàù]€à\OHòù]€àà€\‹”ò[YOHúŸX€€ô\ûKXù]€àà\ÿXõY^‹ﬁ[ò–ù\ﬁ_H€ê€X⁄œ^€€îﬁ[ò”õ›ﬂOÇàô]ùﬁ[ò⁄õ€ö\⁄Y\ô[Çàÿù]€èÇàù]€Çà\OHòù]€àÇà€\‹”ò[YOHúŸX€€ô\ûKXù]€àÇà\ÿXõY^‹ﬁ[ò–ù\ﬁ_Bà€ê€X⁄œ^ 
+HOà¬àYà
+]⁄[ô›Àò€€ôö\õJ	‘ﬁ[ò»]YàY\Ÿ[HŸ\∞Èô[õô[è»][àõZXô[à⁄ÿ[â JHô]\õÇà€X\îﬁ[ò–‹ôY[ùX[ 
+BàŸ]Z\ê€ŸJù[
+BàŸ]Z\ë^\ô\–]
+ù[
+Bà€ë]öXŸTﬁ[ò–⁄[ôŸJù[
+Bà⁄›’ÿ\›
+	‘ﬁ[ò»Ÿ]ô[õùâ Bà_BàÇàﬁ[ò»ô[õô[Çàÿù]€èÇàŸ]èÇàœÇà
+Hà
+àÇà]à€\‹”ò[YOHúŸ][ô‹ÀXX›[€ú»èÇàù]€Çà\OHòù]€àÇà€\‹”ò[YOHúö[X\ûKXù]€àÇà\ÿXõY^‹ﬁ[ò–ù\ﬁ_Bà€ê€X⁄œ^ÿ\ﬁ[ò»
+
+HOà¬àŸ]ﬁ[ò–ù\ﬁJùYJBàŸ]Z\ê€ŸJù[
+BàûH¬à€€ú›ô\›[H]ÿZ]‹ôX]Q]öXŸTZ\ö[ô 
+BàŸ]Z\ê€ŸJô\›[úZ\ê€ŸJBàŸ]Z\ë^\ô\–]
+ô\›[ô^\ô\–]
+Bà€ë]öXŸTﬁ[ò–⁄[ôŸJÿYﬁ[ò–‹ôY[ùX[ 
+JBà⁄›’ÿ\›
+€ŸNà	‹ô\›[úZ\ê€Ÿ_X
+BàHÿ]⁄
+\úõ‹äH¬à⁄›’ÿ\›
+\úõ‹à[ú›[òŸ[Ÿà\úõ‹à»\úõ‹ãõY\‹ÿYŸHà	“€‹[àôZŸ\ÿ⁄YŸ[ãâ BàHö[ò[H¬àŸ]ﬁ[ò–ù\ﬁJò[ŸJBàBà_BàÇà‹ﬁ[ò–ù\ﬁH»	–€ŸH⁄\ô\ûô]Y›8†)â»à	—Y\Ÿ\»Ÿ\∞È[»›\ù€‹[âﬂBàÿù]€èÇàŸ]èÇà‹Z\ê€ŸH	âà
+à]à€\‹”ò[YOHúﬁ[òÀ\Z\ãX€ŸHà\öXK[]ôOHú€]HèÇà›õ€ôœû‹Z\ê€Ÿ_O‹›õ€ôœÇà‹[èê]Yà[H[ô\ô[àŸ\∞È[ù[àZ[ôŸXô[è‹‹[èÇàŸ]èÇà
+_Bà‹ﬁ[ò–ù\ﬁH	âà\Z\ê€ŸH	âà
+à€\‹”ò[YOHúŸ][ô‹ÀZ[èïÿ\ùH]Yàﬁ[òÀTŸ\ùô\à8†)è‹Çà
+_BàXô[€\‹”ò[YOHù^YöY[à›[O^ﬁ»X\ô⁄[ï‹àLà_OÇà‹[èê€ŸHõ€à[ô\ô[HŸ\∞È‹‹[èÇà[ú]à[ú][ŸOHõù[Y\öX»Çà]\õèHñÃNWJàÇàX^[ô›^ÕüBàXŸZ€\èHçã\›[YŸ\à€ŸHÇàò[YO^⁄õ⁄[ê€Ÿ_Bà€ê⁄[ôŸO^Ÿ]ô[ùOàŸ]õ⁄[ê€ŸJ]ô[ùù\ôŸ]ùò[YKúô\XŸJ◊ŸÀ	… Kú€XŸJäJ_BàœÇà€Xô[Çà]à€\‹”ò[YOHúŸ][ô‹ÀXX›[€ú»èÇàù]€Çà\OHòù]€àÇà€\‹”ò[YOHúŸX€€ô\ûKXù]€àÇà\ÿXõY^‹ﬁ[ò–ù\ﬁHõ⁄[ê€ŸKõ[ô›OOHüBà€ê€X⁄œ^ÿ\ﬁ[ò»
+
+HOà¬àŸ]ﬁ[ò–ù\ﬁJùYJBàûH¬à€€ú›‹ôY»H]ÿZ]õ⁄[ë]öXŸTZ\ö[ô õ⁄[ê€ŸJBàŸ]õ⁄[ê€ŸJ	… Bà€ë]öXŸTﬁ[ò–⁄[ôŸJ‹ôY Bà⁄›’ÿ\›
+	—Ÿ\∞ÈŸZ€‹[8†%ﬁ[ò»0ÈYù]]€X]\ÿ⁄â BàHÿ]⁄
+\úõ‹äH¬à⁄›’ÿ\›
+\úõ‹à[ú›[òŸ[Ÿà\úõ‹à»\úõ‹ãõY\‹ÿYŸHà	–ôZ]ö]ôZŸ\ÿ⁄YŸ[ãâ BàHö[ò[H¬àŸ]ﬁ[ò–ù\ﬁJò[ŸJBàBà_BàÇàZ]€ŸHô\òö[ô[Çàÿù]€èÇàŸ]èÇàœÇà
+_BàŸ]èÇÇà]à€\‹”ò[YOHúŸ][ô‹À\ŸX›[€ààY[è^ÿÿ]Y€‹ûHOOH	Ÿ]öXŸ\…ﬂOÇàœïŸXö€⁄œ⁄œÇàŸ]öXŸTﬁ[ò»»
+àÇà€\‹”ò[YOHúŸ][ô‹ÀZ[èÇà›\ûòôYôZKÿ]⁄ò^KPò[àY]HŸ\à[ô\ôH\»Ìõõô[àÿ⁄ôZXô[ã⁄ôHYH\ùH0Ìôôõô[ãÇà⁄Ÿ[àöX⁄Z[[à8†%Ÿ\àZà]ÿ[õàYŸH0Ôô\úÿ⁄ôZXô[ãÇà‹Çà]à€\‹”ò[YOHú⁄‹ù›]\ôX⁄\K[\›èÇà]à€\‹”ò[YOHú⁄‹ù›]\ôX⁄\HèÇà]èÇà›õ€ôœî‘’Tì‹›õ€ôœÇà‹[èíî””à[àY\Ÿ[à[ô[ö›Ÿ[ô[è‹‹[èÇà€ŸOûÿ	›⁄[ô›Àõÿÿ][€ãõ‹öY⁄[üKÿ\K⁄€⁄‹ÿOÿ€ŸOÇàŸ]èÇàù]€Çà\OHòù]€àÇà€\‹”ò[YOHú€X[Xù]€àÇà€ê€X⁄œ^ÿ\ﬁ[ò»
+
+HOà¬à€€ú›⁄»H]ÿZ]€‹U^
+	›⁄[ô›Àõÿÿ][€ãõ‹öY⁄[üKÿ\K⁄€⁄‹ÿ
+BàYà
+[⁄ Hô]\õÇàŸ]€‹YY⁄‹ù›]
+	›ŸXö€⁄À]\õ	 Bà⁄[ô›ÀúŸ][Y[›]
+
+
+HOàŸ]€‹YY⁄‹ù›]
+›\úô[ùOà
+›\úô[ùOOH	›ŸXö€⁄À]\õ	»»ù[à›\úô[ù
+JKMå
+Bà_BàÇàÿ€‹YY⁄‹ù›]OOH	›ŸXö€⁄À]\õ	»»	“€‹Y\ù	»à	’Tì€‹Y\ô[âﬂBàÿù]€èÇàŸ]èÇà]à€\‹”ò[YOHú⁄‹ù›]\ôX⁄\HèÇà]èÇà›õ€ôœêôZ\‹Y[î””è‹›õ€ôœÇà‹[èù\NàŸÀ]ZX⁄À\⁄»Ÿ\àõ›O‹‹[èÇà€ŸOûÿ»úõ€€RYéàâŸ]öXŸTﬁ[òÀúõ€€RYHãô]öXŸU⁄Ÿ[àéàâŸ]öXŸTﬁ[òÀô]öXŸU⁄Ÿ[üHãù\HéàõŸ»ãúõ›Z[ë‹ò[\»éåNXOÿ€ŸOÇàŸ]èÇàù]€Çà\OHòù]€àÇà€\‹”ò[YOHú€X[Xù]€àÇà€ê€X⁄œ^ÿ\ﬁ[ò»
+
+HOà¬à€€ú›⁄»H]ÿZ]€‹U^
+î””ãú›ö[ô⁄YûJ¬àõ€€RYà]öXŸTﬁ[òÀúõ€€RYà]öXŸU⁄Ÿ[éà]öXŸTﬁ[òÀô]öXŸU⁄Ÿ[ãà\Nà	€Ÿ…Ààõ›Z[ë‹ò[\ŒàNàKù[äJBàYà
+[⁄ Hô]\õÇàŸ]€‹YY⁄‹ù›]
+	›ŸXö€⁄ÀZú€€â Bà⁄[ô›ÀúŸ][Y[›]
+
+
+HOàŸ]€‹YY⁄‹ù›]
+›\úô[ùOà
+›\úô[ùOOH	›ŸXö€⁄ÀZú€€â»»ù[à›\úô[ù
+JKMå
+Bà_BàÇàÿ€‹YY⁄‹ù›]OOH	›ŸXö€⁄ÀZú€€â»»	“€‹Y\ù	»à	“î””à€‹Y\ô[âﬂBàÿù]€èÇàŸ]èÇà]à€\‹”ò[YOHú⁄‹ù›]\ôX⁄\HèÇà]èÇà›õ€ôœêúö[KSõ›^àî””è‹›õ€ôœÇà‹[èí›\ûòôYôZà^]\»⁄]–\”õ›^ô[à[à^Ÿ]ô[è‹‹[èÇà€ŸOûÿ»úõ€€RYéàâŸ]öXŸTﬁ[òÀúõ€€RYHãô]öXŸU⁄Ÿ[àéàâŸ]öXŸTﬁ[òÀô]öXŸU⁄Ÿ[üHãù\Héàõõ›Hãù^éàëRSàVüXOÿ€ŸOÇàŸ]èÇàù]€Çà\OHòù]€àÇà€\‹”ò[YOHú€X[Xù]€àÇà€ê€X⁄œ^ÿ\ﬁ[ò»
+
+HOà¬à€€ú›⁄»H]ÿZ]€‹U^
+î””ãú›ö[ô⁄YûJ¬àõ€€RYà]öXŸTﬁ[òÀúõ€€RYà]öXŸU⁄Ÿ[éà]öXŸTﬁ[òÀô]öXŸU⁄Ÿ[ãà\Nà	€õ›IÀà^à	—RSàV	ÀàKù[äJBàYà
+[⁄ Hô]\õÇàŸ]€‹YY⁄‹ù›]
+	›ŸXö€⁄À[õ›I Bà⁄[ô›ÀúŸ][Y[›]
+
+
+HOàŸ]€‹YY⁄‹ù›]
+›\úô[ùOà
+›\úô[ùOOH	›ŸXö€⁄À[õ›I»»ù[à›\úô[ù
+JKMå
+Bà_BàÇàÿ€‹YY⁄‹ù›]OOH	›ŸXö€⁄À[õ›I»»	“€‹Y\ù	»à	“î””à€‹Y\ô[âﬂBàÿù]€èÇàŸ]èÇàŸ]èÇà]à€\‹”ò[YOHúŸ][ô‹ÀZ[€\‹Ÿ\ÀZ€⁄ÀZ[èÇàîò^KPò[àY]H8°§àYôH‘»
+⁄ôHò]]ôKP\
+Nè‹Çà€ÇàOêúö[Nà8†'í^HY]Kÿ⁄X⁄»Z\à\à⁄]–\à8†)∏†'Ÿ\à[àYHT€ôKSõ›^ô[ãè€OÇàOí›\ûòôYôZH8°§à]]€X][€éàô]YH⁄]–\SòX⁄öX⁄õ€à\àŸ[ú›Ÿ\àZ[[ãT⁄Y]]\»õ›^ô[ãè€OÇàOêZ›[€à8†'ïTìR[ö[XúùYô[∏†'à‘’]YàYHŸXö€⁄ÀUTìî””ãU\€ŸOõõ›Oÿ€ŸOã^HZ›]è€OÇàOìYôH‘»€YHõ›^àôZ[H∞È⁄›[àﬁ[ò»8†%õ›\õò[
+»›\ûõõ›^ãè€OÇà€€ÇàŸ]èÇà€\‹”ò[YOHúŸ][ô‹ÀZ[èÇà]ZX⁄ÀU^à€ŸOûÿ»ù\Héàú]ZX⁄»ãù^éàåN»õ›Z[àüXOÿ€ŸOÇà0≠»]YôÿXôNà€ŸOûÿ»ù\Héàù\⁄»ãù]Héàê‹ôX][ôH€[àüXOÿ€ŸOÇà0≠»[ô\ô⁄YNà€ŸOûÿ»ù\HéàõŸ»ãô[ô\ôﬁHéàöY⁄üXOÿ€ŸOÇà0≠»õ›^éà€ŸOûÿ»ù\Héàõõ›Hãù^éàíYYHõ€HŸZ[àüXOÿ€ŸOÇà‹Çà]à€\‹”ò[YOHú⁄‹ù›]\ôX⁄\K[\›à›[O^ﬁ»X\ô⁄[ï‹àMà_OÇà]à€\‹”ò[YOHú⁄‹ù›]\ôX⁄\HèÇà]èÇà›õ€ôœê\HX[[ôŸ\›‹›õ€ôœÇà‹[èíX[]]»^‹ùàö]^\»8°§à\HX[8°§àY\Ÿ\à[ô[ö›‹‹[èÇà€ŸOûÿ	›⁄[ô›Àõÿÿ][€ãõ‹öY⁄[üKÿ\K⁄X[⁄[ôŸ\›Oÿ€ŸOÇàŸ]èÇàù]€Çà\OHòù]€àÇà€\‹”ò[YOHú€X[Xù]€àÇà€ê€X⁄œ^ÿ\ﬁ[ò»
+
+HOà¬à€€ú›⁄»H]ÿZ]€‹U^
+	›⁄[ô›Àõÿÿ][€ãõ‹öY⁄[üKÿ\K⁄X[⁄[ôŸ\›
+BàYà
+[⁄ Hô]\õÇàŸ]€‹YY⁄‹ù›]
+	⁄X[]\õ	 Bà⁄[ô›ÀúŸ][Y[›]
+
+
+HOàŸ]€‹YY⁄‹ù›]
+›\úô[ùOà
+›\úô[ùOOH	⁄X[]\õ	»»ù[à›\úô[ù
+JKMå
+Bà_BàÇàÿ€‹YY⁄‹ù›]OOH	⁄X[]\õ	»»	“€‹Y\ù	»à	’Tì€‹Y\ô[âﬂBàÿù]€èÇàŸ]èÇà]à€\‹”ò[YOHú⁄‹ù›]\ôX⁄\HèÇà]èÇà›õ€ôœíX[RXY\è‹›õ€ôœÇà‹[èí[àX[]]»^‹ù[»ZYŸ[ôHRXY\àŸ]ô[è‹‹[èÇà€ŸOûÿ]]‹ö^ò][€éàôX\ô\à	Ÿ]öXŸTﬁ[òÀô]öXŸU⁄Ÿ[üWñSYôKS‹ÀTõ€€Nà	Ÿ]öXŸTﬁ[òÀúõ€€RYXOÿ€ŸOÇàŸ]èÇàù]€Çà\OHòù]€àÇà€\‹”ò[YOHú€X[Xù]€àÇà€ê€X⁄œ^ÿ\ﬁ[ò»
+
+HOà¬à€€ú›⁄»H]ÿZ]€‹U^
+]]‹ö^ò][€éàôX\ô\à	Ÿ]öXŸTﬁ[òÀô]öXŸU⁄Ÿ[üWñSYôKS‹ÀTõ€€Nà	Ÿ]öXŸTﬁ[òÀúõ€€RYX
+BàYà
+[⁄ Hô]\õÇàŸ]€‹YY⁄‹ù›]
+	⁄X[ZXY\ú… Bà⁄[ô›ÀúŸ][Y[›]
+
+
+HOàŸ]€‹YY⁄‹ù›]
+›\úô[ùOà
+›\úô[ùOOH	⁄X[ZXY\ú…»»ù[à›\úô[ù
+JKMå
+Bà_BàÇàÿ€‹YY⁄‹ù›]OOH	⁄X[ZXY\ú…»»	“€‹Y\ù	»à	“XY\à€‹Y\ô[âﬂBàÿù]€èÇàŸ]èÇàŸ]èÇà€\‹”ò[YOHúŸ][ô‹ÀZ[èÇàX[]]»^‹ùÿ[õà\»ò]]ôHî””àÿ⁄X⁄Ÿ[ãàZ[ôòX⁄\à\›Çà€ŸOûÿ»õY]öX»éàùŸZY⁄ãùò[YHéçMãéù[ö]éàöŸ»ãô]HéàååçãLKLL’Œçéå
+Ãéåãú€›\òŸHéàëö]^\»üXOÿ€ŸOÇà‹ÇàœÇà
+Hà
+à€\‹”ò[YOHúŸ][ô‹ÀZ[èÇàùY\ú›Ÿ\∞ÈKTﬁ[ò»€‹[ãà[òX⁄\úÿ⁄Z[ùY\àYHŸXö€⁄ÀUTìZ]⁄Ÿ[ãÇà‹Çà
+_BàŸ]èÇÇà]à€\‹”ò[YOHúŸ][ô‹À\ŸX›[€ààY[è^ÿÿ]Y€‹ûHOOH	Ÿ]IﬂOÇàœìYY\ÀQ\ö[õô\ù[ôŸ[è⁄œÇà€\‹”ò[YOHúŸ][ô‹ÀZ[èÇàù\àZ]‹Z[ãàõ»YYZÿ[Y[ù8†'ë\ö[õô\õ∏†'Ÿ]ô[à[ôZûôZ]Z[ùòYŸ[ãàﬁ\›[KPô[òX⁄öX⁄Y›[ôŸ[àù\ãŸ[õàH⁄YHY\à\õ]Xú›Çà‹Çà]à€\‹”ò[YOHúŸ][ô‹ÀXX›[€ú»èÇàù]€Çà\OHòù]€àÇà€\‹”ò[YO^‹Ÿ][ô‹ÀõYY\‘ô[Z[ô\ú—[òXõY»	ÿ⁄⁄XŸKXù]€à\ÀXX›]ôI»à	ÿ⁄⁄XŸKXù]€âﬂBà\öXK\ô\‹ŸY^‹Ÿ][ô‹ÀõYY\‘ô[Z[ô\ú—[òXõYBà€ê€X⁄œ^ 
+HOà€ê⁄[ôŸJ»ããúŸ][ô‹ÀYY\‘ô[Z[ô\ú—[òXõYà\Ÿ][ô‹ÀõYY\‘ô[Z[ô\ú—[òXõYJ_BàÇà‹Ÿ][ô‹ÀõYY\‘ô[Z[ô\ú—[òXõY»	—\ö[õô\ù[ôŸ[à[â»à	—\ö[õô\ù[ôŸ[à]\…ﬂBàÿù]€èÇàù]€Çà\OHòù]€àÇà€\‹”ò[YOHúŸX€€ô\ûKXù]€àÇà€ê€X⁄œ^ÿ\ﬁ[ò»
+
+HOà¬àYà
+J	”õ›YöXÿ][€â»[à⁄[ô› JHô]\õÇàYà
+õ›YöXÿ][€ãú\õZ\‹⁄[€àOOH	Ÿ‹ò[ùY	 Hô]\õÇà]ÿZ]õ›YöXÿ][€ãúô\]Y\›\õZ\‹⁄[€ä
+Bà_BàÇàô[⁄^ôO^ÃMüHœàﬁ\›[KR[ùŸZ\»\õ]Xô[Çàÿù]€èÇàŸ]èÇàŸ]èÇÇà]à€\‹”ò[YOHúŸ][ô‹À\ŸX›[€ààY[è^ÿÿ]Y€‹ûHOOH	Ÿ]IﬂOÇàœêòX⁄›\⁄œÇà€\‹”ò[YOHúŸ][ô‹ÀZ[èÇàõ€òX⁄›\[ù0ÈYŸKŸ][ô‹ÀXãQ][à[ôàù\ÈõX⁄ÿ[õú›HŸ\∞ÈKTﬁ[ò»ù]ô[ãÇà‹Çà€\‹”ò[YOHúŸ][ô‹ÀZ[èÇà]ù\»òX⁄›\à€\›òX⁄›\]à»ô]»[ùë]U[YQõ‹õX]
+	ŸKQIÀ»]T›[Nà	€YY][IÀ[YT›[Nà	‹⁄‹ù	»JKôõ‹õX]
+ô]»]J\›òX⁄›\]
+JBàà	€õÿ⁄ŸZ[ô\…ﬂBà‹Çà]à€\‹”ò[YOHúŸ][ô‹ÀXX›[€ú»èÇàù]€à\OHòù]€àà€\‹”ò[YOHúŸX€€ô\ûKXù]€àà€ê€X⁄œ^€€ë^‹ùOÇà⁄]úõ€ë›€à⁄^ôO^ÃMüHœàòX⁄›\^‹ùY\ô[Çàÿù]€èÇàù]€à\OHòù]€àà€\‹”ò[YOHúŸX€€ô\ûKXù]€àà€ê€X⁄œ^ 
+HOà[\‹ù[ú]ôYãò›\úô[ùÀò€X⁄ 
+_OÇà⁄]úõ€ï\⁄^ôO^ÃMüHœàòX⁄›\[\‹ùY\ô[Çàÿù]€èÇà[ú]àôYè^⁄[\‹ù[ú]ôYüBà\OHôö[HÇàXÿŸ\Hò\Xÿ][€ã⁄ú€€ãöú€€àÇàY[Çà€ê⁄[ôŸO^ÿ\ﬁ[ò»]ô[ùOà¬à€€ú›ö[HH]ô[ùù\ôŸ]ôö[\œÀñÃBà]ô[ùù\ôŸ]ùò[YHH	…¬àYà
+ö[JH]ÿZ]€í[\‹ù
+ö[JBà_BàœÇàŸ]èÇàŸ]èÇÇà]à€\‹”ò[YOHúŸ][ô‹À\ŸX›[€ààY[è^ÿÿ]Y€‹ûHOOH	Ÿ]IﬂOÇàœìXãQ][è⁄œÇà€\‹”ò[YOHúŸ][ô‹ÀZ[èÇà[H[[ÀQ][à
+YY\Àõÿ\ôÀö[ò[ûô[äH[ùô\õô[à[ô[à][òô\ôZX⁄õ€àXàô]H›\ù[ãàYŸ\ÀQZ[ù∞ÈŸHõZXô[ãÇà‹Çà]à€\‹”ò[YOHúŸ][ô‹ÀXX›[€ú»èÇàù]€à\OHòù]€àà€\‹”ò[YOHúŸX€€ô\ûKXù]€àà€ê€X⁄œ^€€îô\Ÿ]Xõ‹üOÇàõ›]Pÿ›»⁄^ôO^ÃMüHœàXãQ][àù\∞Ô⁄‹Ÿ]ô[Çàÿù]€èÇàŸ]èÇàŸ]èÇÇà]à€\‹”ò[YOHúŸ][ô‹À[õ›HàY[è^ÿÿ]Y€‹ûHOOH	Ÿ]IﬂOÇàô[⁄^ôO^ÃNHœÇàêô[òX⁄öX⁄Y›[ôŸ[àŸ\ô[àöYH[ôŸYúòY›[ôŸYõ‹ô\ùà[Y\ãR[ùŸZ\ŸHù\àZ]ô\›Z[ô\àô\ôX⁄Y›[ôÀàZ]Ÿ\∞ÈKTﬁ[ò»]Yô[à][àòX⁄[H€‹[à]]€X]\ÿ⁄Z]è‹ÇàŸ]èÇàŸ]èÇàŸ]èÇà]à€\‹”ò[YOHõ[Ÿ[XX›[€ú»èèù]€à\OHòù]€àà€\‹”ò[YOHúö[X\ûKXù]€àà€ê€X⁄œ^€€ê€‹Ÿ_Oè⁄X⁄»⁄^ôO^ÃMﬂHœàô\ùYœÿù]€èèŸ]èÇàŸ]èÇàŸ]èÇà
+BüBÇôù[ò›[€àÿYôSÿÿ[›‹òYŸTŸ]][JŸ^Nà›ö[ôÀò[YNà›ö[ô Nàõ€€X[à¬àûH¬àÿÿ[›‹òYŸKúŸ]][JŸ^Kò[YJBàô]\õàùYBàHÿ]⁄¬àô]\õàò[ŸBàBüBÇô^‹ùYò][\
