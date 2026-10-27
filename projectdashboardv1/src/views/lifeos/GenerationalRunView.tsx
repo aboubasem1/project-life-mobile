@@ -14,7 +14,6 @@ import {
   addVisit,
   addWeightPoint,
   applyReviewDecision,
-  attachTranscript,
   assetAccessLabel,
   blockActive,
   completeActive,
@@ -23,7 +22,6 @@ import {
   deletePreference,
   delegationStatusLabel,
   goalStatusLabel,
-  importReel,
   isOverdue,
   localPriority,
   patchAsset,
@@ -36,15 +34,12 @@ import {
   patchPreference,
   patchSupplement,
   patchVisit,
-  patchReelCandidate,
   patchRequirement,
   pauseActive,
   pauseTask,
   promoteGoal,
   portfolioStatusLabel,
   preferenceKindLabel,
-  reelStatusLabel,
-  releaseReel,
   removeMeal,
   removeShoppingItem,
   removeSupplement,
@@ -77,11 +72,10 @@ import type {
   GoalNode,
   PreferenceKind,
   ReviewDecision,
-  SourceKind,
   TaskEnergy,
   TaskKind,
 } from '../../lib/generationalRun/types'
-import { nowIso, type KnowledgeItem, type LifeOsState } from '../../lib/lifeos'
+import { nowIso, type LifeOsState } from '../../lib/lifeos'
 import { Field, LifeOsPage } from './lifeosUi'
 import { BodyEvolutionCard } from '../../components/BodyEvolutionCard'
 
@@ -145,10 +139,14 @@ export function GenerationalRunView({
   const [blockNote, setBlockNote] = useState('')
   const [reviewNote, setReviewNote] = useState('')
   const [dueDrafts, setDueDrafts] = useState<Record<string, string>>({})
-  const [transcriptDrafts, setTranscriptDrafts] = useState<Record<string, string>>({})
   const today = localToday()
   const apply = (updater: (current: LifeOsState['run']) => LifeOsState['run']) => {
     commit(current => ({ ...current, run: updater(current.run) }))
+  }
+
+  const openReelImport = () => {
+    try { sessionStorage.setItem('lifeos.open-reel-import', '1') } catch { /* continue without handoff state */ }
+    window.location.hash = '#/knowledge'
   }
 
   const capture = (event: FormEvent) => {
@@ -171,52 +169,6 @@ export function GenerationalRunView({
     }
     recognition.onerror = () => setAudioNote('Audio fehlgeschlagen. Text bleibt erhalten.')
     recognition.start()
-  }
-
-  const release = (jobId: string) => {
-    commit(current => {
-      const result = releaseReel(current.run, jobId, nowIso())
-      if (!result.created || !result.knowledge) return { ...current, run: result.run }
-      const now = nowIso()
-      const knowledge: KnowledgeItem = {
-        id: result.knowledge.id,
-        title: result.knowledge.title,
-        content: result.knowledge.content,
-        summary: result.knowledge.summary,
-        source: result.knowledge.source,
-        type: 'video',
-        topics: result.knowledge.topics,
-        tags: result.knowledge.tags,
-        createdAt: now,
-        updatedAt: now,
-      }
-      const exists = current.knowledge.some(item => item.id === knowledge.id)
-      return {
-        ...current,
-        run: result.run,
-        knowledge: exists ? current.knowledge : [knowledge, ...current.knowledge],
-      }
-    })
-  }
-
-  const importFile = (file: File, existingJobId?: string) => {
-    const finish = (text?: string) => {
-      apply(current => importReel(current, {
-        fileName: file.name,
-        byteSize: file.size,
-        text,
-        existingJobId,
-        now: nowIso(),
-      }).run)
-    }
-    if (file.name.toLowerCase().endsWith('.txt') || file.name.toLowerCase().endsWith('.md') || file.name.toLowerCase().endsWith('.vtt') || file.name.toLowerCase().endsWith('.srt')) {
-      const reader = new FileReader()
-      reader.onload = () => finish(typeof reader.result === 'string' ? reader.result : '')
-      reader.onerror = () => finish('')
-      reader.readAsText(file)
-      return
-    }
-    finish()
   }
 
   const active = run.tasks.find(task => task.id === run.session?.taskId)
@@ -493,86 +445,11 @@ export function GenerationalRunView({
 
         <details className="card">
           <summary>Reel-Wissen</summary>
-          <p className="prog-sub">Freigabe nur nach Prüfung. Transkription ohne Dienst bleibt blockiert.</p>
-          <label className="secondary-button">
-            Datei importieren
-            <input
-              className="run-file"
-              type="file"
-              onChange={event => {
-                const file = event.target.files?.[0]
-                event.target.value = ''
-                if (file) importFile(file)
-              }}
-            />
-          </label>
-          {run.reels.map(job => (
-            <article key={job.id} className="run-reel">
-              <strong>{job.fileName}</strong>
-              <span>{reelStatusLabel(job.status)}{job.transcriptBlocked ? ' · Transkript extern blockiert' : ''}</span>
-              {job.error ? <p role="status">{job.error}</p> : null}
-              {job.transcriptBlocked && !job.knowledgeId ? (
-                <>
-                  <Field label={`Transkript ${job.fileName}`}>
-                    <textarea
-                      rows={3}
-                      value={transcriptDrafts[job.id] ?? ''}
-                      onChange={event => setTranscriptDrafts(current => ({ ...current, [job.id]: event.target.value }))}
-                    />
-                  </Field>
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => apply(current => attachTranscript(current, job.id, transcriptDrafts[job.id] ?? '', nowIso()).run)}
-                  >
-                    Text übernehmen
-                  </button>
-                </>
-              ) : null}
-              {job.candidates.map(candidate => (
-                <div key={candidate.id} className="run-candidate">
-                  <Field label="Text">
-                    <textarea
-                      value={candidate.text}
-                      onChange={event => apply(current => patchReelCandidate(current, job.id, candidate.id, { text: event.target.value }, nowIso()))}
-                      rows={2}
-                    />
-                  </Field>
-                  <Field label="Kategorie">
-                    <input
-                      value={candidate.category}
-                      onChange={event => apply(current => patchReelCandidate(current, job.id, candidate.id, { category: event.target.value }, nowIso()))}
-                    />
-                  </Field>
-                  <Field label="Quelle">
-                    <select
-                      value={candidate.sourceKind}
-                      onChange={event => apply(current => patchReelCandidate(current, job.id, candidate.id, { sourceKind: event.target.value as SourceKind }, nowIso()))}
-                    >
-                      <option value="note">Eigene Notiz</option>
-                      <option value="transcript">Transkript</option>
-                      <option value="external">Extern belegt</option>
-                    </select>
-                  </Field>
-                </div>
-              ))}
-              <label className="secondary-button">
-                Erneut versuchen
-                <input
-                  className="run-file"
-                  type="file"
-                  onChange={event => {
-                    const file = event.target.files?.[0]
-                    event.target.value = ''
-                    if (file) importFile(file, job.id)
-                  }}
-                />
-              </label>
-              <button type="button" className="primary-button" disabled={Boolean(job.knowledgeId)} onClick={() => release(job.id)}>
-                {job.knowledgeId ? 'Einmal freigegeben' : 'Freigeben'}
-              </button>
-            </article>
-          ))}
+          <p className="prog-sub">Videos werden hochgeladen, auf dem Server transkribiert und anschließend zur Prüfung bereitgestellt.</p>
+          <button type="button" className="primary-button reel-touch" onClick={openReelImport}>Reels importieren</button>
+          {run.reels.length > 0 && (
+            <p className="reel-review-detail__guard">{run.reels.length} frühere lokale Importentwürfe bleiben erhalten. Für die Verarbeitung die Videos einmal im neuen Import auswählen.</p>
+          )}
         </details>
 
         <details className="card">

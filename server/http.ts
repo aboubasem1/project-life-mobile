@@ -1,5 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { Readable } from 'node:stream'
 import { closeDatabase, ensureDatabaseSchema } from './database.js'
+import { shouldStreamRequest } from './http-policy.js'
 import { startReelWorker, stopReelWorker } from './reel-jobs.js'
 import { handleSyncRequest } from './sync-router.js'
 import developerChange from '../api/developer/change.js'
@@ -47,9 +49,19 @@ function requestHeaders(request: IncomingMessage): Headers {
 }
 
 async function toFetchRequest(request: IncomingMessage): Promise<Request> {
+  const url = new URL(request.url || '/', requestOrigin(request))
+  const isMediaUpload = shouldStreamRequest(request.method, url.pathname)
+  if (isMediaUpload) {
+    return new Request(url, {
+      method: 'PUT',
+      headers: requestHeaders(request),
+      body: Readable.toWeb(request) as ReadableStream<Uint8Array>,
+      duplex: 'half',
+    } as RequestInit & { duplex: 'half' })
+  }
   const body = await readBody(request)
   const bodyInit = body ? Uint8Array.from(body).buffer : undefined
-  return new Request(new URL(request.url || '/', requestOrigin(request)), {
+  return new Request(url, {
     method: request.method || 'GET',
     headers: requestHeaders(request),
     body: bodyInit,
