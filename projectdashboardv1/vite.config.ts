@@ -135,11 +135,21 @@ export default defineConfig({
         // Workbox's terser worker exits early on the supported local Node setup.
         // Development mode skips that fragile minification step; caching behavior is unchanged.
         mode: 'development',
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        navigateFallbackDenylist: [
-          /^\/developer(?:\/|$)/,
-          /^\/api(?:\/|$)/,
-        ],
+        // Fetch the app shell from the network first. Pre-caching index.html made
+        // installed iOS PWAs keep an obsolete UI for another launch after deploys.
+        // Hashed assets remain immutable and the last successful shell stays
+        // available as an offline fallback.
+        globPatterns: ['**/*.{js,css,ico,png,svg,woff2}'],
+        navigateFallback: null,
+        runtimeCaching: [{
+          urlPattern: ({ request }) => request.mode === 'navigate',
+          handler: 'NetworkFirst',
+          options: {
+            cacheName: 'lifeos-navigation',
+            networkTimeoutSeconds: 4,
+            cacheableResponse: { statuses: [0, 200] },
+          },
+        }],
       },
     }),
   ],
