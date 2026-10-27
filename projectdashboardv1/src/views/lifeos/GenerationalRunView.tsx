@@ -76,10 +76,8 @@ import type {
   TaskKind,
 } from '../../lib/generationalRun/types'
 import { nowIso, type LifeOsState } from '../../lib/lifeos'
-import type { KnowledgePublishDraft } from '../../lib/reels'
 import { Field, LifeOsPage } from './lifeosUi'
 import { BodyEvolutionCard } from '../../components/BodyEvolutionCard'
-import { ReelImportPanel } from './ReelImportPanel'
 
 type SpeechResult = { results: ArrayLike<ArrayLike<{ transcript?: string }>> }
 type SpeechRecognitionInstance = {
@@ -126,14 +124,12 @@ export function GenerationalRunView({
   commitments,
   onOpenLabor,
   onOpenCheckin,
-  onPublished,
 }: {
   life: LifeOsState
   commit: (updater: (current: LifeOsState) => LifeOsState) => void
   commitments: LaborCommitment[]
   onOpenLabor: () => void
   onOpenCheckin: () => void
-  onPublished: (drafts: KnowledgePublishDraft[]) => number
 }) {
   const run = life.run
   const board = todayBoard(run)
@@ -143,10 +139,14 @@ export function GenerationalRunView({
   const [blockNote, setBlockNote] = useState('')
   const [reviewNote, setReviewNote] = useState('')
   const [dueDrafts, setDueDrafts] = useState<Record<string, string>>({})
-  const [showReelImport, setShowReelImport] = useState(false)
   const today = localToday()
   const apply = (updater: (current: LifeOsState['run']) => LifeOsState['run']) => {
     commit(current => ({ ...current, run: updater(current.run) }))
+  }
+
+  const openReelImport = () => {
+    try { sessionStorage.setItem('lifeos.open-reel-import', '1') } catch { /* continue without handoff state */ }
+    window.location.hash = '#/knowledge'
   }
 
   const capture = (event: FormEvent) => {
@@ -446,15 +446,10 @@ export function GenerationalRunView({
         <details className="card">
           <summary>Reel-Wissen</summary>
           <p className="prog-sub">Videos werden hochgeladen, auf dem Server transkribiert und anschließend zur Prüfung bereitgestellt.</p>
-          {!showReelImport && (
-            <button type="button" className="primary-button reel-touch" onClick={() => setShowReelImport(true)}>
-              Reels importieren
-            </button>
-          )}
+          <button type="button" className="primary-button reel-touch" onClick={openReelImport}>Reels importieren</button>
           {run.reels.length > 0 && (
             <p className="reel-review-detail__guard">{run.reels.length} frühere lokale Importentwürfe bleiben erhalten. Für die Verarbeitung die Videos einmal im neuen Import auswählen.</p>
           )}
-          {showReelImport && <ReelImportPanel onClose={() => setShowReelImport(false)} onPublished={onPublished} />}
         </details>
 
         <details className="card">

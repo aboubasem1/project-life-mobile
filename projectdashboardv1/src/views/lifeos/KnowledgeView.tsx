@@ -68,7 +68,15 @@ export function KnowledgeView({
   const [query, setQuery] = useState('')
   const [linkKind, setLinkKind] = useState<'project' | 'goal' | 'decision' | 'knowledge'>('project')
   const [linkId, setLinkId] = useState('')
-  const [showReelImport, setShowReelImport] = useState(false)
+  const [showReelImport, setShowReelImport] = useState(() => {
+    try {
+      const requested = sessionStorage.getItem('lifeos.open-reel-import') === '1'
+      sessionStorage.removeItem('lifeos.open-reel-import')
+      return requested
+    } catch {
+      return false
+    }
+  })
   const ranked = useMemo(() => new Map(rankKnowledge(items, query).map(hit => [hit.id, hit.score])), [items, query])
   const visible = query.trim()
     ? items.filter(item => ranked.has(item.id)).sort((a, b) => (ranked.get(b.id) ?? 0) - (ranked.get(a.id) ?? 0))
