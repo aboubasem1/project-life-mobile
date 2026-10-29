@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
-import { databaseConfigured, databaseQuery, probeDatabase } from './database.js'
+import { databaseConfigured, databaseQuery, syncDatabaseQuery, probeDatabase } from './database.js'
 import {
   createObjectKey,
   headStoredObject,
@@ -232,7 +232,7 @@ function postgresRowToRoom(row: PostgresRoomRow): SyncRoom {
 }
 
 async function getRoomFromPostgres(roomId: string): Promise<SyncRoom | null> {
-  const result = await databaseQuery<PostgresRoomRow>(`
+  const result = await syncDatabaseQuery<PostgresRoomRow>(`
     SELECT room_id, device_tokens, pair_code, pair_code_expires_at, snapshot, created_at, updated_at
     FROM lifeos_sync_rooms
     WHERE room_id = $1
@@ -242,7 +242,7 @@ async function getRoomFromPostgres(roomId: string): Promise<SyncRoom | null> {
 }
 
 async function clearExpiredPairCodesFromPostgres(): Promise<void> {
-  await databaseQuery(`
+  await syncDatabaseQuery(`
     UPDATE lifeos_sync_rooms
     SET pair_code = NULL, pair_code_expires_at = NULL
     WHERE pair_code IS NOT NULL
@@ -252,7 +252,7 @@ async function clearExpiredPairCodesFromPostgres(): Promise<void> {
 
 async function getRoomIdByPairCodeFromPostgres(pairCode: string): Promise<string | null> {
   await clearExpiredPairCodesFromPostgres()
-  const result = await databaseQuery<{ room_id: string }>(`
+  const result = await syncDatabaseQuery<{ room_id: string }>(`
     SELECT room_id
     FROM lifeos_sync_rooms
     WHERE pair_code = $1
@@ -264,7 +264,7 @@ async function getRoomIdByPairCodeFromPostgres(pairCode: string): Promise<string
 
 async function saveRoomToPostgres(room: SyncRoom): Promise<void> {
   if (room.pairCode) await clearExpiredPairCodesFromPostgres()
-  await databaseQuery(`
+  await syncDatabaseQuery(`
     INSERT INTO lifeos_sync_rooms (
       room_id,
       device_tokens,
