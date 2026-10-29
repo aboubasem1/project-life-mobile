@@ -229,6 +229,37 @@ export async function ensureDatabaseSchema(): Promise<void> {
   return schemaPromise
 }
 
+let syncSchemaPromise: Promise<void> | null = null
+
+/** Pairing must remain available even if a separate Reel/Knowledge migration fails. */
+export async function syncDatabaseQuery<T extends QueryResultRow = QueryResultRow>(
+  text: string,
+  values: unknown[] = [],
+): Promise<QueryResult<T>> {
+  if (!syncSchemaPromise) {
+    syncSchemaPromise = databasePool().query(`
+      CREATE TABLE IF NOT EXISTS lifeos_sync_rooms (
+        room_id text PRIMARY KEY,
+        device_tokens text[] NOT NULL DEFAULT ARRAY[]::text[],
+        pair_code text,
+        pair_code_expires_at timestamptz,
+        snapshot jsonb,
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS lifeos_sync_rooms_pair_code_idx
+        ON lifeos_sync_rooms (pair_code) WHERE pair_code IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS lifeos_sync_rooms_updated_at_idx
+        ON lifeos_sync_rooms (updated_at DESC);
+    `).then(() => undefined).catch(error => {
+      syncSchemaPromise = null
+      throw error
+    })
+  }
+  await syncSchemaPromise
+  return databasePool().query<T>(text, values)
+}
+
 export async function databaseQuery<T extends QueryResultRow = QueryResultRow>(
   text: string,
   values: unknown[] = [],
@@ -283,5 +314,6 @@ export async function closeDatabase(): Promise<void> {
   const current = pool
   pool = null
   schemaPromise = null
+  syncSchemaPromise = null
   await current.end()
 }
