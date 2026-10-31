@@ -14,8 +14,8 @@
 | Transcription | Config unknown | WORKING (configured on health) | Config yes; real video text **NOT VERIFIED** |
 | AI Knowledge Extraction | Partial pipeline | PARTIAL (pipeline + JEV configured) | Config yes; published card **NOT VERIFIED** |
 | Knowledge Search | Local + Jo query | PARTIAL | Unit tests; production corpus **NOT VERIFIED** |
-| Jo AI Chat | Implemented in app | PARTIAL | Code/docs; live provider smoke **NOT VERIFIED** this session |
-| Jo Knowledge Retrieval | Added (citations) | PARTIAL | Unit tests |
+| Jo AI Chat | Implemented in app | PARTIAL (capture/decision live; freeform chat not a separate LLM chat product) | POST `/api/decision` → `provider: jev` (2026-10-31) |
+| Jo Knowledge Retrieval | Added (citations) | PARTIAL | 29 unit tests pass; production Knowledge corpus empty on fresh profile |
 | Jo LifeOS Actions | Change Engine | PARTIAL | Code path; live apply **NOT VERIFIED** |
 | iOS PWA | Stale SW risk | PARTIAL (#40 refresh) | Loads in browser; Home Screen **NOT VERIFIED** |
 | Apple Health Sync | Manual/hook only | PARTIAL ingest; HealthKit **NOT IMPLEMENTED** | — |
@@ -54,8 +54,8 @@ vitest src/lib/reels        # 8 pass
 
 | Item | Value |
 |---|---|
-| Last successful Deploy OVH | `17c57c4` (2026-10-29) |
-| Cancel-upload polish | requires commit + push to `main` to reach production |
+| Last successful Deploy OVH | `de8d724` (2026-10-31) — cancel uploads + audit docs |
+| Prior baseline | `17c57c4` sync bootstrap |
 
 ## 6. Remaining blockers
 
