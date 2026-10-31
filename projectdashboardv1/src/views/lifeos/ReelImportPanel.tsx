@@ -20,7 +20,7 @@ type LocalUpload = {
   id: string
   name: string
   progress: number
-  phase: 'queued' | 'uploading' | 'done' | 'error' | 'duplicate'
+  phase: 'queued' | 'uploading' | 'done' | 'error' | 'duplicate' | 'cancelled'
   error?: string
   queued?: boolean
 }
@@ -67,6 +67,8 @@ export function ReelImportPanel({
   onPublished: (drafts: KnowledgePublishDraft[]) => number
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const abortControllers = useRef(new Map<string, AbortController>())
+  const cancelledIds = useRef(new Set<string>())
   const [uploads, setUploads] = useState<LocalUpload[]>([])
   const [reels, setReels] = useState<ReelCandidate[]>([])
   const [selected, setSelected] = useState<string[]>([])
@@ -143,6 +145,13 @@ export function ReelImportPanel({
     setUploads(current => current.map(item => item.id === id ? { ...item, ...patch } : item))
   }
 
+  const cancelUpload = (id: string) => {
+    cancelledIds.current.add(id)
+    abortControllers.current.get(id)?.abort()
+    abortControllers.current.delete(id)
+    patchUpload(id, { phase: 'cancelled', error: 'Abgebrochen', progress: 0 })
+  }
+
   const startFiles = async (files: File[]) => {
     const plan = planVideoBatch(files)
     setHint(plan.hint)
@@ -153,6 +162,8 @@ export function ReelImportPanel({
     const skipped = plan.skipped.length ? `${plan.skipped.length} Datei${plan.skipped.length === 1 ? '' : 'en'} für später ausgelassen.` : ''
     setNotice(skipped)
     const queue = plan.accepted.map(file => ({ id: crypto.randomUUID(), name: file.name, progress: 0, phase: 'queued' as const, file }))
+    cancelledIds.current.clear()
+    abortControllers.current.clear()
     setUploads(queue.map(item => ({ id: item.id, name: item.name, progress: item.progress, phase: item.phase })))
     setError('')
     setBusy(true)
@@ -161,9 +172,20 @@ export function ReelImportPanel({
     const worker = async () => {
       while (cursor < queue.length) {
         const item = queue[cursor++]
+        if (cancelledIds.current.has(item.id)) {
+          patchUpload(item.id, { phase: 'cancelled', error: 'Abgebrochen' })
+          continue
+        }
+        const controller = new AbortController()
+        abortControllers.current.set(item.id, controller)
         try {
           patchUpload(item.id, { phase: 'uploading' })
-          const registered = await uploadAndRegisterReel(item.file, progress => patchUpload(item.id, { progress }), LIFE_AREAS.map(entry => entry.key))
+          const registered = await uploadAndRegisterReel(
+            item.file,
+            progress => patchUpload(item.id, { progress }),
+            LIFE_AREAS.map(entry => entry.key),
+            controller.signal,
+          )
           setReels(current => replaceReel(current, registered.reel))
           patchUpload(item.id, {
             phase: registered.duplicate || registered.reel.status === 'DUPLICATE' ? 'duplicate' : 'done',
@@ -171,7 +193,13 @@ export function ReelImportPanel({
             queued: registered.queued,
           })
         } catch (reason) {
-          patchUpload(item.id, { phase: 'error', error: reason instanceof Error ? reason.message : 'Upload fehlgeschlagen.' })
+          if (cancelledIds.current.has(item.id) || (reason instanceof DOMException && reason.name === 'AbortError')) {
+            patchUpload(item.id, { phase: 'cancelled', error: 'Abgebrochen' })
+          } else {
+            patchUpload(item.id, { phase: 'error', error: reason instanceof Error ? reason.message : 'Upload fehlgeschlagen.' })
+          }
+        } finally {
+          abortControllers.current.delete(item.id)
         }
       }
     }
@@ -290,7 +318,19 @@ export function ReelImportPanel({
               <FileVideo size={17} />
               <span>{item.name}</span>
               <progress max={100} value={item.progress} aria-label={`Upload ${item.name}`} />
-              <small>{item.phase === 'queued' ? 'wartet' : item.phase === 'uploading' ? `${item.progress}%` : item.phase === 'done' ? 'übertragen' : item.phase === 'duplicate' ? 'schon vorhanden' : item.error}</small>
+              <small>{
+                item.phase === 'queued' ? 'wartet'
+                  : item.phase === 'uploading' ? `${item.progress}%`
+                    : item.phase === 'done' ? 'übertragen'
+                      : item.phase === 'duplicate' ? 'schon vorhanden'
+                        : item.phase === 'cancelled' ? 'abgebrochen'
+                          : item.error
+              }</small>
+              {(item.phase === 'queued' || item.phase === 'uploading') && (
+                <button type="button" className="text-button reel-touch" aria-label={`${item.name} abbrechen`} onClick={() => cancelUpload(item.id)}>
+                  Abbrechen
+                </button>
+              )}
             </div>
           ))}
         </div>

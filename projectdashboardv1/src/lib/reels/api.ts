@@ -52,9 +52,24 @@ function sameOriginUploadHeaders(url: string, headers: Record<string, string>): 
   return headers
 }
 
-function putFile(url: string, headers: Record<string, string>, file: File, onProgress: (percent: number) => void): Promise<void> {
+function putFile(
+  url: string,
+  headers: Record<string, string>,
+  file: File,
+  onProgress: (percent: number) => void,
+  signal?: AbortSignal,
+): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Upload abgebrochen.', 'AbortError'))
+      return
+    }
     const request = new XMLHttpRequest()
+    const onAbort = () => {
+      request.abort()
+      reject(new DOMException('Upload abgebrochen.', 'AbortError'))
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
     request.open('PUT', url)
     for (const [name, value] of Object.entries(sameOriginUploadHeaders(url, headers))) {
       request.setRequestHeader(name, value)
@@ -63,11 +78,20 @@ function putFile(url: string, headers: Record<string, string>, file: File, onPro
     request.upload.onprogress = event => {
       if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100))
     }
-    request.onload = () => request.status >= 200 && request.status < 300
-      ? resolve()
-      : reject(new Error(`Upload fehlgeschlagen (${request.status}).`))
-    request.onerror = () => reject(new Error('Upload-Verbindung wurde unterbrochen.'))
-    request.ontimeout = () => reject(new Error('Upload hat zu lange gedauert.'))
+    request.onload = () => {
+      signal?.removeEventListener('abort', onAbort)
+      request.status >= 200 && request.status < 300
+        ? resolve()
+        : reject(new Error(`Upload fehlgeschlagen (${request.status}).`))
+    }
+    request.onerror = () => {
+      signal?.removeEventListener('abort', onAbort)
+      reject(new Error('Upload-Verbindung wurde unterbrochen.'))
+    }
+    request.ontimeout = () => {
+      signal?.removeEventListener('abort', onAbort)
+      reject(new Error('Upload hat zu lange gedauert.'))
+    }
     request.send(file)
   })
 }
@@ -76,6 +100,7 @@ export async function uploadAndRegisterReel(
   file: File,
   onProgress: (percent: number) => void,
   lifeAreas: string[] = [],
+  signal?: AbortSignal,
 ): Promise<{ reel: ReelCandidate; queued: boolean; duplicate: boolean }> {
   const checksumSha256 = await sha256(file)
   const presigned = await apiJson<{
@@ -107,7 +132,8 @@ export async function uploadAndRegisterReel(
     createdAt: new Date().toISOString(),
   }
   saveImportReceipt(credentials.roomId, receipt)
-  await putFile(presigned.uploadUrl, presigned.uploadHeaders, file, onProgress)
+  if (signal?.aborted) throw new DOMException('Upload abgebrochen.', 'AbortError')
+  await putFile(presigned.uploadUrl, presigned.uploadHeaders, file, onProgress, signal)
   markImportUploaded(credentials.roomId, presigned.objectId)
   await apiJson('/api/storage/complete', {
     method: 'POST',
