@@ -33,7 +33,7 @@ export type EntryPatchEvent = DailyEventBase & {
 export type RitualStepEvent = DailyEventBase & {
   type: 'ritual_step'
   stepId: string
-  status: 'completed' | 'reopened' | 'updated'
+  status: 'completed' | 'reopened' | 'updated' | 'skipped'
   details?: Record<string, EventValue>
 }
 
@@ -102,9 +102,10 @@ const SOURCE_LABELS: Record<DailyEventSource, string> = {
 }
 
 const RITUAL_STEP_LABELS: Record<string, string> = {
-  medsShake: 'Medikamente + Shake',
+  medsShake: 'Morning Essentials',
   weight: 'Gewicht',
   gratitude: 'Dankbarkeit',
+  commitment: 'Verbindlichkeit',
   coldShower: 'Cold Shower',
   winnerPose: 'Winner Mode',
   prayer: 'Gebet',
@@ -213,6 +214,7 @@ export function normalizeDailyEvent(raw: unknown): DailyEvent | null {
       const status = record.status === 'completed'
         || record.status === 'reopened'
         || record.status === 'updated'
+        || record.status === 'skipped'
         ? record.status
         : null
       if (typeof record.stepId !== 'string' || !record.stepId.trim() || !status) return null
@@ -303,7 +305,7 @@ export function capturePreviousValues(
 export function createRitualStepEvent(input: {
   date: string
   stepId: string
-  status?: 'completed' | 'reopened' | 'updated'
+  status?: 'completed' | 'reopened' | 'updated' | 'skipped'
   details?: Record<string, unknown>
   occurredAt?: string
 }): RitualStepEvent | null {
@@ -312,7 +314,9 @@ export function createRitualStepEvent(input: {
   return normalizeDailyEvent({
     id: status === 'completed'
       ? `ritual:${input.date}:${input.stepId}:completed`
-      : newEventId(),
+      : status === 'skipped'
+        ? `ritual:${input.date}:${input.stepId}:skipped`
+        : newEventId(),
     date: input.date,
     occurredAt: input.occurredAt ?? now,
     recordedAt: now,
@@ -419,6 +423,7 @@ export function summarizeDailyEvent(event: DailyEvent): string {
       const step = RITUAL_STEP_LABELS[event.stepId] ?? event.stepId
       if (event.status === 'completed') return `${step} erledigt`
       if (event.status === 'reopened') return `${step} wieder geöffnet`
+      if (event.status === 'skipped') return `${step} übersprungen`
       return `${step} aktualisiert`
     }
     default: {
@@ -484,7 +489,7 @@ export function projectRitualDoneFromEvents(
     ))
   for (const event of ordered) {
     if (event.status === 'completed') done.add(event.stepId)
-    if (event.status === 'reopened') done.delete(event.stepId)
+    if (event.status === 'reopened' || event.status === 'skipped') done.delete(event.stepId)
   }
   return [...done]
 }

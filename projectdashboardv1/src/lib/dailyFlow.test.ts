@@ -12,6 +12,7 @@ import {
   overviewSlot,
   eveningOwnedHabitKeys,
   eveningRemaining,
+  morningGateDailyKeys,
   ritualOwnedHabitKeys,
   ritualRemaining,
   selectNowItems,
@@ -343,5 +344,14 @@ describe('today weight', () => {
       entry: { weightKg: 56.8, weightMeasuredAt: '2026-09-14T08:00:00' },
       measurements: [],
     })).toBeNull()
+  })
+})
+
+describe('morning gate dailies', () => {
+  it('hides habits already owned by a visible ritual step', () => {
+    expect(morningGateDailyKeys({
+      habitKeys: ['proteinShake', 'coldShower', 'focusDone', 'journalDone'],
+      ritualSteps: ['medsShake', 'coldShower'],
+    })).toEqual(['focusDone'])
   })
 })

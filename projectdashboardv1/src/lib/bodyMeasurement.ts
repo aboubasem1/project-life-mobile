@@ -547,6 +547,24 @@ export function saveBodyMeasurements(items: BodyMeasurement[]): boolean {
   return safeSet(BODY_MEASUREMENTS_KEY, JSON.stringify(mergeBodyMeasurements([], items)))
 }
 
+/** One manual weight per calendar day. Corrections replace the same record. */
+export function upsertManualDayWeight(
+  items: BodyMeasurement[],
+  date: string,
+  kg: number,
+  measuredAt: string,
+): BodyMeasurement[] {
+  const externalId = `manual-weight:${date}`
+  const measurement: BodyMeasurement = {
+    id: externalId,
+    measuredAt,
+    weightKg: kg,
+    source: 'manual',
+    externalId,
+  }
+  return mergeBodyMeasurements(items, [measurement])
+}
+
 export function mergeSavedBodyMeasurements(incoming: BodyMeasurement[]): BodyMeasurement[] {
   const merged = mergeBodyMeasurements(loadBodyMeasurements(), incoming)
   saveBodyMeasurements(merged)

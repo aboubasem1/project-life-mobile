@@ -208,6 +208,8 @@ export function completedRitualSteps(input: {
   if (input.entry.energyLevel) done.add('energy')
   if (isHeadRecoveryDone(input.entry)) done.add('headRecovery')
   if (input.entry.pushupsDone && input.progress.ko >= input.config.koTarget) done.add('workout')
+  if (input.progress.commitment) done.add('commitment')
+  for (const id of input.progress.skipped ?? []) done.delete(id)
   return [...done]
 }
 
@@ -319,6 +321,19 @@ export function ritualOwnsHeadRecovery(input: {
   if (!input.enabled || input.skipped) return false
   const done = new Set(input.doneSteps)
   return input.steps.includes('headRecovery') && !done.has('headRecovery')
+}
+
+/** Morning habits that are not already owned by a visible gate step. */
+export function morningGateDailyKeys(input: {
+  habitKeys: string[]
+  ritualSteps: MorningRitualStepId[]
+}): string[] {
+  const owned = new Set<string>()
+  for (const step of input.ritualSteps) {
+    const habit = RITUAL_STEP_HABIT[step]
+    if (habit) owned.add(habit)
+  }
+  return input.habitKeys.filter(key => !owned.has(key) && !EVENING_HABITS.has(key))
 }
 
 export function ritualRemaining(input: {

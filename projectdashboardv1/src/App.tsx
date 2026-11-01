@@ -153,18 +153,30 @@ import {
 import {
   FULLSCREEN_STEP_IDS,
   MORNING_RITUAL_PROGRESS_KEY,
+  commitmentFingerprint,
+  createTimerState,
+  essentialsPhaseOpen,
+  gratitudeStatements,
   loadMorningGateSkip,
   loadMorningRitualProgress,
   markRitualStepDone,
+  markRitualStepSkipped,
+  medicationDoseOptions,
   morningRitualMeta,
   morningRitualPhase,
   moveRitualStep,
   nextMorningRitualStep,
   normalizeMorningRitualConfig,
   normalizeSelfcareItems,
+  patchRitualProgress,
+  personalGratitudeLines,
+  reopenRitualStep,
+  resolveCommitment,
   ritualSequence,
   saveMorningGateSkip,
   saveMorningRitualProgress,
+  goalTravelPercent,
+  checkinResolution,
   type MorningRitualConfig,
   type MorningRitualProgress,
   type MorningRitualStepId,
@@ -264,6 +276,7 @@ import {
   isHeadRecoveryDone,
   nowChipLabel,
   overviewSlot,
+  morningGateDailyKeys,
   ritualOwnedHabitKeys,
   ritualRemaining,
   selectNowItems,
@@ -276,8 +289,13 @@ import {
   type NowItem,
 } from './lib/dailyFlow'
 import {
+  buildDailyWeightPoints,
+  buildWeightDailyStat,
+  formatKgDelta,
   loadBodyMeasurements,
+  saveBodyMeasurements,
   selectTodayWeight,
+  upsertManualDayWeight,
 } from './lib/bodyMeasurement'
 import { HabitDetailSheet } from './components/HabitDetailSheet'
 import { defaultHabitKind, isHabitComplete, isHabitKey } from './lib/habitKinds'
@@ -529,6 +547,10 @@ type DashboardPlusMedication = {
   /** Soft reminder at `time` when settings.medisRemindersEnabled */
   remind?: boolean
   color: string
+  /** Explicit configured doses. Never inferred. */
+  doseOptions?: string[]
+  selectedDose?: string
+  selectedDoseDate?: string
 }
 
 function isMedicationTakenToday(item: DashboardPlusMedication, today: string): boolean {
@@ -536,10 +558,23 @@ function isMedicationTakenToday(item: DashboardPlusMedication, today: string): b
 }
 
 function normalizeMedication(item: DashboardPlusMedication, today: string): DashboardPlusMedication {
-  if (item.taken && !item.takenDate) {
-    return { ...item, takenDate: today, taken: true }
+  const doseOptions = Array.isArray(item.doseOptions)
+    ? [...new Set(item.doseOptions.map(option => String(option).trim()).filter(Boolean))].slice(0, 8)
+    : undefined
+  const selectedDose = typeof item.selectedDose === 'string' ? item.selectedDose.trim().slice(0, 40) : ''
+  const selectedDoseDate = typeof item.selectedDoseDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item.selectedDoseDate)
+    ? item.selectedDoseDate
+    : undefined
+  const next: DashboardPlusMedication = {
+    ...item,
+    ...(doseOptions && doseOptions.length > 0 ? { doseOptions } : {}),
+    ...(selectedDose ? { selectedDose } : {}),
+    ...(selectedDoseDate ? { selectedDoseDate } : {}),
   }
-  return item
+  if (item.taken && !item.takenDate) {
+    return { ...next, takenDate: today, taken: true }
+  }
+  return next
 }
 
 type DashboardPlusGoalTimeframe = 'Jahr' | 'Quartal' | 'Monat' | 'Woche'
@@ -1501,6 +1536,8 @@ function App() {
   const [previewIndex, setPreviewIndex] = useState(0)
   const [gateBypass, setGateBypass] = useState(() => shouldBypassMorningGate(peekAppAction()))
   const [gateSkipped, setGateSkipped] = useState(() => loadMorningGateSkip(dateKey(new Date())))
+  const [gateFinale, setGateFinale] = useState(false)
+  const [reviewStep, setReviewStep] = useState<MorningRitualStepId | null>(null)
   const [bodyMeasurementTick, setBodyMeasurementTick] = useState(0)
   const [ritualProgress, setRitualProgress] = useState<MorningRitualProgress>(() => loadMorningRitualProgress(dateKey(new Date())))
   const [dailyEvents, setDailyEvents] = useState<DailyEvent[]>(() => loadDailyEvents())
@@ -1598,6 +1635,18 @@ function App() {
       pushupsDone: Boolean(entry.pushupsDone),
       coldShowerDone: Boolean(entry.coldShower),
       winnerModeDone: Boolean(entry.winnerModeDone),
+      essentialsOpen: essentialsPhaseOpen({
+        progress: ritualProgress,
+        pendingMedicationIds: morningGateMeds.filter(item => !item.taken).map(item => item.id),
+        supplementIds: dashboardPlus.supplements.map(item => item.id),
+        pendingDailyIds: [
+          ...morningGateDailyKeys({ habitKeys: habitsDueToday, ritualSteps }).filter(key => !entry[key as HabitKey]),
+          ...(ritualSteps.includes('todos')
+            ? []
+            : anchors.flatMap((_, index) => anchorsDone[index] ? [] : [`anchor:${index}`])),
+        ],
+        proteinShake: Boolean(entry.proteinShake),
+      }),
       config: settings.morningRitual,
     }),
     [
@@ -1606,34 +1655,140 @@ function App() {
       gateSkipped,
       ritualProgress,
       morningGateMeds,
-      entry.proteinShake,
-      entry.gratitudeDone,
-      entry.energyLevel,
-      entry.weightKg,
+      dashboardPlus.supplements,
+      habitsDueToday,
+      anchors,
+      anchorsDone,
+      entry,
       today,
       bodyMeasurementTick,
-      entry.mood,
-      entry.sleepQuality,
-      entry.sleepDuration,
-      entry.bedTime,
-      entry.wakeTime,
-      entry.pushupsDone,
-      entry.coldShower,
-      entry.winnerModeDone,
+      ritualSteps,
     ],
   )
 
   const ritualStep = gatePreview
     ? ritualSteps[Math.min(previewIndex, Math.max(0, ritualSteps.length - 1))]
-    : ritualNext
-  const ritualPhase = ritualStep ? morningRitualPhase(ritualStep) : null
+    : reviewStep && ritualSteps.includes(reviewStep)
+      ? reviewStep
+      : ritualNext
+  const ritualPhase = ritualNext ? morningRitualPhase(ritualNext) : null
   const showMorningGate = splashPhase === 'done'
     && !gateBypass
-    && Boolean(ritualStep)
-    && (gatePreview || (surfaceOpensMorningGate(role) && (ritualStep ? FULLSCREEN_STEP_IDS.includes(ritualStep) : false)))
-  const ritualHeuteLock = !gatePreview && !gateBypass && splashPhase === 'done' && (ritualPhase === 'heute')
-    ? ritualStep
+    && (gateFinale || Boolean(ritualStep))
+    && (gatePreview || gateFinale || (surfaceOpensMorningGate(role) && (ritualStep ? FULLSCREEN_STEP_IDS.includes(ritualStep) : false)))
+  const ritualHeuteLock = !gatePreview && !gateBypass && !showMorningGate && splashPhase === 'done' && (ritualPhase === 'heute')
+    ? ritualNext
     : null
+
+  const settleMorningStep = (
+    progress: MorningRitualProgress,
+    id: MorningRitualStepId,
+    mode: 'done' | 'skipped',
+    overrides?: {
+      headRecoveryDone?: boolean
+      gratitudeDone?: boolean
+      coldShowerDone?: boolean
+      winnerModeDone?: boolean
+      energySet?: boolean
+      pushupsDone?: boolean
+    },
+  ) => {
+    let next = progress
+    setRitualProgress(current => {
+      const sameDay = current.date === progress.date
+      const done = [...new Set([...(sameDay ? current.done : []), ...progress.done])]
+      const skipped = [...new Set([...(sameDay ? current.skipped : []), ...progress.skipped])].filter(step => !done.includes(step))
+      const base = sameDay
+        ? { ...current, ...progress, done, skipped }
+        : progress
+      next = mode === 'done' ? markRitualStepDone(base, id) : markRitualStepSkipped(base, id)
+      return next
+    })
+    setReviewStep(null)
+    appendDailyEvent(createRitualStepEvent({
+      date: today,
+      stepId: id,
+      status: mode === 'done' ? 'completed' : 'skipped',
+    }))
+    if (id === 'energy') {
+      emitAdaptiveEvent('routine_step.completed', { entityId: 'energy', surface: 'morning_gate', date: today })
+    }
+    if (gatePreview) {
+      if (previewIndex >= ritualSteps.length - 1) {
+        setGatePreview(false)
+        setGateFinale(true)
+        return
+      }
+      setPreviewIndex(value => value + 1)
+      return
+    }
+    const upcoming = nextMorningRitualStep({
+      enabled: settings.morningGateEnabled,
+      skipped: gateSkipped,
+      preview: false,
+      progress: next,
+      medications: morningGateMeds,
+      proteinShake: Boolean(entry.proteinShake) || next.shakeStatus === 'taken',
+      gratitudeDone: overrides?.gratitudeDone ?? Boolean(entry.gratitudeDone),
+      energySet: overrides?.energySet ?? Boolean(entry.energyLevel),
+      headRecoveryDone: overrides?.headRecoveryDone ?? isHeadRecoveryDone(entry),
+      pushupsDone: overrides?.pushupsDone ?? Boolean(entry.pushupsDone),
+      coldShowerDone: overrides?.coldShowerDone ?? Boolean(entry.coldShower),
+      winnerModeDone: overrides?.winnerModeDone ?? Boolean(entry.winnerModeDone),
+      essentialsOpen: essentialsPhaseOpen({
+        progress: next,
+        pendingMedicationIds: morningGateMeds.filter(item => !item.taken).map(item => item.id),
+        supplementIds: dashboardPlus.supplements.map(item => item.id),
+        pendingDailyIds: morningGateDailyKeys({ habitKeys: habitsDueToday, ritualSteps })
+          .filter(key => !entry[key as HabitKey]),
+        proteinShake: Boolean(entry.proteinShake) || next.shakeStatus === 'taken',
+      }),
+      config: settings.morningRitual,
+    })
+    if (!upcoming || !FULLSCREEN_STEP_IDS.includes(upcoming)) setGateFinale(true)
+  }
+
+  const syncMorningEssentials = (
+    progress: MorningRitualProgress,
+    extra?: { takenMedIds?: string[]; shakeTaken?: boolean; doneDailyIds?: string[] },
+  ) => {
+    const takenMeds = new Set([
+      ...dashboardPlus.medications.filter(item => isMedicationTakenToday(item, today)).map(item => item.id),
+      ...(extra?.takenMedIds ?? []),
+    ])
+    const shakeTaken = extra?.shakeTaken ?? (Boolean(entry.proteinShake) || progress.shakeStatus === 'taken')
+    const doneDailies = new Set<string>([
+      ...morningGateDailyKeys({ habitKeys: habitsDueToday, ritualSteps }).filter(key => Boolean(entry[key as HabitKey])),
+      ...anchors.flatMap((_, index) => anchorsDone[index] ? [`anchor:${index}`] : []),
+      ...progress.dailiesConfirmed,
+      ...(extra?.doneDailyIds ?? []),
+    ])
+    const pendingMeds = dashboardPlus.medications
+      .map(item => item.id)
+      .filter(id => !takenMeds.has(id) && !progress.medsSkipped.includes(id))
+    const dailyIds = [
+      ...morningGateDailyKeys({ habitKeys: habitsDueToday, ritualSteps }),
+      ...(ritualSteps.includes('todos') ? [] : anchors.map((_, index) => `anchor:${index}`)),
+    ].filter(id => !doneDailies.has(id) && !progress.dailiesSkipped.includes(id))
+    const open = essentialsPhaseOpen({
+      progress,
+      pendingMedicationIds: pendingMeds,
+      supplementIds: dashboardPlus.supplements.map(item => item.id),
+      pendingDailyIds: dailyIds,
+      proteinShake: shakeTaken,
+    })
+    if (open) {
+      setRitualProgress(progress)
+      return
+    }
+    const skippedSomething = progress.medsSkipped.length > 0
+      || progress.supplementsSkipped.length > 0
+      || progress.dailiesSkipped.length > 0
+      || progress.shakeStatus === 'later'
+      || progress.shakeStatus === 'skipped'
+      || !shakeTaken
+    settleMorningStep(progress, 'medsShake', skippedSomething ? 'skipped' : 'done')
+  }
 
   const streakByKey = useMemo(() => {
     const map: Record<string, number> = {}
@@ -1875,6 +2030,8 @@ function App() {
   useEffect(() => {
     setGateSkipped(loadMorningGateSkip(today))
     setRitualProgress(loadMorningRitualProgress(today))
+    setGateFinale(false)
+    setReviewStep(null)
   }, [today])
 
   useEffect(() => {
@@ -3970,35 +4127,198 @@ function App() {
         </div>
       )}
 
-      {showMorningGate && ritualStep && (
+      {showMorningGate && (ritualStep || gateFinale) && (
         <MorningGate
-          step={ritualStep}
-          stepIndex={gatePreview ? previewIndex : Math.max(0, ritualSteps.indexOf(ritualStep))}
+          key={gateFinale ? 'finale' : (ritualStep ?? 'gate')}
+          step={ritualStep ?? 'letsGo'}
+          finale={gateFinale}
+          stepIndex={gatePreview ? previewIndex : Math.max(0, ritualStep ? ritualSteps.indexOf(ritualStep) : ritualSteps.length)}
           stepCount={Math.max(1, ritualSteps.length)}
           steps={ritualSteps.map(id => ({ id, label: morningRitualMeta(id, settings.morningRitual).label }))}
-          doneSteps={completedRitualSteps({
-            progress: ritualProgress,
-            entry,
-            config: settings.morningRitual,
-          })}
+          doneSteps={ritualProgress.done}
+          skippedSteps={ritualProgress.skipped}
           name={settings.name}
-          medications={morningGateMeds}
+          medications={dashboardPlus.medications.map(item => ({
+            id: item.id,
+            name: item.name,
+            dosage: item.dosage,
+            time: item.time,
+            taken: isMedicationTakenToday(item, today),
+            skipped: ritualProgress.medsSkipped.includes(item.id),
+            doseOptions: medicationDoseOptions(item),
+            selectedDose: item.selectedDoseDate === today ? item.selectedDose : undefined,
+          }))}
+          supplements={dashboardPlus.supplements.map(item => ({
+            id: item.id,
+            name: item.name,
+            detail: [item.brand, item.dailyUse > 0 ? `${item.dailyUse} ${item.dailyUnit}` : ''].filter(Boolean).join(' · ') || undefined,
+            taken: ritualProgress.supplementsTaken.includes(item.id),
+            skipped: ritualProgress.supplementsSkipped.includes(item.id),
+          }))}
+          dailies={[
+            ...morningGateDailyKeys({ habitKeys: habitsDueToday, ritualSteps }).map(id => ({
+              id,
+              label: DAILY_HABITS.find(habit => habit.id === id)?.label ?? id,
+              done: Boolean(entry[id as HabitKey]),
+              skipped: ritualProgress.dailiesSkipped.includes(id),
+            })),
+            ...(ritualSteps.includes('todos') ? [] : anchors.flatMap((title, index) => {
+              const id = `anchor:${index}`
+              if (anchorsDone[index] || ritualProgress.dailiesSkipped.includes(id)) return []
+              return [{ id, label: title, done: false, skipped: false }]
+            })),
+          ]}
           proteinShake={Boolean(entry.proteinShake)}
-          gratitudeText={settings.morningRitual.gratitudeText}
+          shakeStatus={ritualProgress.shakeStatus}
+          gratitudeLines={gratitudeStatements(settings.morningRitual.gratitudeText, personalGratitudeLines(lifeOs.state.knowledge.map(item => ({
+            id: item.id,
+            title: item.title,
+            content: item.content,
+            tags: item.tags,
+          }))))}
+          gratitudeCursor={ritualProgress.gratitudeIndex}
+          commitment={resolveCommitment({
+            configuredText: settings.morningRitual.commitmentText,
+            linkedDocumentId: settings.morningRitual.commitmentDocumentId,
+            documents: lifeOs.state.knowledge.map(item => ({
+              id: item.id,
+              title: item.title,
+              content: item.content,
+              tags: item.tags,
+            })),
+          })}
+          goals={dashboardPlus.goals
+            .filter(goal => goal.status !== 'paused' && goal.status !== 'done' && goal.status !== 'dropped')
+            .slice(0, 3)
+            .map(goal => ({ id: goal.id, title: goal.title }))}
+          weight={(() => {
+            const measurements = loadBodyMeasurements()
+            const todayWeight = selectTodayWeight({ date: today, entry, measurements })
+            const points = buildDailyWeightPoints(entries, measurements)
+            const stat = buildWeightDailyStat(points, today, today, settings.weightGoalKg, settings.weightStartKg)
+            const recent = points.filter(point => point.date <= today).slice(-7)
+            const min = recent.length ? Math.min(...recent.map(point => point.kg)) : 0
+            const max = recent.length ? Math.max(...recent.map(point => point.kg)) : 1
+            const span = max - min || 1
+            const current = todayWeight?.value ?? null
+            const progress = current != null && stat.startKg != null && stat.goalKg != null
+              ? goalTravelPercent(current, stat.startKg, stat.goalKg)
+              : null
+            const shift = (date: string, days: number) => {
+              const next = new Date(`${date}T12:00:00`)
+              next.setDate(next.getDate() + days)
+              const month = String(next.getMonth() + 1).padStart(2, '0')
+              const day = String(next.getDate()).padStart(2, '0')
+              return `${next.getFullYear()}-${month}-${day}`
+            }
+            const logged = new Set(points.filter(point => point.date >= shift(today, -6) && point.date <= today).map(point => point.date)).size
+            const remaining = current != null && stat.goalKg != null ? Math.round((stat.goalKg - current) * 10) / 10 : null
+            const imported = todayWeight != null && todayWeight.source !== 'manual'
+            return {
+              todayKg: current,
+              imported,
+              sourceLabel: todayWeight?.source === 'fitdays'
+                ? 'Bitfit'
+                : todayWeight?.source === 'apple_health' || todayWeight?.source === 'hook'
+                  ? 'Health-Sync'
+                  : todayWeight?.source === 'manual'
+                    ? 'Manuell'
+                    : null,
+              deltaLabel: todayWeight && stat.deltaYesterday != null && !stat.isCarriedForward
+                ? `${formatKgDelta(stat.deltaYesterday)} ${stat.comparedToYesterday ? 'seit gestern' : 'zur letzten Messung'}`
+                : null,
+              goalKg: stat.goalKg,
+              startKg: stat.startKg,
+              progress,
+              remainingLabel: remaining == null ? null : remaining === 0 ? 'Ziel erreicht' : `Noch ${Math.abs(remaining).toFixed(1)} kg bis zum Ziel`,
+              trendLabel: stat.delta7 != null ? `${formatKgDelta(stat.delta7)} in 7 Tagen` : null,
+              consistencyLabel: logged > 0 ? `${logged} von 7 Tagen gewogen` : null,
+              points: recent.length > 1 ? recent.map(point => 20 + ((point.kg - min) / span) * 80) : [],
+            }
+          })()}
+          coldSeconds={settings.morningRitual.coldSeconds}
+          coldTimer={ritualProgress.coldTimer}
+          winnerLine={settings.morningRitual.stepRules.winnerPose}
           mood={entry.mood}
           sleepQuality={entry.sleepQuality}
           sleepDuration={entry.sleepDuration}
           dreamed={entry.dreamed}
-          onHeadRecovery={patch => updateEntry(patch, 'morning_gate')}
+          suggestedSleep={entry.sleepDuration || (entry.bedTime && entry.wakeTime && hoursBetweenTimes(entry.bedTime, entry.wakeTime) != null
+            ? formatSleepHoursLabel(hoursBetweenTimes(entry.bedTime, entry.wakeTime) ?? 0)
+            : undefined)}
+          checkinSkipped={ritualProgress.checkinSkipped}
           config={settings.morningRitual}
           anchors={anchors}
           anchorsDone={anchorsDone}
           pushups={ritualProgress.pushups}
           ko={ritualProgress.ko}
           selfcareChecked={ritualProgress.selfcareChecked}
+          summary={(() => {
+            const gateIds = ritualSteps.filter(id => FULLSCREEN_STEP_IDS.includes(id))
+            const completed: string[] = []
+            const skipped: string[] = []
+            for (const id of gateIds) {
+              const label = morningRitualMeta(id, settings.morningRitual).label
+              if (ritualProgress.skipped.includes(id)) skipped.push(label)
+              else if (ritualProgress.done.includes(id)) completed.push(label)
+            }
+            const health: string[] = []
+            if (entry.mood) health.push(`Stimmung ${entry.mood}`)
+            if (entry.weightKg > 0) health.push(`${entry.weightKg} kg`)
+            const takenNames = dashboardPlus.medications.filter(item => isMedicationTakenToday(item, today)).map(item => item.name).filter(Boolean)
+            if (takenNames.length > 0) health.push(takenNames.join(', '))
+            if (entry.proteinShake) health.push(settings.morningRitual.shakeMeal.label)
+            if (ritualProgress.supplementsTaken.length > 0) health.push(`${ritualProgress.supplementsTaken.length} Supplements`)
+            if (entry.coldShower) health.push('Kalte Dusche')
+            if (entry.winnerModeDone) health.push('Winner Mode')
+            if (ritualProgress.commitment) health.push('Verbindlichkeit')
+            return { completed, skipped, health }
+          })()}
+          onHeadRecovery={patch => {
+            const nextEntry = { ...entry, ...patch }
+            updateEntry(patch, 'morning_gate')
+            const resolution = checkinResolution({
+              mood: nextEntry.mood,
+              sleepQuality: nextEntry.sleepQuality,
+              sleepDuration: nextEntry.sleepDuration,
+              dreamed: nextEntry.dreamed,
+              skipped: ritualProgress.checkinSkipped,
+            })
+            if (resolution === 'pending') return
+            settleMorningStep(ritualProgress, 'headRecovery', resolution === 'completed' ? 'done' : 'skipped', {
+              headRecoveryDone: resolution === 'completed',
+            })
+          }}
+          onSkipCheckin={id => {
+            const skipped = ritualProgress.checkinSkipped.includes(id)
+              ? ritualProgress.checkinSkipped
+              : [...ritualProgress.checkinSkipped, id]
+            const next = patchRitualProgress(ritualProgress, { checkinSkipped: skipped })
+            const resolution = checkinResolution({
+              mood: entry.mood,
+              sleepQuality: entry.sleepQuality,
+              sleepDuration: entry.sleepDuration,
+              dreamed: entry.dreamed,
+              skipped,
+            })
+            if (resolution === 'pending') {
+              setRitualProgress(next)
+              return
+            }
+            settleMorningStep(next, 'headRecovery', resolution === 'completed' ? 'done' : 'skipped', {
+              headRecoveryDone: resolution === 'completed',
+            })
+          }}
           onToggleMed={id => {
             const medication = dashboardPlus.medications.find(item => item.id === id)
-            const nextTaken = medication ? !isMedicationTakenToday(medication, today) : true
+            if (!medication) return
+            const doses = medicationDoseOptions(medication)
+            const selected = medication.selectedDoseDate === today ? medication.selectedDose : undefined
+            const markingTaken = !isMedicationTakenToday(medication, today)
+            if (markingTaken && doses.length > 1 && !selected) {
+              showToast('Erst die hinterlegte Dosis wählen.')
+              return
+            }
             setDashboardPlus(current => ({
               ...current,
               medications: current.medications.map(item => {
@@ -4008,6 +4328,9 @@ function App() {
                   ...item,
                   takenDate: taken ? undefined : today,
                   taken: !taken,
+                  ...(markingTaken && (selected || doses.length === 1)
+                    ? { selectedDose: selected || doses[0], selectedDoseDate: today }
+                    : {}),
                 }
               }),
             }))
@@ -4015,75 +4338,229 @@ function App() {
               date: today,
               stepId: 'medsShake',
               status: 'updated',
-              details: { medicationId: id, taken: nextTaken },
+              details: { medicationId: id, taken: markingTaken },
             }))
+            syncMorningEssentials(ritualProgress, { takenMedIds: markingTaken ? [id] : [] })
           }}
-          onConfirmAllMeds={() => {
+          onSelectDose={(id, dose) => {
             setDashboardPlus(current => ({
               ...current,
-              medications: current.medications.map(item => ({
-                ...item,
-                takenDate: today,
-                taken: true,
-              })),
-            }))
-            appendDailyEvent(createRitualStepEvent({
-              date: today,
-              stepId: 'medsShake',
-              status: 'updated',
-              details: { allMedicationsTaken: true },
+              medications: current.medications.map(item => (
+                item.id === id ? { ...item, selectedDose: dose, selectedDoseDate: today } : item
+              )),
             }))
           }}
-          onToggleProtein={() => updateEntry({ proteinShake: !entry.proteinShake }, 'morning_gate')}
-          onCompleteGratitude={() => {
-            const time = new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' }).format(new Date())
-            const line = `${time} — Dankbarkeit vorgelesen`
-            updateEntry({
-              gratitudeDone: true,
-              journalText: entry.journalText ? `${entry.journalText}\n${line}` : line,
-            }, 'morning_gate')
+          onSkipMed={id => {
+            const next = patchRitualProgress(ritualProgress, {
+              medsSkipped: ritualProgress.medsSkipped.includes(id) ? ritualProgress.medsSkipped : [...ritualProgress.medsSkipped, id],
+            })
+            syncMorningEssentials(next)
           }}
-          onPickEnergy={energy => {
-            updateEntry({ energyLevel: energy }, 'morning_gate')
-            setRitualProgress(current => markRitualStepDone(current, 'energy'))
-            appendDailyEvent(createRitualStepEvent({ date: today, stepId: 'energy' }))
-            emitAdaptiveEvent('routine_step.completed', { entityId: 'energy', surface: 'morning_gate', date: today })
-            if (gatePreview) setPreviewIndex(value => value + 1)
+          onConfirmAllPendingMeds={() => {
+            const eligible = dashboardPlus.medications.filter(item => {
+              if (isMedicationTakenToday(item, today) || ritualProgress.medsSkipped.includes(item.id)) return false
+              const doses = medicationDoseOptions(item)
+              const selected = item.selectedDoseDate === today ? item.selectedDose : undefined
+              return doses.length <= 1 || Boolean(selected)
+            })
+            if (eligible.length === 0) {
+              showToast('Keine Dosis zum Bestätigen ausgewählt.')
+              return
+            }
+            const ids = new Set(eligible.map(item => item.id))
+            setDashboardPlus(current => ({
+              ...current,
+              medications: current.medications.map(item => {
+                if (!ids.has(item.id)) return item
+                const doses = medicationDoseOptions(item)
+                const selected = item.selectedDoseDate === today ? item.selectedDose : undefined
+                return {
+                  ...item,
+                  taken: true,
+                  takenDate: today,
+                  selectedDose: selected || doses[0],
+                  selectedDoseDate: today,
+                }
+              }),
+            }))
+            syncMorningEssentials(ritualProgress, { takenMedIds: [...ids] })
           }}
-          onPickWeight={kg => {
-            updateEntry({ weightKg: kg }, 'morning_gate', {
+          onToggleSupplement={id => {
+            const taken = ritualProgress.supplementsTaken.includes(id)
+              ? ritualProgress.supplementsTaken.filter(item => item !== id)
+              : [...ritualProgress.supplementsTaken, id]
+            const next = patchRitualProgress(ritualProgress, {
+              supplementsTaken: taken,
+              supplementsSkipped: ritualProgress.supplementsSkipped.filter(item => item !== id),
+            })
+            syncMorningEssentials(next)
+          }}
+          onSkipSupplement={id => {
+            const next = patchRitualProgress(ritualProgress, {
+              supplementsSkipped: ritualProgress.supplementsSkipped.includes(id)
+                ? ritualProgress.supplementsSkipped
+                : [...ritualProgress.supplementsSkipped, id],
+              supplementsTaken: ritualProgress.supplementsTaken.filter(item => item !== id),
+            })
+            syncMorningEssentials(next)
+          }}
+          onConfirmAllSupplements={() => {
+            const ids = dashboardPlus.supplements
+              .map(item => item.id)
+              .filter(id => !ritualProgress.supplementsSkipped.includes(id))
+            const next = patchRitualProgress(ritualProgress, {
+              supplementsTaken: [...new Set([...ritualProgress.supplementsTaken, ...ids])],
+            })
+            syncMorningEssentials(next)
+          }}
+          onShakeChoice={choice => {
+            if (choice === 'taken') {
+              updateEntry({ proteinShake: true }, 'morning_gate')
+              const next = patchRitualProgress(ritualProgress, { shakeStatus: 'taken' })
+              syncMorningEssentials(next, { shakeTaken: true })
+              return
+            }
+            const next = patchRitualProgress(ritualProgress, { shakeStatus: choice === 'skipped' ? 'skipped' : 'later' })
+            syncMorningEssentials(next, { shakeTaken: Boolean(entry.proteinShake) })
+          }}
+          onToggleDaily={id => {
+            if (id.startsWith('anchor:')) toggleAnchor(Number(id.slice(7)))
+            else if (isHabitKey(id) && !entry[id]) updateEntry({ [id]: true }, 'morning_gate')
+            const next = patchRitualProgress(ritualProgress, {
+              dailiesConfirmed: [...new Set([...ritualProgress.dailiesConfirmed, id])],
+              dailiesSkipped: ritualProgress.dailiesSkipped.filter(item => item !== id),
+            })
+            syncMorningEssentials(next, { doneDailyIds: [id] })
+          }}
+          onSkipDaily={id => {
+            const next = patchRitualProgress(ritualProgress, {
+              dailiesSkipped: ritualProgress.dailiesSkipped.includes(id)
+                ? ritualProgress.dailiesSkipped
+                : [...ritualProgress.dailiesSkipped, id],
+            })
+            syncMorningEssentials(next)
+          }}
+          onGratitudeResult={(index, outcome) => {
+            const confirmed = outcome === 'confirmed'
+              ? [...new Set([...ritualProgress.gratitudeConfirmed, index])]
+              : ritualProgress.gratitudeConfirmed
+            const skippedLines = outcome === 'skipped'
+              ? [...new Set([...ritualProgress.gratitudeSkipped, index])]
+              : ritualProgress.gratitudeSkipped
+            const lines = gratitudeStatements(settings.morningRitual.gratitudeText, personalGratitudeLines(lifeOs.state.knowledge.map(item => ({
+              id: item.id,
+              title: item.title,
+              content: item.content,
+              tags: item.tags,
+            }))))
+            const next = patchRitualProgress(ritualProgress, {
+              gratitudeConfirmed: confirmed,
+              gratitudeSkipped: skippedLines,
+              gratitudeIndex: index + 1,
+            })
+            if (index + 1 < lines.length) {
+              setRitualProgress(next)
+              return
+            }
+            if (skippedLines.length === 0) {
+              if (!entry.gratitudeDone) {
+                const time = new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' }).format(new Date())
+                const line = `${time} — Dankbarkeit gesprochen`
+                updateEntry({
+                  gratitudeDone: true,
+                  journalText: entry.journalText ? `${entry.journalText}\n${line}` : line,
+                }, 'morning_gate')
+              }
+              settleMorningStep(next, 'gratitude', 'done', { gratitudeDone: true })
+              return
+            }
+            settleMorningStep(next, 'gratitude', 'skipped')
+          }}
+          onConfirmCommitment={text => {
+            const resolved = text?.trim()
+              ? { text: text.trim(), documentId: undefined, imported: false }
+              : resolveCommitment({
+                configuredText: settings.morningRitual.commitmentText,
+                linkedDocumentId: settings.morningRitual.commitmentDocumentId,
+                documents: lifeOs.state.knowledge.map(item => ({
+                  id: item.id,
+                  title: item.title,
+                  content: item.content,
+                  tags: item.tags,
+                })),
+              })
+            const next = patchRitualProgress(ritualProgress, {
+              commitment: {
+                confirmedAt: new Date().toISOString(),
+                text: resolved.text,
+                fingerprint: commitmentFingerprint(resolved.text),
+                ...(resolved.documentId ? { documentId: resolved.documentId } : {}),
+              },
+            })
+            settleMorningStep(next, 'commitment', 'done')
+          }}
+          onEditCommitment={text => {
+            setSettings(current => ({
+              ...current,
+              morningRitual: { ...current.morningRitual, commitmentText: text.slice(0, 800) },
+            }))
+          }}
+          onConfirmWeight={(kg, mode) => {
+            const measurements = loadBodyMeasurements()
+            const todayWeight = selectTodayWeight({ date: today, entry, measurements })
+            if (mode === 'import' && todayWeight && Math.abs(todayWeight.value - kg) < 0.05) {
+              if (Math.abs(entry.weightKg - kg) > 0.05) {
+                updateEntry({ weightKg: kg, weightMeasuredAt: todayWeight.measuredAt }, 'morning_gate')
+              }
+              return true
+            }
+            const measuredAt = new Date().toISOString()
+            const saved = saveBodyMeasurements(upsertManualDayWeight(measurements, today, kg, measuredAt))
+            if (!saved) {
+              showToast('Gewicht konnte nicht gespeichert werden.')
+              return false
+            }
+            setBodyMeasurementTick(value => value + 1)
+            updateEntry({ weightKg: kg, weightMeasuredAt: measuredAt }, 'morning_gate', {
               toastMessage: `Gewicht gespeichert: ${kg} kg`,
             })
-            setRitualProgress(current => markRitualStepDone(current, 'weight'))
             appendDailyEvent(createRitualStepEvent({
               date: today,
               stepId: 'weight',
               status: 'updated',
               details: { weightKg: kg },
             }))
-            emitAdaptiveEvent('metric.recorded', {
-              entityId: 'weight',
-              surface: 'morning_gate',
-              date: today,
-              payload: { value: kg },
-            })
-            if (gatePreview) setPreviewIndex(value => value + 1)
+            return true
           }}
-          onCompleteTimer={kind => {
-            if (kind === 'coldShower') updateEntry({ coldShower: true }, 'morning_gate')
-            if (kind === 'winnerPose') updateEntry({ winnerModeDone: true }, 'morning_gate')
-            setRitualProgress(current => markRitualStepDone(current, kind))
-            appendDailyEvent(createRitualStepEvent({ date: today, stepId: kind }))
-            if (kind === 'prayer') navigateTo('today')
-            if (gatePreview) setPreviewIndex(value => Math.min(ritualSteps.length - 1, value + 1))
+          onCompleteWeight={() => settleMorningStep(ritualProgress, 'weight', 'done')}
+          onSetColdSeconds={seconds => {
+            const duration = Math.min(600, Math.max(30, Math.round(seconds)))
+            setSettings(current => ({
+              ...current,
+              morningRitual: { ...current.morningRitual, coldSeconds: duration },
+            }))
+            setRitualProgress(patchRitualProgress(ritualProgress, { coldTimer: createTimerState(duration) }))
+          }}
+          onColdTimer={timer => {
+            setRitualProgress(patchRitualProgress(ritualProgress, { coldTimer: timer }))
+          }}
+          onConfirmColdShower={() => {
+            updateEntry({ coldShower: true }, 'morning_gate')
+            settleMorningStep(ritualProgress, 'coldShower', 'done', { coldShowerDone: true })
+          }}
+          onConfirmWinner={() => {
+            updateEntry({ winnerModeDone: true }, 'morning_gate')
+            settleMorningStep(ritualProgress, 'winnerPose', 'done', { winnerModeDone: true })
+          }}
+          onPickEnergy={energy => {
+            updateEntry({ energyLevel: energy }, 'morning_gate')
+            settleMorningStep(ritualProgress, 'energy', 'done', { energySet: true })
+          }}
+          onCompleteTimer={() => {
+            settleMorningStep(ritualProgress, 'prayer', 'done')
+            if (!gatePreview) navigateTo('today')
           }}
           onSetPushups={value => {
-            appendDailyEvent(createRitualStepEvent({
-              date: today,
-              stepId: 'workout',
-              status: 'updated',
-              details: { pushups: value },
-            }))
             setRitualProgress(current => {
               const next = { ...current, pushups: value }
               saveMorningRitualProgress(next)
@@ -4091,12 +4568,6 @@ function App() {
             })
           }}
           onSetKo={value => {
-            appendDailyEvent(createRitualStepEvent({
-              date: today,
-              stepId: 'workout',
-              status: 'updated',
-              details: { knockouts: value },
-            }))
             setRitualProgress(current => {
               const next = { ...current, ko: value }
               saveMorningRitualProgress(next)
@@ -4104,15 +4575,6 @@ function App() {
             })
           }}
           onToggleSelfcare={id => {
-            appendDailyEvent(createRitualStepEvent({
-              date: today,
-              stepId: 'selfcare',
-              status: 'updated',
-              details: {
-                itemId: id,
-                checked: !ritualProgress.selfcareChecked.includes(id),
-              },
-            }))
             setRitualProgress(current => {
               const checked = current.selfcareChecked.includes(id)
                 ? current.selfcareChecked.filter(item => item !== id)
@@ -4123,31 +4585,53 @@ function App() {
             })
           }}
           onCompleteStep={step => {
-            if (step === 'medsShake' && !entry.proteinShake) updateEntry({ proteinShake: true }, 'morning_gate')
             if (step === 'workout') updateEntry({ pushupsDone: true }, 'morning_gate')
-            setRitualProgress(current => markRitualStepDone(current, step))
-            appendDailyEvent(createRitualStepEvent({ date: today, stepId: step }))
+            if (step === 'letsGo') showToast('LETS GO — ready.')
+            settleMorningStep(ritualProgress, step, 'done', step === 'workout' ? { pushupsDone: true } : undefined)
+          }}
+          onSkipStep={step => settleMorningStep(ritualProgress, step, 'skipped')}
+          onBack={() => {
             if (gatePreview) {
-              if (previewIndex >= ritualSteps.length - 1) {
-                setGatePreview(false)
-                setPreviewIndex(0)
-                return
-              }
-              setPreviewIndex(value => value + 1)
+              setPreviewIndex(value => Math.max(0, value - 1))
+              return
             }
-            if (step === 'letsGo') {
+            const index = ritualStep ? ritualSteps.indexOf(ritualStep) : -1
+            if (index > 0) setReviewStep(ritualSteps[index - 1])
+          }}
+          canBack={(gatePreview ? previewIndex : (ritualStep ? ritualSteps.indexOf(ritualStep) : 0)) > 0}
+          onExit={() => {
+            if (gatePreview) {
               setGatePreview(false)
-              showToast('LETS GO — ready.')
+              setPreviewIndex(0)
+              return
             }
+            setGateBypass(true)
+            setGateFinale(false)
+            setReviewStep(null)
+          }}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onClosePreview={gatePreview ? () => setGatePreview(false) : undefined}
+          onStartDay={() => {
+            setGateFinale(false)
+            setGatePreview(false)
+            setGateBypass(true)
+            setReviewStep(null)
+            navigateTo('today')
           }}
           onSkipToday={() => {
             saveMorningGateSkip(today)
             setGateSkipped(true)
+            setGateFinale(false)
             setGatePreview(false)
-            showToast('Morgen-Ritual für heute übersprungen.')
+            setReviewStep(null)
+            showToast('Morgen-Ritual für heute ausgesetzt.')
           }}
-          onOpenSettings={() => setSettingsOpen(true)}
-          onClosePreview={gatePreview ? () => setGatePreview(false) : undefined}
+          onReopenStep={id => {
+            setRitualProgress(reopenRitualStep(ritualProgress, id))
+            setReviewStep(id)
+            setGateFinale(false)
+            setGateBypass(false)
+          }}
         />
       )}
 
@@ -7742,6 +8226,7 @@ function RitualDurationFields({
     case 'medsShake':
     case 'weight':
     case 'gratitude':
+    case 'commitment':
     case 'energy':
     case 'headRecovery':
     case 'todos':
@@ -8416,6 +8901,38 @@ function SettingsModal({
                           onChange={morningRitual => onChange({ ...settings, morningRitual })}
                         />
 
+                        {id === 'commitment' && (
+                          <label className="text-field ritual-card-wide-field">
+                            <span>Persönlicher Satz</span>
+                            <textarea
+                              rows={4}
+                              maxLength={800}
+                              value={ritualConfig.commitmentText}
+                              onChange={event => onChange({
+                                ...settings,
+                                morningRitual: {
+                                  ...ritualConfig,
+                                  commitmentText: event.target.value.slice(0, 800),
+                                },
+                              })}
+                            />
+                          </label>
+                        )}
+                        {id === 'commitment' && (
+                          <label className="text-field ritual-card-wide-field">
+                            <span>Dokument-ID, falls mehrere Vereinbarungen existieren</span>
+                            <input
+                              value={ritualConfig.commitmentDocumentId}
+                              onChange={event => onChange({
+                                ...settings,
+                                morningRitual: {
+                                  ...ritualConfig,
+                                  commitmentDocumentId: event.target.value.slice(0, 80),
+                                },
+                              })}
+                            />
+                          </label>
+                        )}
                         {id === 'gratitude' && (
                           <label className="text-field ritual-card-wide-field">
                             <span>Text zum lauten Vorlesen</span>

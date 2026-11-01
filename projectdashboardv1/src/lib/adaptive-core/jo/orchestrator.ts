@@ -181,9 +181,9 @@ export function generateChangeSpec(
     const order = Array.isArray(settings.morningRitual?.stepOrder)
       ? [...settings.morningRitual!.stepOrder as string[]]
       : []
-    const breakfastIdx = Math.max(0, order.indexOf('medsShake'))
     let from = order.indexOf('weight')
     const nextOrder = order.filter(id => id !== 'weight')
+    const breakfastIdx = nextOrder.indexOf('medsShake')
     const insertAt = Math.min(nextOrder.length, breakfastIdx >= 0 ? breakfastIdx + 1 : 1)
     nextOrder.splice(insertAt, 0, 'weight')
     if (from < 0) from = insertAt

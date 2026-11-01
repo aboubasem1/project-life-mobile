@@ -4,6 +4,7 @@ import {
   buildDailyWeightPoints,
   parseHealthIngestBody,
   selectTodayWeight,
+  upsertManualDayWeight,
 } from './bodyMeasurement'
 
 const SHORTCUT_WEIGHT = {
@@ -125,5 +126,12 @@ describe('health ingest payloads', () => {
       kg: 81.2,
       sourceApp: 'bitfit',
     }))
+  })
+
+  it('replaces the same manual day weight instead of adding another row', () => {
+    const first = upsertManualDayWeight([], '2026-11-01', 80.2, '2026-11-01T07:00:00.000Z')
+    const second = upsertManualDayWeight(first, '2026-11-01', 80.4, '2026-11-01T07:05:00.000Z')
+    expect(second.filter(item => item.externalId === 'manual-weight:2026-11-01')).toHaveLength(1)
+    expect(second.find(item => item.externalId === 'manual-weight:2026-11-01')?.weightKg).toBe(80.4)
   })
 })
