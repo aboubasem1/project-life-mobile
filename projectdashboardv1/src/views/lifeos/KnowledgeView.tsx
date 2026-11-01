@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Plus, Upload } from 'lucide-react'
 import {
   KNOWLEDGE_TYPE_LABELS,
@@ -13,7 +13,7 @@ import { Field, LifeAreaSelect, LifeOsEmpty, LifeOsPage } from './lifeosUi'
 import { ReelImportPanel } from './ReelImportPanel'
 import { KnowledgeGraphPanel } from './KnowledgeGraphPanel'
 import { ActiveRecallPanel } from './ActiveRecallPanel'
-import type { KnowledgePublishDraft } from '../../lib/reels'
+import { listPublishedKnowledge, type KnowledgePublishDraft } from '../../lib/reels'
 
 const ROLE_LABELS: Record<string, string> = {
   related_to: 'Verwandt',
@@ -68,6 +68,20 @@ export function KnowledgeView({
   const [query, setQuery] = useState('')
   const [linkKind, setLinkKind] = useState<'project' | 'goal' | 'decision' | 'knowledge'>('project')
   const [linkId, setLinkId] = useState('')
+  const publishRef = useRef(onPublished)
+  publishRef.current = onPublished
+  useEffect(() => {
+    let cancelled = false
+    void listPublishedKnowledge()
+      .then(drafts => {
+        if (!cancelled && drafts.length > 0) publishRef.current(drafts)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const [showReelImport, setShowReelImport] = useState(() => {
     try {
       const requested = sessionStorage.getItem('lifeos.open-reel-import') === '1'

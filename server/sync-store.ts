@@ -1,4 +1,5 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { sanitizeJsonValue } from './json-text.js'
 import { existsSync, readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
@@ -77,6 +78,16 @@ type SyncStoreFile = {
 const MEMORY_KEY = '__lifeOsSyncStore'
 const LOCAL_FILE = path.join(process.cwd(), 'projectdashboardv1', '.data', 'life-os-sync.json')
 const MAX_SNAPSHOT_CHARS = 1_400_000
+
+export class SyncPayloadError extends Error {
+  readonly status: number
+
+  constructor(status: number, message: string) {
+    super(message)
+    this.name = 'SyncPayloadError'
+    this.status = status
+  }
+}
 
 /** After a failed Upstash call off Vercel, stay on the file store for this process. */
 let localUpstashBroken = false
@@ -485,12 +496,26 @@ export async function getRoomIdByPairCode(pairCode: string): Promise<string | nu
 
 export async function saveRoom(room: SyncRoom, previousPairCode?: string | null): Promise<void> {
   if (room.snapshot) {
+    room.snapshot = sanitizeJsonValue(room.snapshot)
     const size = JSON.stringify(room.snapshot).length
     if (size > MAX_SNAPSHOT_CHARS) {
-      throw new Error('Sync-Daten zu groß. Bitte ältere Einträge per Backup aufräumen.')
+      throw new SyncPayloadError(413, 'Sync-Daten sind zu groß. Wissen aus Reels bleibt gespeichert, der Snapshot wurde nicht ersetzt.')
     }
   }
 
+  try {
+    await saveRoomUnchecked(room, previousPairCode)
+  } catch (error) {
+    if (error instanceof SyncPayloadError) throw error
+    const message = error instanceof Error ? error.message : ''
+    if (/invalid input syntax for type json|unsupported Unicode|cannot be converted to json/i.test(message)) {
+      throw new SyncPayloadError(400, 'Der Snapshot enthält Zeichen, die nicht gespeichert werden können.')
+    }
+    throw error
+  }
+}
+
+async function saveRoomUnchecked(room: SyncRoom, previousPairCode?: string | null): Promise<void> {
   if (databaseConfigured()) {
     await saveRoomToPostgres(room)
     if (upstashBridgeEnabled()) {

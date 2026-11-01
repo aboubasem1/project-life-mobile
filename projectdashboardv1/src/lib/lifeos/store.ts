@@ -1,3 +1,4 @@
+import { preserveReelKnowledgeItems } from '../reels/preserveKnowledge'
 import { normalizeGenerationalRun } from '../generationalRun/logic.js'
 import {
   normalizeAreaIntentions,
@@ -560,7 +561,10 @@ export function mergeLifeOsState(localRaw: unknown, remoteRaw: unknown): LifeOsS
   return normalizeLifeOsState({
     version: LIFE_OS_STORE_VERSION,
     captures: mergeByUpdatedAt(local.captures, remote.captures),
-    knowledge: mergeByUpdatedAt(local.knowledge, remote.knowledge),
+    knowledge: preserveReelKnowledgeItems(
+      local.knowledge,
+      mergeByUpdatedAt(local.knowledge, remote.knowledge),
+    ) as KnowledgeItem[],
     decisions: mergeByUpdatedAt(local.decisions, remote.decisions),
     signals: mergeByCreatedAt(local.signals, remote.signals).slice(-MAX_SIGNALS),
     reviews: mergeByUpdatedAt(local.reviews, remote.reviews),

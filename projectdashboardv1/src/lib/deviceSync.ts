@@ -32,6 +32,7 @@ import {
   type MorningRitualProgress,
 } from './morningGate'
 import { loadLifeOsState, mergeLifeOsState, saveLifeOsState, type LifeOsState } from './lifeos'
+import { devicePushesSnapshots, deviceRoleFromWidth } from './deviceRole'
 import { shouldPushSyncSnapshot, syncUserContentKey } from './syncContent'
 import {
   PRIVATE_VAULT_KEY,
@@ -361,7 +362,13 @@ function applyRemoteExtras(snapshot: DeviceSyncSnapshot): void {
   notifySyncExtras()
 }
 
+function thisDevicePushesSnapshots(): boolean {
+  if (typeof window === 'undefined') return false
+  return devicePushesSnapshots(deviceRoleFromWidth(window.innerWidth))
+}
+
 async function pushDeviceSyncUnlocked(): Promise<{ revision: number; updatedAt: string } | null> {
+  if (!thisDevicePushesSnapshots()) return null
   const creds = loadSyncCredentials()
   if (!creds || !navigator.onLine) return null
 
@@ -414,6 +421,9 @@ export async function pullDeviceSync(): Promise<{
     )
 
     if (!result.snapshot) {
+      if (!thisDevicePushesSnapshots()) {
+        return { changed: false, revision: Number(safeGet(LOCAL_REVISION_KEY) || 0) || 0, entries: loadAllEntries() }
+      }
       const pushed = await pushDeviceSyncUnlocked()
       return {
         changed: false,
@@ -471,8 +481,8 @@ export async function pullDeviceSync(): Promise<{
       remoteKey,
       acknowledgedKey: readContentAck(),
     })
-    if (needsPush) await pushDeviceSyncUnlocked()
-    else writeContentAck(localKey)
+    if (needsPush && thisDevicePushesSnapshots()) await pushDeviceSyncUnlocked()
+    else if (!needsPush) writeContentAck(localKey)
 
     return {
       changed: remoteRevision > localRevision || needsPush,

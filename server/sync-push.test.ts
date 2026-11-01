@@ -57,6 +57,29 @@ describe('push revision storm', () => {
     expect(second.snapshot.revision).toBe(first.snapshot.revision + 1)
   })
 
+  it('keeps published reel knowledge when a later snapshot omits it', () => {
+    const first = mergeIncomingSnapshot(null, {
+      ...entrySnapshot(1, 0),
+      lifeOs: {
+        version: 1,
+        knowledge: [{
+          id: 'knowledge-reel-1',
+          title: 'Trainingsstart',
+          sourceReelId: 'reel-1',
+          updatedAt: '2026-11-01T12:00:00.000Z',
+          createdAt: '2026-11-01T12:00:00.000Z',
+        }],
+      },
+    }, '2026-11-01T00:00:01.000Z')
+    const echo = mergeIncomingSnapshot(first.snapshot, {
+      ...entrySnapshot(first.snapshot.revision, 4),
+      lifeOs: { version: 1, knowledge: [] },
+    }, '2026-11-01T00:00:02.000Z')
+    const knowledge = (echo.snapshot.lifeOs as { knowledge?: Array<{ id: string; title: string }> }).knowledge ?? []
+    expect(knowledge.map(item => item.id)).toContain('knowledge-reel-1')
+    expect(knowledge.find(item => item.id === 'knowledge-reel-1')?.title).toBe('Trainingsstart')
+  })
+
   it('does not mint revisions when the same sparse snapshot is pushed again', () => {
     const first = mergeIncomingSnapshot(null, entrySnapshot(1, 0), '2026-11-01T00:00:01.000Z')
     let current = first.snapshot

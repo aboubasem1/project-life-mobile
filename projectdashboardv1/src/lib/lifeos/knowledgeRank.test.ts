@@ -4,6 +4,7 @@ import {
   documentsFromLifeOs,
   documentsInRoom,
   keepManualArea,
+  indexPlanFromDeviceSnapshot,
   planIndexUpdate,
   preferredSemanticEngine,
   rankKnowledge,
@@ -57,6 +58,12 @@ describe('knowledge search', () => {
     )
     expect(plan.remove).toEqual(['gone'])
     expect(plan.upsert.map(item => item.id)).toEqual(['a', 'b'])
+    const kept = indexPlanFromDeviceSnapshot(
+      [{ id: 'reel-knowledge', updatedAt: '1' }, { id: 'gone', updatedAt: '1' }],
+      [doc({ id: 'reel-knowledge', title: 'Trainingsstart', updatedAt: '1' })],
+    )
+    expect(kept.remove).toEqual([])
+    expect(kept.upsert).toEqual([])
   })
 
   it('isolates rooms and keeps an existing knowledge record readable', () => {

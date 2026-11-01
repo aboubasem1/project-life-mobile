@@ -83,6 +83,20 @@ export function homeView(role: DeviceRole): AppView {
   }
 }
 
+/** The phone writes tracking snapshots. The desktop reads them and must not echo one back. */
+export function devicePushesSnapshots(role: DeviceRole): boolean {
+  switch (role) {
+    case 'phone':
+      return true
+    case 'desktop':
+      return false
+    default: {
+      const _exhaustive: never = role
+      return _exhaustive
+    }
+  }
+}
+
 /** Phone opens on the morning ritual. Desktop opens on the overview. */
 export function surfaceOpensMorningGate(role: DeviceRole): boolean {
   switch (role) {

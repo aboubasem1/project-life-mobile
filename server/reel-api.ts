@@ -9,6 +9,8 @@ import { enqueueReelJob, enqueueReelJobWithQuery, reelWorkerEnabled, reelWorkerS
 import { triageReelWithJev } from './reel-jev.js'
 import { extractReelAudio, extractReelFrames } from './reel-media.js'
 import { buildKnowledgeDraft, bulkItemDecision, normalizeLifeAreas, pipelineStage, publishBlockReason, type KnowledgePublishDraft } from './reel-policy.js'
+import { rememberPublishedKnowledge } from './knowledge-index.js'
+import { sanitizeJsonValue } from './json-text.js'
 import { SyncHttpError, readSyncJson, syncJson } from './sync-core.js'
 import { getRoom } from './sync-store.js'
 import { transcribeAudioBytes } from './transcription-core.js'
@@ -557,7 +559,7 @@ async function publishReelRecord(roomId: string, reelId: string, sourceOnly: boo
   if (reason) throw new SyncHttpError(409, reason)
   const knowledgeItemId = current.knowledge_item_id || randomUUID()
   const publishedAt = current.published_at ? new Date(current.published_at).toISOString() : new Date().toISOString()
-  const draft = current.publish_snapshot ?? buildKnowledgeDraft({ reel: gate, knowledgeItemId, publishedAt, sourceOnly })
+  const draft = sanitizeJsonValue(current.publish_snapshot ?? buildKnowledgeDraft({ reel: gate, knowledgeItemId, publishedAt, sourceOnly }))
   const updated = await databaseQuery(`
     UPDATE lifeos_reels
     SET status = 'PUBLISHED', knowledge_item_id = $3, published_at = COALESCE(published_at, $4::timestamptz),
@@ -573,7 +575,22 @@ async function publishReelRecord(roomId: string, reelId: string, sourceOnly: boo
     throw new SyncHttpError(409, 'Der Eintrag wurde zwischenzeitlich geändert. Bitte neu laden.')
   }
   await audit({ reelId, roomId, action: sourceOnly ? 'published_source' : 'published_knowledge', from: current.status, to: 'PUBLISHED', details: { knowledgeItemId } })
+  await rememberPublishedKnowledge(roomId, draft).catch(() => {
+    console.info(JSON.stringify({ scope: 'knowledge-index', event: 'publish_remember_failed', roomId }))
+  })
   return { reel: await findReel(roomId, reelId), knowledge: draft }
+}
+
+async function listPublishedKnowledge(roomId: string): Promise<Response> {
+  const result = await databaseQuery<{ publish_snapshot: KnowledgePublishDraft | null }>(`
+    SELECT publish_snapshot
+    FROM lifeos_reels
+    WHERE room_id = $1 AND status = 'PUBLISHED' AND publish_snapshot IS NOT NULL
+    ORDER BY published_at DESC NULLS LAST
+    LIMIT 300
+  `, [roomId])
+  const drafts = result.rows.flatMap(row => row.publish_snapshot ? [sanitizeJsonValue(row.publish_snapshot)] : [])
+  return syncJson({ ok: true, drafts })
 }
 
 async function publishReel(request: Request, roomId: string, reelId: string): Promise<Response> {
@@ -654,6 +671,7 @@ export async function handleReelRequest(request: Request): Promise<Response> {
   const roomId = await authorizeRoom(request)
   const url = new URL(request.url)
   const pathname = url.pathname.replace(/\/$/, '')
+  if (pathname.endsWith('/api/reels/knowledge') && request.method === 'GET') return listPublishedKnowledge(roomId)
   if (pathname.endsWith('/api/reels') && request.method === 'GET') return listReels(url, roomId)
   if (pathname.endsWith('/api/reels/health') && request.method === 'GET') return reelHealth(roomId)
   if (pathname.endsWith('/api/reels/register') && request.method === 'POST') return registerReel(request, roomId)

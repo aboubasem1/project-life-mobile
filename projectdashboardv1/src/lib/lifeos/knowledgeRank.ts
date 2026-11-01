@@ -132,6 +132,11 @@ export function semanticFallback(left: string, right: string): number {
 
 export type IndexRow = { id: string; updatedAt: string }
 
+/** Device snapshots may omit published reel knowledge. They upsert edits and delete nothing. */
+export function indexPlanFromDeviceSnapshot(existing: IndexRow[], next: KnowledgeDoc[]): { upsert: KnowledgeDoc[]; remove: string[] } {
+  return { upsert: planIndexUpdate(existing, next).upsert, remove: [] }
+}
+
 export function planIndexUpdate(existing: IndexRow[], next: KnowledgeDoc[]): { upsert: KnowledgeDoc[]; remove: string[] } {
   const nextIds = new Set(next.map(item => item.id))
   const previous = new Map(existing.map(item => [item.id, item.updatedAt]))

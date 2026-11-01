@@ -1,25 +1,45 @@
-import { loadSyncCredentials } from '../deviceSync'
+import { createDevicePairing, loadSyncCredentials } from '../deviceSync'
 import { loadImportReceipts, markImportUploaded, removeImportReceipt, saveImportReceipt, type ReelImportReceipt } from './import-session'
 import type { KnowledgePublishDraft, ReelCandidate, ReelReviewAction } from './types'
 
-function authHeaders(): Record<string, string> {
+let reelRoomPromise: Promise<void> | null = null
+
+function ensureReelRoom(): Promise<void> {
+  if (loadSyncCredentials()) return Promise.resolve()
+  if (!reelRoomPromise) {
+    reelRoomPromise = createDevicePairing()
+      .then(() => undefined)
+      .finally(() => {
+        reelRoomPromise = null
+      })
+  }
+  return reelRoomPromise
+}
+
+function credentialHeaders(): Record<string, string> {
   const credentials = loadSyncCredentials()
-  if (!credentials) throw new Error('Reel-Import benötigt einen gekoppelten Geräte-Sync.')
+  if (!credentials) throw new Error('Reel-Import konnte keinen Server-Eintrag anlegen.')
   return {
     Authorization: `Bearer ${credentials.deviceToken}`,
     'X-Life-Os-Room': credentials.roomId,
   }
 }
 
-async function apiJson<T>(path: string, init: RequestInit = {}, timeoutMs = 20_000): Promise<T> {
+async function authHeaders(): Promise<Record<string, string>> {
+  await ensureReelRoom()
+  return credentialHeaders()
+}
+
+async function apiJson<T>(path: string, init: RequestInit = {}, timeoutMs = 20_000, ensureRoom = false): Promise<T> {
   const controller = new AbortController()
   const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+  const roomHeaders = ensureRoom ? await authHeaders() : credentialHeaders()
   try {
     const response = await fetch(path, {
       ...init,
       headers: {
         ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-        ...authHeaders(),
+        ...roomHeaders,
         ...(init.headers ?? {}),
       },
       signal: controller.signal,
@@ -42,23 +62,24 @@ async function sha256(file: File): Promise<string | null> {
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
 }
 
-function sameOriginUploadHeaders(url: string, headers: Record<string, string>): Record<string, string> {
+async function sameOriginUploadHeaders(url: string, headers: Record<string, string>): Promise<Record<string, string>> {
   try {
     const absolute = new URL(url, window.location.origin)
-    if (absolute.origin === window.location.origin) return { ...headers, ...authHeaders() }
+    if (absolute.origin === window.location.origin) return { ...headers, ...(await authHeaders()) }
   } catch {
     // Fall through to the provided headers (e.g. signed R2 / local URLs).
   }
   return headers
 }
 
-function putFile(
+async function putFile(
   url: string,
   headers: Record<string, string>,
   file: File,
   onProgress: (percent: number) => void,
   signal?: AbortSignal,
 ): Promise<void> {
+  const uploadHeaders = await sameOriginUploadHeaders(url, headers)
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(new DOMException('Upload abgebrochen.', 'AbortError'))
@@ -71,7 +92,7 @@ function putFile(
     }
     signal?.addEventListener('abort', onAbort, { once: true })
     request.open('PUT', url)
-    for (const [name, value] of Object.entries(sameOriginUploadHeaders(url, headers))) {
+    for (const [name, value] of Object.entries(uploadHeaders)) {
       request.setRequestHeader(name, value)
     }
     request.timeout = 10 * 60_000
@@ -102,6 +123,7 @@ export async function uploadAndRegisterReel(
   lifeAreas: string[] = [],
   signal?: AbortSignal,
 ): Promise<{ reel: ReelCandidate; queued: boolean; duplicate: boolean }> {
+  await ensureReelRoom()
   const checksumSha256 = await sha256(file)
   const presigned = await apiJson<{
     objectId: string
@@ -187,6 +209,7 @@ export async function recoverUploadedReels(): Promise<{ recovered: ReelCandidate
 }
 
 export async function processReel(reelId: string, lifeAreas: string[]): Promise<ReelCandidate> {
+  await ensureReelRoom()
   const result = await apiJson<{ reel: ReelCandidate }>(`/api/reels/${reelId}/process`, {
     method: 'POST',
     body: JSON.stringify({ lifeAreas }),
@@ -194,7 +217,14 @@ export async function processReel(reelId: string, lifeAreas: string[]): Promise<
   return result.reel
 }
 
+export async function listPublishedKnowledge(): Promise<KnowledgePublishDraft[]> {
+  if (!loadSyncCredentials()) return []
+  const result = await apiJson<{ drafts?: KnowledgePublishDraft[] }>('/api/reels/knowledge')
+  return Array.isArray(result.drafts) ? result.drafts : []
+}
+
 export async function listReels(): Promise<ReelCandidate[]> {
+  if (!loadSyncCredentials()) return []
   const result = await apiJson<{ reels: ReelCandidate[] }>('/api/reels?limit=300')
   return result.reels
 }
@@ -209,6 +239,7 @@ export async function reviewReel(input: {
   suggestedTarget: ReelCandidate['suggestedTarget']
   reviewerNote: string
 }): Promise<ReelCandidate> {
+  await ensureReelRoom()
   const result = await apiJson<{ reel: ReelCandidate }>(`/api/reels/${input.reel.id}/review`, {
     method: 'POST',
     body: JSON.stringify({
@@ -226,6 +257,7 @@ export async function reviewReel(input: {
 }
 
 export async function publishReel(reel: ReelCandidate, sourceOnly = false): Promise<{ reel: ReelCandidate; knowledge: KnowledgePublishDraft }> {
+  await ensureReelRoom()
   return apiJson(`/api/reels/${reel.id}/publish`, {
     method: 'POST',
     body: JSON.stringify({ version: reel.version, sourceOnly }),
@@ -237,6 +269,7 @@ export async function batchReels(input: {
   reels: ReelCandidate[]
   includeMediumRisk?: boolean
 }): Promise<{ results: Array<{ id: string; ok: boolean; error?: string; reel?: ReelCandidate; knowledge?: KnowledgePublishDraft }> }> {
+  await ensureReelRoom()
   return apiJson('/api/reels/batch', {
     method: 'POST',
     body: JSON.stringify({

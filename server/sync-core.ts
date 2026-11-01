@@ -1,8 +1,10 @@
 import { randomInt, randomUUID } from 'node:crypto'
+import { sanitizeJsonValue } from './json-text.js'
 import {
   getRoom,
   getRoomIdByPairCode,
   saveRoom,
+  SyncPayloadError,
   syncStorageMode,
   type SyncRoom,
   type SyncSnapshot,
@@ -42,7 +44,7 @@ export function syncJson(data: unknown, status = 200): Response {
 }
 
 export function syncError(error: unknown): Response {
-  if (error instanceof SyncHttpError) {
+  if (error instanceof SyncHttpError || error instanceof SyncPayloadError) {
     return syncJson({ error: error.message, storage: syncStorageMode() }, error.status)
   }
   console.error(error)
@@ -300,7 +302,7 @@ export async function pushSyncSnapshot(input: {
   if (!room) throw new SyncHttpError(404, 'Sync-Raum nicht gefunden.')
   assertDevice(room, input.deviceToken)
 
-  const incoming = input.snapshot
+  const incoming = sanitizeJsonValue(input.snapshot)
   if (!incoming || typeof incoming !== 'object' || !Array.isArray(incoming.entries)) {
     throw new SyncHttpError(400, 'Ungültiger Sync-Snapshot.')
   }

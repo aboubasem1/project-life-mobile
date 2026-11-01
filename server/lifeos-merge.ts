@@ -1,3 +1,5 @@
+import { preserveReelKnowledgeItems } from '../projectdashboardv1/src/lib/reels/preserveKnowledge.js'
+
 /** Server-safe Life OS snapshot merge. Avoid importing the client store into Vercel functions. */
 
 export function mergeLifeOsSnapshots(local: unknown, remote: unknown): unknown {
@@ -16,7 +18,10 @@ export function mergeLifeOsSnapshots(local: unknown, remote: unknown): unknown {
     ...remote,
     version: typeof remote.version === 'number' ? remote.version : local.version,
     captures: pick('captures'),
-    knowledge: pick('knowledge'),
+    knowledge: preserveReelKnowledgeItems(
+      Array.isArray(local.knowledge) ? local.knowledge : [],
+      pick('knowledge'),
+    ),
     decisions: pick('decisions'),
     signals: pick('signals'),
     reviews: pick('reviews'),

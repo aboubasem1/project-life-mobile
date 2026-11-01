@@ -1,5 +1,6 @@
 import { databaseConfigured, databaseQuery, databaseTransaction } from './database.js'
-import { documentsFromLifeOs, planIndexUpdate, rankKnowledge, type KnowledgeDoc } from '../projectdashboardv1/src/lib/lifeos/knowledgeRank.js'
+import { documentsFromLifeOs, indexPlanFromDeviceSnapshot, rankKnowledge, type KnowledgeDoc } from '../projectdashboardv1/src/lib/lifeos/knowledgeRank.js'
+import { sanitizeJsonValue } from './json-text.js'
 
 export type KnowledgeSearchHit = { id: string; title: string; score: number }
 
@@ -16,13 +17,10 @@ export async function reindexRoomKnowledge(roomId: string, lifeOs: unknown): Pro
       FROM lifeos_knowledge_documents
       WHERE room_id = $1
     `, [roomId])
-    const plan = planIndexUpdate(existing.rows.map(row => ({ id: row.id, updatedAt: row.updated_at })), next)
-    if (plan.remove.length > 0) {
-      await query(`
-        DELETE FROM lifeos_knowledge_documents
-        WHERE room_id = $1 AND knowledge_id = ANY($2::text[])
-      `, [roomId, plan.remove])
-    }
+    const plan = indexPlanFromDeviceSnapshot(
+      existing.rows.map(row => ({ id: row.id, updatedAt: row.updated_at })),
+      next,
+    )
     for (const doc of plan.upsert) {
       const body = bodyOf(doc)
       await query(`
@@ -38,6 +36,35 @@ export async function reindexRoomKnowledge(roomId: string, lifeOs: unknown): Pro
       `, [roomId, doc.id, doc.title.slice(0, 160), body, JSON.stringify(doc.topics), doc.updatedAt, body])
     }
   })
+}
+
+export async function rememberPublishedKnowledge(roomId: string, draft: {
+  id?: string
+  title?: string
+  content?: string
+  summary?: string
+  topics?: string[]
+  updatedAt?: string
+}): Promise<void> {
+  if (!roomId || !databaseConfigured()) return
+  const safe = sanitizeJsonValue(draft)
+  const id = safe.id?.trim() ?? ''
+  const title = safe.title?.trim() ?? ''
+  if (!id || !title) return
+  const topics = Array.isArray(safe.topics) ? safe.topics.map(item => String(item)).filter(Boolean).slice(0, 20) : []
+  const body = [title, safe.summary || '', topics.join(' '), safe.content || ''].join('\n').slice(0, 8000)
+  const updatedAt = safe.updatedAt || new Date().toISOString()
+  await databaseQuery(`
+    INSERT INTO lifeos_knowledge_documents (
+      room_id, knowledge_id, title, body, topics, source_updated_at, search_vector
+    ) VALUES ($1, $2, $3, $4, $5::jsonb, $6, to_tsvector('simple', $7))
+    ON CONFLICT (room_id, knowledge_id) DO UPDATE SET
+      title = EXCLUDED.title,
+      body = EXCLUDED.body,
+      topics = EXCLUDED.topics,
+      source_updated_at = EXCLUDED.source_updated_at,
+      search_vector = EXCLUDED.search_vector
+  `, [roomId, id, title.slice(0, 160), body, JSON.stringify(topics), updatedAt, body])
 }
 
 export async function searchRoomKnowledge(roomId: string, rawQuery: string): Promise<{

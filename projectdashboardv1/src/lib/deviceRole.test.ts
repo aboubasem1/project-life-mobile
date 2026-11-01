@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  devicePushesSnapshots,
   deviceRoleFromWidth,
   homeView,
   PHONE_MAX_WIDTH_PX,
@@ -25,6 +26,7 @@ describe('device role', () => {
   it('lands the desktop on the overview and keeps tracking secondary', () => {
     expect(homeView('desktop')).toBe('progress')
     expect(surfaceOpensMorningGate('desktop')).toBe(false)
+    expect(devicePushesSnapshots('desktop')).toBe(false)
     expect(ids('desktop', 'primary')).toEqual([
       'overview',
       'knowledge',
@@ -45,6 +47,7 @@ describe('device role', () => {
   it('lands the phone on tracking and keeps the desk surfaces secondary', () => {
     expect(homeView('phone')).toBe('today')
     expect(surfaceOpensMorningGate('phone')).toBe(true)
+    expect(devicePushesSnapshots('phone')).toBe(true)
     expect(ids('phone', 'primary')).toEqual(['tracking'])
     expect(ids('phone', 'secondary')).toEqual([
       'overview',
