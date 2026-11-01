@@ -32,6 +32,7 @@ import {
   type MorningRitualProgress,
 } from './morningGate'
 import { loadLifeOsState, mergeLifeOsState, saveLifeOsState, type LifeOsState } from './lifeos'
+import { shouldPushSyncSnapshot, syncUserContentKey } from './syncContent'
 import {
   PRIVATE_VAULT_KEY,
   mergePrivateVaultEnvelopes,
@@ -41,6 +42,7 @@ import {
 const SYNC_CRED_KEY = 'life-os-v1-device-sync'
 const QUICK_NOTE_KEY = 'life-os-quick-note'
 const LOCAL_REVISION_KEY = 'life-os-v1-sync-revision'
+const CONTENT_ACK_KEY = 'life-os-v1-sync-content-ack'
 export const LIFE_OS_SYNC_EXTRAS_EVENT = 'life-os-sync-extras'
 
 let remoteApplyGeneration = 0
@@ -135,6 +137,15 @@ export function clearSyncCredentials(): void {
 
 export function isDeviceSyncEnabled(): boolean {
   return Boolean(loadSyncCredentials())
+}
+
+function readContentAck(): string | null {
+  const value = safeGet(CONTENT_ACK_KEY)
+  return value && value.length > 0 ? value : null
+}
+
+function writeContentAck(key: string): void {
+  safeSet(CONTENT_ACK_KEY, key)
 }
 
 async function syncFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -335,7 +346,7 @@ function applyRemoteExtras(snapshot: DeviceSyncSnapshot): void {
     saveDailyEvents(mergeDailyEvents(loadDailyEvents(), snapshot.dailyEvents))
   }
   if (snapshot.lifeOs != null) {
-    saveLifeOsState(mergeLifeOsState(loadLifeOsState(), snapshot.lifeOs))
+    saveLifeOsState(mergeLifeOsState(loadLifeOsState(), snapshot.lifeOs), 'sync')
   }
   if (snapshot.privateVault != null) {
     let localVault: unknown = null
@@ -355,6 +366,11 @@ async function pushDeviceSyncUnlocked(): Promise<{ revision: number; updatedAt: 
   if (!creds || !navigator.onLine) return null
 
   const snapshot = buildLocalSnapshot()
+  const contentKey = syncUserContentKey(snapshot)
+  if (readContentAck() === contentKey) {
+    const revision = Number(safeGet(LOCAL_REVISION_KEY) || 0) || 0
+    return { revision, updatedAt: creds.lastSyncedAt ?? snapshot.updatedAt }
+  }
   const result = await syncFetch<{ revision: number; updatedAt: string }>('/api/sync/push', {
     method: 'POST',
     body: JSON.stringify({
@@ -365,6 +381,7 @@ async function pushDeviceSyncUnlocked(): Promise<{ revision: number; updatedAt: 
   })
 
   safeSet(LOCAL_REVISION_KEY, String(result.revision))
+  writeContentAck(contentKey)
   saveSyncCredentials({
     ...creds,
     lastSyncedAt: result.updatedAt,
@@ -439,11 +456,6 @@ export async function pullDeviceSync(): Promise<{
       recomputeXPFromEntries(rescoredEntries)
     }
 
-    const localHadNewerEntry = localBefore.some(entry => {
-      const remoteEntry = (remote.entries ?? []).find(item => item.date === entry.date)
-      return !remoteEntry || entryUpdatedAt(entry) > entryUpdatedAt(remoteEntry)
-    })
-
     const nextRevision = Math.max(localRevision, remoteRevision)
     safeSet(LOCAL_REVISION_KEY, String(nextRevision))
     saveSyncCredentials({
@@ -452,12 +464,18 @@ export async function pullDeviceSync(): Promise<{
       lastRevision: nextRevision,
     })
 
-    if (localHadNewerEntry || localRevision > remoteRevision || scoreChanged) {
-      await pushDeviceSyncUnlocked()
-    }
+    const localKey = syncUserContentKey(buildLocalSnapshot())
+    const remoteKey = syncUserContentKey(remote)
+    const needsPush = shouldPushSyncSnapshot({
+      localKey,
+      remoteKey,
+      acknowledgedKey: readContentAck(),
+    })
+    if (needsPush) await pushDeviceSyncUnlocked()
+    else writeContentAck(localKey)
 
     return {
-      changed: remoteRevision > localRevision || localHadNewerEntry,
+      changed: remoteRevision > localRevision || needsPush,
       revision: Number(safeGet(LOCAL_REVISION_KEY) || nextRevision) || nextRevision,
       entries: loadAllEntries(),
     }

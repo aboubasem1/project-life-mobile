@@ -1474,6 +1474,7 @@ function App() {
   const [previewIndex, setPreviewIndex] = useState(0)
   const [gateBypass, setGateBypass] = useState(() => shouldBypassMorningGate(peekAppAction()))
   const [gateSkipped, setGateSkipped] = useState(() => loadMorningGateSkip(dateKey(new Date())))
+  const [bodyMeasurementTick, setBodyMeasurementTick] = useState(0)
   const [ritualProgress, setRitualProgress] = useState<MorningRitualProgress>(() => loadMorningRitualProgress(dateKey(new Date())))
   const [dailyEvents, setDailyEvents] = useState<DailyEvent[]>(() => loadDailyEvents())
   const lifeOs = useLifeOs()
@@ -1561,7 +1562,11 @@ function App() {
       gratitudeDone: Boolean(entry.gratitudeDone),
       energySet: Boolean(entry.energyLevel),
       headRecoveryDone: isHeadRecoveryDone(entry),
-      weightSet: typeof entry.weightKg === 'number' && entry.weightKg > 0,
+      weightSet: selectTodayWeight({
+        date: today,
+        entry,
+        measurements: loadBodyMeasurements(),
+      }) != null,
       pushupsDone: Boolean(entry.pushupsDone),
       coldShowerDone: Boolean(entry.coldShower),
       winnerModeDone: Boolean(entry.winnerModeDone),
@@ -1577,6 +1582,8 @@ function App() {
       entry.gratitudeDone,
       entry.energyLevel,
       entry.weightKg,
+      today,
+      bodyMeasurementTick,
       entry.mood,
       entry.sleepQuality,
       entry.sleepDuration,
@@ -1664,11 +1671,23 @@ function App() {
   }, [])
 
   useEffect(() => {
-    const onChange = () => {
-      window.setTimeout(() => { void pushDeviceSync().catch(() => {}) }, 600)
+    let pushTimer: number | null = null
+    const onChange = (event: Event) => {
+      const origin = event instanceof CustomEvent
+        ? (event.detail as { origin?: string } | null)?.origin
+        : undefined
+      if (origin === 'sync') return
+      if (pushTimer !== null) window.clearTimeout(pushTimer)
+      pushTimer = window.setTimeout(() => {
+        pushTimer = null
+        void pushDeviceSync().catch(() => {})
+      }, 600)
     }
     window.addEventListener(LIFE_OS_CHANGE_EVENT, onChange)
-    return () => window.removeEventListener(LIFE_OS_CHANGE_EVENT, onChange)
+    return () => {
+      window.removeEventListener(LIFE_OS_CHANGE_EVENT, onChange)
+      if (pushTimer !== null) window.clearTimeout(pushTimer)
+    }
   }, [])
 
   useEffect(() => {
@@ -1743,6 +1762,7 @@ function App() {
       setDeviceSyncCreds(loadSyncCredentials())
       setRitualProgress(loadMorningRitualProgress(today))
       setDailyEvents(loadDailyEvents())
+      setBodyMeasurementTick(value => value + 1)
     }
     const reloadEvents = () => setDailyEvents(loadDailyEvents())
     window.addEventListener(LIFE_OS_SYNC_EXTRAS_EVENT, reloadExtras)
@@ -5468,7 +5488,7 @@ function ProgressView({
     e.dayShield ? 20 : calculateScore(e, scoreGoals)
   ))
   const review = buildWeeklyReview(entries, today, scoreGoals)
-  const weightSeries = buildWeightSeries(entries, today, 30)
+  const weightSeries = buildWeightSeries(entries, today, 30, loadBodyMeasurements())
   const weightInsights = buildWeightInsights(entries, today, heightCm)
   const sleepAvg = averageSleepHours(entries, today, 7)
   const strengthStats = (['proteinShake', 'gratitudeDone', 'focusDone', 'breathingDone'] as const).map(key => {
@@ -8572,7 +8592,7 @@ function SettingsModal({
                 <div className="shortcut-recipe">
                   <div>
                     <strong>Apple Health Ingest</strong>
-                    <span>Health Auto Export: Fitdays → Apple Health → dieser Endpunkt</span>
+                    <span>Waage in Fitdays oder Bitfit → Apple Health → Health Auto Export an diesen Endpunkt</span>
                     <code>{`${window.location.origin}/api/health/ingest`}</code>
                   </div>
                   <button

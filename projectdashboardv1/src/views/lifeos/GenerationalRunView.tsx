@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
   addAsset,
   addDelegation,
@@ -78,6 +78,9 @@ import type {
 import { nowIso, type LifeOsState } from '../../lib/lifeos'
 import { Field, LifeOsPage } from './lifeosUi'
 import { BodyEvolutionCard } from '../../components/BodyEvolutionCard'
+import { buildDailyWeightPoints, loadBodyMeasurements } from '../../lib/bodyMeasurement'
+import { LIFE_OS_SYNC_EXTRAS_EVENT } from '../../lib/deviceSync'
+import { loadAllEntries } from '../../lib/storage'
 
 type SpeechResult = { results: ArrayLike<ArrayLike<{ transcript?: string }>> }
 type SpeechRecognitionInstance = {
@@ -118,6 +121,26 @@ export type LaborCommitment = {
   taken: boolean
 }
 
+function useSharedWeightRecords(): Array<{ date: string; kg: number }> {
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    const refresh = () => setTick(value => value + 1)
+    window.addEventListener(LIFE_OS_SYNC_EXTRAS_EVENT, refresh)
+    window.addEventListener('storage', refresh)
+    return () => {
+      window.removeEventListener(LIFE_OS_SYNC_EXTRAS_EVENT, refresh)
+      window.removeEventListener('storage', refresh)
+    }
+  }, [])
+  return useMemo(
+    () => buildDailyWeightPoints(loadAllEntries(), loadBodyMeasurements()).map(point => ({
+      date: point.date,
+      kg: point.kg,
+    })),
+    [tick],
+  )
+}
+
 export function GenerationalRunView({
   life,
   commit,
@@ -132,6 +155,15 @@ export function GenerationalRunView({
   onOpenCheckin: () => void
 }) {
   const run = life.run
+  const sharedWeights = useSharedWeightRecords()
+  const evolutionRecords = useMemo(() => {
+    const map = new Map<string, { date: string; kg: number }>()
+    for (const point of run.healthPlan.weightPoints) {
+      if (point.value > 0) map.set(point.date, { date: point.date, kg: point.value })
+    }
+    for (const point of sharedWeights) map.set(point.date, point)
+    return [...map.values()].sort((left, right) => left.date.localeCompare(right.date))
+  }, [run.healthPlan.weightPoints, sharedWeights])
   const board = todayBoard(run)
   const priority = localPriority(run)
   const [audioNote, setAudioNote] = useState('')
@@ -178,7 +210,7 @@ export function GenerationalRunView({
   return (
     <LifeOsPage eyebrow="Arbeitsbereich" title="Generational Run">
       <div className="run-stack">
-        <BodyEvolutionCard records={run.healthPlan.weightPoints.map(point => ({ date: point.date, kg: point.value }))} />
+        <BodyEvolutionCard records={evolutionRecords} />
         <section className="card" aria-labelledby="run-priority">
           <h3 id="run-priority">Nächste Priorität</h3>
           <p>{priority.reason}</p>

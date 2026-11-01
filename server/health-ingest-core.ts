@@ -161,6 +161,15 @@ export async function applyHealthIngest(request: Request, body: unknown): Promis
   const existingMeasurements = normalizeBodyMeasurements(snapshot?.bodyMeasurements)
   const ingestState = normalizeHealthIngestState(snapshot?.healthIngest)
   const dedup = filterNewSampleIds(ingestState, parsed.sampleIds)
+  if (dedup.fresh.length === 0) {
+    return {
+      accepted: 0,
+      skipped: dedup.skipped,
+      dates: [],
+      revision: snapshot?.revision ?? 0,
+      updatedAt: snapshot?.updatedAt ?? room.updatedAt,
+    }
+  }
   const measurements = mergeBodyMeasurements(existingMeasurements, parsed.measurements)
   const entries = Array.isArray(snapshot?.entries)
     ? snapshot.entries.filter((item): item is LooseEntry => Boolean(item && typeof item === 'object' && typeof (item as { date?: unknown }).date === 'string'))

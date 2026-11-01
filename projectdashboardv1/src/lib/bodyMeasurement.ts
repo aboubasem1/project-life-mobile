@@ -195,12 +195,13 @@ function sourceText(raw: unknown): string | undefined {
 }
 
 function inferSourceApp(source?: string, explicit?: string): string | undefined {
-  if (explicit?.trim()) return explicit.trim().slice(0, 80)
-  if (!source) return undefined
-  const lower = source.toLowerCase()
+  const raw = explicit?.trim() || source?.trim()
+  if (!raw) return undefined
+  const lower = raw.toLowerCase()
   if (lower.includes('fitdays')) return 'fitdays'
+  if (lower.includes('bitfit')) return 'bitfit'
   if (lower.includes('health')) return 'apple_health'
-  return source.slice(0, 80)
+  return raw.slice(0, 80)
 }
 
 function inferSource(sourceApp?: string): BodyMeasurementSource {
@@ -212,7 +213,9 @@ function inferSource(sourceApp?: string): BodyMeasurementSource {
 
 function sampleQty(record: Record<string, unknown>): number | null {
   return finiteNumber(record.qty)
+    ?? finiteNumber(record.Qty)
     ?? finiteNumber(record.value)
+    ?? finiteNumber(record.Value)
     ?? finiteNumber(record.Avg)
     ?? finiteNumber(record.avg)
     ?? finiteNumber(record.Max)
@@ -574,11 +577,12 @@ export function selectTodayWeight(input: {
   const latest = todaySamples[todaySamples.length - 1]
   if (latest?.weightKg) {
     const app = (latest.sourceApp ?? '').toLowerCase()
+    const scale = app.includes('fitdays') || app.includes('bitfit')
     return {
       value: latest.weightKg,
       unit: 'kg',
       measuredAt: latest.measuredAt,
-      source: app.includes('fitdays') ? 'fitdays' : latest.source,
+      source: scale ? 'fitdays' : latest.source,
     }
   }
   if (input.entry && input.entry.weightKg > 0) {
@@ -598,7 +602,7 @@ export function buildDailyWeightPoints(
   entries: DashboardEntry[],
   measurements: BodyMeasurement[] = [],
 ): DailyWeightPoint[] {
-  const byDate = new Map<string, DailyWeightPoint>()
+  const byDate = new Map<string, DailyWeightPoint & { fromScale: boolean }>()
   for (const entry of entries) {
     if (entry.weightKg > 0) {
       byDate.set(entry.date, {
@@ -607,6 +611,7 @@ export function buildDailyWeightPoints(
         measuredAt: entry.weightMeasuredAt || '',
         bodyFatPercent: entry.bodyFatPercent && entry.bodyFatPercent > 0 ? entry.bodyFatPercent : null,
         sourceApp: null,
+        fromScale: false,
       })
     }
   }
@@ -614,17 +619,26 @@ export function buildDailyWeightPoints(
     if (!item.weightKg || item.weightKg <= 0) continue
     const date = berlinDateFromIso(item.measuredAt)
     const current = byDate.get(date)
-    if (!current || item.measuredAt >= current.measuredAt) {
-      byDate.set(date, {
-        date,
-        kg: item.weightKg,
-        measuredAt: item.measuredAt,
-        bodyFatPercent: item.bodyFatPercent ?? current?.bodyFatPercent ?? null,
-        sourceApp: item.sourceApp ?? current?.sourceApp ?? null,
-      })
-    }
+    // A scale/import sample wins over a same-day manual entry. Later samples still win among themselves.
+    if (current?.fromScale && item.measuredAt < current.measuredAt) continue
+    byDate.set(date, {
+      date,
+      kg: item.weightKg,
+      measuredAt: item.measuredAt,
+      bodyFatPercent: item.bodyFatPercent ?? current?.bodyFatPercent ?? null,
+      sourceApp: item.sourceApp ?? current?.sourceApp ?? null,
+      fromScale: true,
+    })
   }
-  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date))
+  return [...byDate.values()]
+    .map(point => ({
+      date: point.date,
+      kg: point.kg,
+      measuredAt: point.measuredAt,
+      bodyFatPercent: point.bodyFatPercent,
+      sourceApp: point.sourceApp,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date))
 }
 
 function offsetDate(date: string, days: number): string {

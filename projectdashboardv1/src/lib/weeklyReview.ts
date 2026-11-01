@@ -1,4 +1,5 @@
 import type { DashboardEntry } from '../types/DashboardEntry'
+import { buildDailyWeightPoints, type BodyMeasurement } from './bodyMeasurement'
 import { calculateScore, type ScoreGoals } from './score'
 
 export type WeeklyReview = {
@@ -90,10 +91,14 @@ export function buildWeeklyReview(
 
 export type WeightPoint = { date: string; kg: number }
 
-export function buildWeightSeries(entries: DashboardEntry[], today: string, days = 30): WeightPoint[] {
+export function buildWeightSeries(
+  entries: DashboardEntry[],
+  today: string,
+  days = 30,
+  measurements: BodyMeasurement[] = [],
+): WeightPoint[] {
   const start = offsetDate(today, -(days - 1))
-  return [...entries]
-    .filter(entry => entry.date >= start && entry.date <= today && entry.weightKg > 0)
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .map(entry => ({ date: entry.date, kg: entry.weightKg }))
+  return buildDailyWeightPoints(entries, measurements)
+    .filter(point => point.date >= start && point.date <= today)
+    .map(point => ({ date: point.date, kg: point.kg }))
 }

@@ -589,12 +589,15 @@ function mergeKnowledgeReviews(local: KnowledgeReview[], remote: KnowledgeReview
 
 export const LIFE_OS_CHANGE_EVENT = 'life-os-life-changed'
 
-function notifyLifeOsChanged(): void {
+function notifyLifeOsChanged(origin: 'user' | 'sync'): void {
   const host = globalThis as {
-    window?: { dispatchEvent: (event: unknown) => void; CustomEvent?: new (type: string) => unknown }
+    window?: {
+      dispatchEvent: (event: unknown) => void
+      CustomEvent?: new (type: string, init?: { detail?: unknown }) => unknown
+    }
   }
   if (!host.window?.CustomEvent) return
-  host.window.dispatchEvent(new host.window.CustomEvent(LIFE_OS_CHANGE_EVENT))
+  host.window.dispatchEvent(new host.window.CustomEvent(LIFE_OS_CHANGE_EVENT, { detail: { origin } }))
 }
 
 function browserStorage(): { getItem(key: string): string | null; setItem(key: string, value: string): void } | null {
@@ -629,10 +632,10 @@ export function loadLifeOsState(): LifeOsState {
   }
 }
 
-export function saveLifeOsState(state: LifeOsState): boolean {
+export function saveLifeOsState(state: LifeOsState, origin: 'user' | 'sync' = 'user'): boolean {
   const normalized = normalizeLifeOsState(state)
   const ok = safeSet(LIFE_OS_KEY, JSON.stringify(normalized))
-  if (ok) notifyLifeOsChanged()
+  if (ok) notifyLifeOsChanged(origin)
   return ok
 }
 

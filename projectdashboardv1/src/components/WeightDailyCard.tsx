@@ -51,9 +51,11 @@ export function WeightDailyCard({
   const clock = formatClock(stat.measuredAt)
   const source = stat.sourceApp === 'fitdays'
     ? 'Fitdays'
-    : stat.sourceApp
-      ? stat.sourceApp
-      : null
+    : stat.sourceApp === 'bitfit'
+      ? 'Bitfit'
+      : stat.sourceApp
+        ? stat.sourceApp
+        : null
 
   return (
     <section className="card weight-daily-card">

@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_GRATITUDE_TEXT,
+  DEFAULT_MORNING_RITUAL,
   DEFAULT_SELFCARE_ITEMS,
   FULLSCREEN_STEP_IDS,
+  emptyRitualProgress,
   mergeMorningRitualProgress,
   morningRitualPhase,
+  nextMorningRitualStep,
   normalizeMorningRitualConfig,
   normalizeMorningRitualProgress,
 } from './morningGate'
@@ -102,5 +105,28 @@ describe('Skin & Smile morning selfcare', () => {
     expect(normalizeMorningRitualConfig({ selfcareItems: legacy }).selfcareItems.some(item => item.id === 'spf')).toBe(true)
     expect(normalizeMorningRitualConfig({ selfcareItems: [{ id: 'own', label: 'Individuell' }] }).selfcareItems)
       .toEqual([{ id: 'own', label: 'Individuell' }])
+  })
+})
+
+describe('imported weight in Morning Gate', () => {
+  it('does not ask for weight when today already has one', () => {
+    const config = { ...DEFAULT_MORNING_RITUAL, hiddenSteps: [] as typeof DEFAULT_MORNING_RITUAL.hiddenSteps }
+    const base = {
+      enabled: true,
+      skipped: false,
+      preview: false,
+      progress: emptyRitualProgress('2026-11-01'),
+      medications: [],
+      proteinShake: true,
+      gratitudeDone: false,
+      energySet: false,
+      headRecoveryDone: false,
+      pushupsDone: false,
+      coldShowerDone: false,
+      winnerModeDone: false,
+      config,
+    }
+    expect(nextMorningRitualStep({ ...base, weightSet: false })).toBe('weight')
+    expect(nextMorningRitualStep({ ...base, weightSet: true })).not.toBe('weight')
   })
 })

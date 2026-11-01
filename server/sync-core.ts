@@ -13,6 +13,7 @@ import { mergeDayJournal, mergeQuickNoteStates, parseQuickNote } from './inbound
 import { mergeLifeOsSnapshots } from './lifeos-merge.js'
 import { reindexRoomKnowledge } from './knowledge-index.js'
 import { mergePrivateVaultEnvelopes } from '../projectdashboardv1/src/lib/privateVault.js'
+import { syncUserContentKey } from '../projectdashboardv1/src/lib/syncContent.js'
 
 const PAIR_TTL_MS = 30 * 60 * 1000
 const MAX_DEVICES = 8
@@ -215,25 +216,21 @@ export async function refreshPairCode(roomId: string, deviceToken: string): Prom
   return { pairCode, expiresAt: new Date(expiresAt).toISOString() }
 }
 
-export async function pushSyncSnapshot(input: {
-  roomId: string
-  deviceToken: string
-  snapshot: SyncSnapshot
-}): Promise<{ revision: number; updatedAt: string }> {
-  const room = await getRoom(input.roomId)
-  if (!room) throw new SyncHttpError(404, 'Sync-Raum nicht gefunden.')
-  assertDevice(room, input.deviceToken)
-
-  const incoming = input.snapshot
-  if (!incoming || typeof incoming !== 'object' || !Array.isArray(incoming.entries)) {
-    throw new SyncHttpError(400, 'Ungültiger Sync-Snapshot.')
+export function mergeIncomingSnapshot(
+  current: SyncSnapshot | null,
+  incoming: SyncSnapshot,
+  now = new Date().toISOString(),
+): { snapshot: SyncSnapshot; changed: boolean } {
+  // Echoes rewrite revision, updatedAt, and derived dailyScore, then merge
+  // fills empty journal fields and Life OS arrays. That expansion is not a
+  // user edit. Comparing the incoming payload with what is already stored
+  // stops the revision from climbing on every identical push.
+  if (current && syncUserContentKey(current) === syncUserContentKey(incoming)) {
+    return { snapshot: current, changed: false }
   }
-
-  const currentRevision = room.snapshot?.revision ?? 0
-  const nextRevision = Math.max(currentRevision + 1, Number(incoming.revision) || currentRevision + 1)
-  const updatedAt = new Date().toISOString()
-  const mergedEvents = mergeDailyEvents(room.snapshot?.dailyEvents, incoming.dailyEvents)
-  const priorEntries = Array.isArray(room.snapshot?.entries) ? room.snapshot.entries : []
+  const currentRevision = current?.revision ?? 0
+  const mergedEvents = mergeDailyEvents(current?.dailyEvents, incoming.dailyEvents)
+  const priorEntries = Array.isArray(current?.entries) ? current.entries : []
   const mergedByDate = new Map<string, { date?: string; updatedAt?: string; journalText?: unknown; journalDone?: unknown }>()
   for (const item of [...priorEntries, ...incoming.entries]) {
     if (!item || typeof item !== 'object') continue
@@ -254,42 +251,71 @@ export async function pushSyncSnapshot(input: {
     if (!entry || typeof entry !== 'object' || typeof entry.date !== 'string') return entry
     return applyEventFieldsToEntry(entry as { date: string }, mergedEvents)
   })
-  room.snapshot = {
-    revision: nextRevision,
-    updatedAt,
+  const merged: SyncSnapshot = {
+    revision: currentRevision,
+    updatedAt: current?.updatedAt ?? now,
     entries: mergedEntries,
-    settings: incoming.settings ?? room.snapshot?.settings,
-    dashboardPlus: incoming.dashboardPlus ?? room.snapshot?.dashboardPlus,
-    xp: incoming.xp ?? room.snapshot?.xp,
+    settings: incoming.settings ?? current?.settings,
+    dashboardPlus: incoming.dashboardPlus ?? current?.dashboardPlus,
+    xp: incoming.xp ?? current?.xp,
     quickNote: mergeQuickNoteStates(
-      parseQuickNote(room.snapshot?.quickNote),
+      parseQuickNote(current?.quickNote),
       parseQuickNote(incoming.quickNote),
-    ) ?? incoming.quickNote ?? room.snapshot?.quickNote,
+    ) ?? incoming.quickNote ?? current?.quickNote,
     bodyMeasurements: mergeBodyMeasurements(
-      normalizeBodyMeasurements(room.snapshot?.bodyMeasurements),
+      normalizeBodyMeasurements(current?.bodyMeasurements),
       normalizeBodyMeasurements(incoming.bodyMeasurements),
     ),
-    healthIngest: mergeHealthIngestState(room.snapshot?.healthIngest, incoming.healthIngest),
+    healthIngest: mergeHealthIngestState(current?.healthIngest, incoming.healthIngest),
     morningRitualProgress: mergeRitualProgress(
-      room.snapshot?.morningRitualProgress,
+      current?.morningRitualProgress,
       incoming.morningRitualProgress,
       mergedEvents,
     ),
     dailyEvents: mergedEvents,
-    lifeOs: incoming.lifeOs != null || room.snapshot?.lifeOs != null
-      ? mergeLifeOsSnapshots(room.snapshot?.lifeOs, incoming.lifeOs)
+    lifeOs: incoming.lifeOs != null || current?.lifeOs != null
+      ? mergeLifeOsSnapshots(current?.lifeOs, incoming.lifeOs)
       : undefined,
     privateVault: mergePrivateVaultEnvelopes(
-      room.snapshot?.privateVault,
+      current?.privateVault,
       incoming.privateVault,
     ) ?? undefined,
   }
-  room.updatedAt = updatedAt
+  if (current && syncUserContentKey(current) === syncUserContentKey(merged)) {
+    return { snapshot: current, changed: false }
+  }
+  const nextRevision = Math.max(currentRevision + 1, Number(incoming.revision) || currentRevision + 1)
+  return {
+    changed: true,
+    snapshot: { ...merged, revision: nextRevision, updatedAt: now },
+  }
+}
+
+export async function pushSyncSnapshot(input: {
+  roomId: string
+  deviceToken: string
+  snapshot: SyncSnapshot
+}): Promise<{ revision: number; updatedAt: string }> {
+  const room = await getRoom(input.roomId)
+  if (!room) throw new SyncHttpError(404, 'Sync-Raum nicht gefunden.')
+  assertDevice(room, input.deviceToken)
+
+  const incoming = input.snapshot
+  if (!incoming || typeof incoming !== 'object' || !Array.isArray(incoming.entries)) {
+    throw new SyncHttpError(400, 'Ungültiger Sync-Snapshot.')
+  }
+
+  const resolved = mergeIncomingSnapshot(room.snapshot, incoming)
+  if (!resolved.changed && room.snapshot) {
+    return { revision: room.snapshot.revision, updatedAt: room.snapshot.updatedAt }
+  }
+  room.snapshot = resolved.snapshot
+  room.updatedAt = resolved.snapshot.updatedAt
   await saveRoom(room)
   await reindexRoomKnowledge(input.roomId, room.snapshot?.lifeOs).catch(() => {
     console.info(JSON.stringify({ scope: 'knowledge-index', event: 'reindex_failed', roomId: input.roomId }))
   })
-  return { revision: nextRevision, updatedAt }
+  return { revision: resolved.snapshot.revision, updatedAt: resolved.snapshot.updatedAt }
 }
 
 export async function pullSyncSnapshot(roomId: string, deviceToken: string): Promise<{
