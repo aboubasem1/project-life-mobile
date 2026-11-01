@@ -124,6 +124,14 @@ import {
   refreshPairCode,
   type DeviceSyncCredentials,
 } from './lib/deviceSync'
+import {
+  HARD_RELOAD_CONFIRM,
+  browserHardReloadClient,
+  executeHardReload,
+  formatRunningVersion,
+  hardReloadErrorText,
+  selectRunningScriptName,
+} from './lib/hardReload'
 import { levelProgress, loadXP, recomputeXPFromEntries, xpToNextLevel } from './lib/xp-store'
 import {
   dueMedicationReminders,
@@ -7708,12 +7716,54 @@ function SettingsModal({
   const [pairExpiresAt, setPairExpiresAt] = useState<string | null>(null)
   const [joinCode, setJoinCode] = useState('')
   const [syncBusy, setSyncBusy] = useState(false)
+  const [reloadBusy, setReloadBusy] = useState(false)
+  const reloadLock = useRef(false)
   const [selfcareDraft, setSelfcareDraft] = useState('')
+  const [appVersionLine, setAppVersionLine] = useState(() => formatRunningVersion({
+    scriptName: selectRunningScriptName(
+      [...document.querySelectorAll('script[src]')].map(node => node.getAttribute('src') ?? ''),
+    ),
+    serviceWorkerControlled: 'serviceWorker' in navigator && navigator.serviceWorker.controller != null,
+  }))
   const ritualConfig = normalizeMorningRitualConfig(settings.morningRitual)
 
   useEffect(() => {
     settingsBodyRef.current?.scrollTo({ top: 0 })
   }, [category])
+
+  useEffect(() => {
+    const readVersion = () => {
+      setAppVersionLine(formatRunningVersion({
+        scriptName: selectRunningScriptName(
+          [...document.querySelectorAll('script[src]')].map(node => node.getAttribute('src') ?? ''),
+        ),
+        serviceWorkerControlled: 'serviceWorker' in navigator && navigator.serviceWorker.controller != null,
+      }))
+    }
+    readVersion()
+    if (!('serviceWorker' in navigator)) return
+    navigator.serviceWorker.addEventListener('controllerchange', readVersion)
+    return () => navigator.serviceWorker.removeEventListener('controllerchange', readVersion)
+  }, [])
+
+  const onHardReload = async () => {
+    if (reloadLock.current || reloadBusy) return
+    if (!window.confirm(HARD_RELOAD_CONFIRM)) return
+    reloadLock.current = true
+    setReloadBusy(true)
+    try {
+      const outcome = await executeHardReload(browserHardReloadClient())
+      if (!outcome.ok) {
+        showToast(hardReloadErrorText(outcome.failures))
+        reloadLock.current = false
+        setReloadBusy(false)
+      }
+    } catch {
+      showToast('App konnte nicht neu geladen werden.')
+      reloadLock.current = false
+      setReloadBusy(false)
+    }
+  }
 
   const moveDashboardTab = (index: number, direction: -1 | 1) => {
     const target = index + direction
@@ -7771,6 +7821,22 @@ function SettingsModal({
             role="tabpanel"
             aria-labelledby={`settings-cat-${category}`}
           >
+        <div className="settings-section" hidden={category !== 'general'}>
+          <h3>App-Version</h3>
+          <p className="settings-help">{appVersionLine}</p>
+          <div className="settings-actions">
+            <button
+              type="button"
+              className="primary-button"
+              disabled={reloadBusy}
+              aria-busy={reloadBusy}
+              onClick={() => { void onHardReload() }}
+            >
+              {reloadBusy ? 'Wird neu geladen …' : 'App neu laden'}
+            </button>
+          </div>
+        </div>
+
         <div className="settings-section" hidden={category !== 'devices'}>
           <h3>Integrationen</h3>
           <p style={{ margin: '-6px 0 12px', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
