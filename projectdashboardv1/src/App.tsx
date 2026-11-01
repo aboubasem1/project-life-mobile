@@ -36,12 +36,13 @@ import {
   EyeOff,
   FlaskConical,
   Focus,
+  FolderOpen,
   Home,
-  Inbox,
   LayoutGrid,
   Mic,
   Leaf,
   Moon,
+  MoreHorizontal,
   Pause,
   Pencil,
   Pill,
@@ -49,6 +50,7 @@ import {
   Plus,
   Receipt,
   RotateCcw,
+  Rows3,
   Search,
   Settings,
   Share2,
@@ -76,6 +78,16 @@ import { deriveLaborOverview, deriveLaborStats, smartLaborHints } from './lib/la
 import { searchLabor } from './lib/laborSearch'
 import { buildMonthGrid, monthLabel } from './lib/calendarGrid'
 import { hashFromView, hashPathOnly, isProgressHubView, labDataSectionFromHash, navigateHash, navigateHashWithId, navigateLabDataSection, peekAppAction, takeAppActionFromLocation, viewFromHash, entityIdFromHash, buildActionUrl, SHORTCUT_RECIPES, VIEW_LABELS, type AppAction, type AppView, type LabDataSection } from './lib/routing'
+import {
+  PHONE_MAX_WIDTH_PX,
+  readDeviceRole,
+  resolveLaunchView,
+  surfaceOpensMorningGate,
+  surfacesByPlacement,
+  viewForSurface,
+  type DeviceRole,
+  type DeviceSurface,
+} from './lib/deviceRole'
 import {
   LAB_DATA_AREAS,
   LAB_DATA_SECTION_IDS,
@@ -218,6 +230,7 @@ import { applyPublishedKnowledge } from './lib/reels'
 import { ProjectDetailView } from './views/lifeos/ProjectDetailView'
 import { ReviewView } from './views/lifeos/ReviewView'
 import { SignalsView } from './views/lifeos/SignalsView'
+import { LIFE_AREAS } from './lib/lifeos/areas'
 import { LifeAreaFilter, LifeAreaMark, LifeAreaSelect } from './views/lifeos/lifeosUi'
 import { MorningGate } from './components/MorningGate'
 import { EveningGate } from './components/EveningGate'
@@ -1015,10 +1028,15 @@ function normalizeDashboardPlusLayout(raw: unknown): DashboardPlusLayout {
   return { order, hidden }
 }
 
-const NAV_ITEMS: Array<{ id: View; label: string; icon: typeof Home }> = [
-  { id: 'today', label: 'Heute', icon: Home },
-  { id: 'progress', label: 'Lab', icon: FlaskConical },
-]
+const SURFACE_ICONS: Record<DeviceSurface, LucideIcon> = {
+  tracking: Home,
+  overview: LayoutGrid,
+  knowledge: BookOpen,
+  arrangement: Rows3,
+  files: FolderOpen,
+  settings: Settings,
+  run: Compass,
+}
 
 const STREAK_HABIT_KEYS: HabitKey[] = [
   'coldShower', 'proteinShake', 'pushupsDone', 'squatsDone', 'wallsitDone', 'plankDone',
@@ -1457,7 +1475,8 @@ function EmptyState({
 
 function App() {
   const { entries, syncStatus, isOnline, saveEntry, reloadAll, syncNow } = useEntries()
-  const [view, setView] = useState<View>(() => viewFromHash())
+  const [role, setRole] = useState<DeviceRole>(() => readDeviceRole())
+  const [view, setView] = useState<View>(() => resolveLaunchView(readDeviceRole(), window.location.hash))
   const [selectedDate, setSelectedDate] = useState(() => dateKey(new Date()))
   const [settings, setSettings] = useState<AppSettings>(loadSettings)
   const [dashboardPlus, setDashboardPlus] = useState<DashboardPlusState>(loadDashboardPlusState)
@@ -1487,6 +1506,7 @@ function App() {
   const [dailyEvents, setDailyEvents] = useState<DailyEvent[]>(() => loadDailyEvents())
   const lifeOs = useLifeOs()
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [phoneMoreOpen, setPhoneMoreOpen] = useState(false)
   const [captureOpen, setCaptureOpen] = useState(false)
   const [capturePreset, setCapturePreset] = useState('')
   const [captureClassifyAs, setCaptureClassifyAs] = useState<CaptureTargetType | undefined>(undefined)
@@ -1610,7 +1630,7 @@ function App() {
   const showMorningGate = splashPhase === 'done'
     && !gateBypass
     && Boolean(ritualStep)
-    && (gatePreview || (ritualStep ? FULLSCREEN_STEP_IDS.includes(ritualStep) : false))
+    && (gatePreview || (surfaceOpensMorningGate(role) && (ritualStep ? FULLSCREEN_STEP_IDS.includes(ritualStep) : false)))
   const ritualHeuteLock = !gatePreview && !gateBypass && splashPhase === 'done' && (ritualPhase === 'heute')
     ? ritualStep
     : null
@@ -1646,6 +1666,17 @@ function App() {
     [entries, today, scoreGoals],
   )
 
+  const areaGlance = useMemo(
+    () => LIFE_AREAS.map(area => ({
+      key: area.key,
+      name: area.name,
+      count: lifeOs.state.knowledge.filter(item => item.lifeArea === area.key).length
+        + dashboardPlus.goals.filter(item => item.lifeArea === area.key).length
+        + dashboardPlus.boards.filter(item => item.lifeArea === area.key).length,
+    })),
+    [lifeOs.state.knowledge, dashboardPlus.goals, dashboardPlus.boards],
+  )
+
   useEffect(() => {
     const consumeAction = () => {
       const action = takeAppActionFromLocation()
@@ -1662,9 +1693,19 @@ function App() {
     }
 
     window.addEventListener('hashchange', onHash)
-    if (!window.location.hash) navigateHash(view, true)
-    else consumeAction()
+    if (!window.location.hash || window.location.hash === '#' || window.location.hash === '#/') {
+      // hashPathOnly treats an empty hash as #/heute, so navigateHash would skip the phone home.
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${hashFromView(view)}`)
+    } else consumeAction()
     return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
+  useEffect(() => {
+    const media = window.matchMedia(`(max-width: ${PHONE_MAX_WIDTH_PX}px)`)
+    const apply = () => setRole(media.matches ? 'phone' : 'desktop')
+    apply()
+    media.addEventListener('change', apply)
+    return () => media.removeEventListener('change', apply)
   }, [])
 
   useEffect(() => {
@@ -2260,7 +2301,7 @@ function App() {
     }))
   }
 
-  const currentViewLabel = VIEW_LABELS[view] ?? NAV_ITEMS.find(item => item.id === view)?.label ?? 'Heute'
+  const currentViewLabel = VIEW_LABELS[view] ?? 'Heute'
   const navigateTo = (nextView: View, entityId?: string) => {
     setView(nextView)
     setLifeOsEntityId(entityId)
@@ -2268,6 +2309,16 @@ function App() {
     else navigateHash(nextView)
     if (nextView === 'today' || nextView === 'dashboardPlus') setSelectedDate(today)
     if (nextView === 'checkin' && selectedDate > today) setSelectedDate(today)
+  }
+
+  const openSurface = (surface: DeviceSurface) => {
+    setPhoneMoreOpen(false)
+    if (surface === 'settings') {
+      setSettingsOpen(true)
+      return
+    }
+    const next = viewForSurface(surface)
+    if (next) navigateTo(next)
   }
 
   const openUniversalCapture = (options?: {
@@ -2846,6 +2897,11 @@ function App() {
     },
   }
 
+  const phoneMoreActive = surfacesByPlacement('phone', 'secondary').some(surface => {
+    const target = viewForSurface(surface.id)
+    return target != null && view === target
+  })
+
   return (
     <div className={view === 'today' ? 'life-app life-app--heute' : 'life-app'}>
       <aside className="sidebar" aria-label="Hauptnavigation" inert={showMorningGate || eveningGateOpen || privateNotesOpen || undefined}>
@@ -2861,39 +2917,44 @@ function App() {
 
         <nav className="sidebar-nav">
           <span className="nav-group-label">Übersicht</span>
-          {NAV_ITEMS.map(item => {
-            const Icon = item.icon
+          {surfacesByPlacement('desktop', 'primary').filter(surface => surface.id !== 'settings').map(surface => {
+            const Icon = SURFACE_ICONS[surface.id]
+            const target = viewForSurface(surface.id)
+            const label = surface.id === 'files' && lifeOs.inboxCount > 0
+              ? `${surface.label} (${lifeOs.inboxCount})`
+              : surface.label
             return (
               <button
                 type="button"
-                key={item.id}
-                className={(item.id === 'today' ? view === 'today' : isProgressHubView(view)) ? 'nav-item is-active' : 'nav-item'}
-                onClick={() => navigateTo(item.id)}
+                key={surface.id}
+                className={target != null && view === target ? 'nav-item is-active' : 'nav-item'}
+                aria-current={target != null && view === target ? 'page' : undefined}
+                onClick={() => openSurface(surface.id)}
               >
                 <Icon size={18} />
-                <span>{item.label}</span>
+                <span>{label}</span>
               </button>
             )
           })}
         </nav>
-        <nav className="sidebar-nav" aria-label="Inbox">
-          <span className="nav-group-label">System</span>
-          <button
-            type="button"
-            className={view === 'inbox' ? 'nav-item is-active' : 'nav-item'}
-            onClick={() => navigateTo('inbox')}
-          >
-            <Inbox size={18} />
-            <span>Inbox{lifeOs.inboxCount > 0 ? ` (${lifeOs.inboxCount})` : ''}</span>
-          </button>
-          <button
-            type="button"
-            className={view === 'run' ? 'nav-item is-active' : 'nav-item'}
-            onClick={() => navigateTo('run')}
-          >
-            <Compass size={18} />
-            <span>Run</span>
-          </button>
+        <nav className="sidebar-nav" aria-label="Einträge">
+          <span className="nav-group-label">Einträge</span>
+          {surfacesByPlacement('desktop', 'secondary').map(surface => {
+            const Icon = SURFACE_ICONS[surface.id]
+            const target = viewForSurface(surface.id)
+            return (
+              <button
+                type="button"
+                key={surface.id}
+                className={target != null && view === target ? 'nav-item is-active' : 'nav-item'}
+                aria-current={target != null && view === target ? 'page' : undefined}
+                onClick={() => openSurface(surface.id)}
+              >
+                <Icon size={18} />
+                <span>{surface.label}</span>
+              </button>
+            )
+          })}
         </nav>
 
         <div className="sidebar-spacer" />
@@ -3071,6 +3132,7 @@ function App() {
               selectedDate={selectedDate}
               scoreGoals={scoreGoals}
               heightCm={settings.heightCm}
+              areaGlance={areaGlance}
               labClassName={labUiClassNames(settings.adaptive ?? defaultAdaptiveLifeConfig())}
               onSelectDate={date => {
                 setSelectedDate(date)
@@ -3487,15 +3549,6 @@ function App() {
           </button>
           <button
             type="button"
-            className={view === 'run' ? 'mobile-nav__item is-active' : 'mobile-nav__item'}
-            aria-current={view === 'run' ? 'page' : undefined}
-            onClick={() => navigateTo('run')}
-          >
-            <Compass size={20} />
-            <span>Run</span>
-          </button>
-          <button
-            type="button"
             className="mobile-nav__item mobile-nav__capture"
             aria-label="Mit Jo AI erfassen"
             onClick={() => openUniversalCapture()}
@@ -3508,16 +3561,57 @@ function App() {
           </button>
           <button
             type="button"
-            className={isProgressHubView(view) ? 'mobile-nav__item is-active' : 'mobile-nav__item'}
-            aria-current={isProgressHubView(view) ? 'page' : undefined}
-            onClick={() => navigateTo('progress')}
+            className={phoneMoreActive ? 'mobile-nav__item is-active' : 'mobile-nav__item'}
+            aria-expanded={phoneMoreOpen}
+            aria-haspopup="dialog"
+            onClick={() => setPhoneMoreOpen(true)}
           >
-            <FlaskConical size={20} />
-            <span>Lab</span>
+            <MoreHorizontal size={20} />
+            <span>Mehr</span>
           </button>
         </nav>
 
-        {view !== 'dashboardPlus' && view !== 'today' && view !== 'checkin' && view !== 'plan' && view !== 'progress' && view !== 'run' && !showMorningGate && (
+        {role === 'phone' && phoneMoreOpen && (
+          <div className="modal-backdrop" onClick={() => setPhoneMoreOpen(false)}>
+            <div
+              className="modal modal--small"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="phone-more-title"
+              onClick={event => event.stopPropagation()}
+            >
+              <div className="modal-header">
+                <div>
+                  <h2 id="phone-more-title">Mehr</h2>
+                </div>
+                <IconButton label="Schließen" onClick={() => setPhoneMoreOpen(false)}>
+                  <X size={18} />
+                </IconButton>
+              </div>
+              <div className="phone-more-list">
+                {surfacesByPlacement('phone', 'secondary').map(surface => {
+                  const Icon = SURFACE_ICONS[surface.id]
+                  const target = viewForSurface(surface.id)
+                  const open = target != null && view === target
+                  return (
+                    <button
+                      type="button"
+                      key={surface.id}
+                      className="secondary-button secondary-button--full"
+                      aria-current={open ? 'page' : undefined}
+                      onClick={() => openSurface(surface.id)}
+                    >
+                      <Icon size={16} />
+                      {surface.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {role === 'phone' && view !== 'dashboardPlus' && view !== 'today' && view !== 'checkin' && view !== 'plan' && view !== 'progress' && view !== 'run' && !showMorningGate && (
           <button type="button" className="fab" onClick={() => openUniversalCapture()} aria-label="Schnell hinzufügen">
             <Plus size={22} />
           </button>
@@ -5438,6 +5532,7 @@ function ProgressView({
   selectedDate,
   scoreGoals,
   heightCm,
+  areaGlance,
   labClassName = '',
   onSelectDate,
 }: {
@@ -5446,6 +5541,7 @@ function ProgressView({
   selectedDate: string
   scoreGoals: { proteinGoal: number; activeHabits: string[] }
   heightCm: number
+  areaGlance?: ReadonlyArray<{ key: string; name: string; count: number }>
   labClassName?: string
   onSelectDate: (date: string) => void
 }) {
@@ -5517,11 +5613,26 @@ function ProgressView({
     <div className={`view-stack lab-page ${labClassName}`.trim()}>
       <section className="page-intro lab-intro">
         <div>
-          <span className="eyebrow">Lab</span>
-          <h2>Muster sehen. Klarer steuern.</h2>
-          <p>Signale, Trends und Plan an einem Ort — ohne doppelte Eingaben.</p>
+          <span className="eyebrow">{areaGlance ? 'Übersicht' : 'Lab'}</span>
+          <h2>{areaGlance ? 'Bereiche und Stats' : 'Muster sehen. Klarer steuern.'}</h2>
+          <p>{areaGlance ? 'Die Bereiche im Blick, darunter die Woche.' : 'Signale, Trends und Plan an einem Ort — ohne doppelte Eingaben.'}</p>
         </div>
       </section>
+
+      {areaGlance && areaGlance.length > 0 && (
+        <section className="card" aria-labelledby="area-glance-title">
+          <SectionTitle eyebrow="Bereiche" title="Überblick" />
+          <div className="kpi-grid">
+            {areaGlance.map(area => (
+              <div className="kpi-card" key={area.key}>
+                <span>{area.name}</span>
+                <strong>{area.count}</strong>
+                <small>{area.count === 1 ? 'Eintrag' : 'Einträge'}</small>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="lab-status" aria-labelledby="lab-status-title">
         <div className="lab-status__head">

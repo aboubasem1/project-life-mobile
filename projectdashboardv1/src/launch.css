@@ -3851,6 +3851,11 @@ button.status-chip.status-chip--good {
   width: min(100%, 500px);
 }
 
+.phone-more-list {
+  display: grid;
+  gap: 8px;
+}
+
 .modal-header {
   display: flex;
   align-items: flex-start;
@@ -4306,7 +4311,7 @@ button.status-chip.status-chip--good {
     z-index: 100;
     display: grid;
     height: calc(64px + env(safe-area-inset-bottom));
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     padding: 6px 10px max(8px, env(safe-area-inset-bottom));
     border: 0;
     border-radius: 0;
