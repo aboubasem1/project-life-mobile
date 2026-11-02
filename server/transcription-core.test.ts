@@ -7,7 +7,16 @@ import {
   transcriptionConfig,
 } from './transcription-core.ts'
 
-const KEYS = ['TRANSCRIPTION_ENABLED', 'TRANSCRIPTION_API_KEY', 'OPENAI_API_KEY', 'LLM_API_KEY'] as const
+const KEYS = [
+  'TRANSCRIPTION_ENABLED',
+  'TRANSCRIPTION_API_KEY',
+  'OPENAI_API_KEY',
+  'LLM_API_KEY',
+  'DEEPINFRA_API_KEY',
+  'DEEPINFRA_TRANSCRIPTION_ENABLED',
+  'TRANSCRIPTION_PROVIDER',
+  'TRANSCRIPTION_LANGUAGE',
+] as const
 const previous = new Map<string, string | undefined>()
 
 function isolateEnv() {
@@ -41,7 +50,7 @@ describe('server transcription', () => {
       mimeType: 'audio/webm',
     }, async () => new Response(JSON.stringify({ text: '  Mass Gainer getrunken  ' }), { status: 200 }))
     expect(result.transcript).toBe('Mass Gainer getrunken')
-    expect(result.provider).toBe('whisper')
+    expect(result.provider).toBe('openai')
   })
 
   it('fails closed when the provider returns no text', async () => {
@@ -87,7 +96,7 @@ describe('server transcription', () => {
 
   it('strips wrapping quotes from pasted API keys', () => {
     process.env.OPENAI_API_KEY = '"sk-test-quoted"'
-    expect(transcriptionConfig().apiKey).toBe('sk-test-quoted')
+    expect(transcriptionConfig().openaiKey).toBe('sk-test-quoted')
     expect(transcriptionConfig().enabled).toBe(true)
   })
 

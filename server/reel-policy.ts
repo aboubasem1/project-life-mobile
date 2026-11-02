@@ -73,14 +73,22 @@ export function isClaimable(job: JobView, nowMs: number, staleMs = REEL_STALE_LO
   return false
 }
 
-export function retryDelayMs(attempts: number): number {
+export function retryDelayMs(attempts: number, retryAfterMs?: number): number {
+  if (retryAfterMs != null && Number.isFinite(retryAfterMs) && retryAfterMs > 0) {
+    return Math.min(300_000, Math.max(1_000, Math.round(retryAfterMs)))
+  }
   const index = Math.max(0, Math.min(RETRY_DELAYS_MS.length - 1, attempts - 1))
-  return RETRY_DELAYS_MS[index]
+  const base = RETRY_DELAYS_MS[index]
+  // Bounded jitter so concurrent retries do not stampede the provider.
+  const jitter = Math.floor(Math.random() * Math.max(250, base * 0.2))
+  return base + jitter
 }
 
 export function processingFailureDisposition(error: unknown): FailureDisposition {
   if (error instanceof SyncHttpError && error.status === 409 && /anderen Worker/i.test(error.message)) return 'lost_lock'
-  if (error instanceof SyncHttpError && [400, 404, 413, 422].includes(error.status)) return 'permanent'
+  // Invalid keys / bad input must not loop forever.
+  if (error instanceof SyncHttpError && [400, 401, 403, 404, 413, 422].includes(error.status)) return 'permanent'
+  if (error instanceof SyncHttpError && error.status === 503 && /falsch konfiguriert/i.test(error.message)) return 'permanent'
   return 'retry'
 }
 

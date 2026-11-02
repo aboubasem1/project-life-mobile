@@ -786,7 +786,9 @@ export function KnowledgeDetailView({
                       ? 'Original war bereits Deutsch — unverändert übernommen.'
                       : 'Deutsche Übersetzung. Original bleibt unter „Original“ verfügbar.')
                     : 'Originalsprache. Optional deutsche Übersetzung erzeugen.'}
-                  {reel.transcriptProvider ? ` Quelle: ${reel.transcriptProvider}.` : ''}
+                  {reel.transcriptProvider ? ` ASR: ${reel.transcriptProvider}${reel.transcriptModel ? ` · ${reel.transcriptModel}` : ''}.` : ''}
+                  {reel.detectedLanguage ? ` Sprache: ${reel.detectedLanguage}.` : ''}
+                  {reel.ocrStatus ? ` OCR: ${reel.ocrStatus}.` : ''}
                   {timedSegments.length > 0
                     ? ' Zeitmarken aus der Transkription — Tippen springt im Video.'
                     : ' Keine gespeicherten Zeitmarken für dieses Reel (nur bei neuer Transkription mit Segmenten).'}

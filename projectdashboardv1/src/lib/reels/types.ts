@@ -38,6 +38,12 @@ export type ReelCandidate = {
   transcriptDe?: string
   transcriptDeWasAlreadyGerman?: boolean
   onScreenText: string
+  transcriptionStatus?: string
+  transcriptionError?: string
+  ocrStatus?: string
+  ocrError?: string
+  sourcesUsed?: string[]
+  detectedLanguage?: string
   lifeArea: string
   topics: string[]
   usefulnessScore: number | null

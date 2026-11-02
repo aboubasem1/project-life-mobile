@@ -2,8 +2,10 @@ import { SyncHttpError, readSyncJson, syncJson } from './sync-core.js'
 
 const MAX_AUDIO_BYTES = 4 * 1024 * 1024
 const MAX_BATCH_AUDIO_BYTES = 25 * 1024 * 1024
-const DEFAULT_URL = 'https://api.openai.com/v1/audio/transcriptions'
-const DEFAULT_MODEL = 'gpt-4o-mini-transcribe'
+const DEFAULT_OPENAI_URL = 'https://api.openai.com/v1/audio/transcriptions'
+const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini-transcribe'
+const DEFAULT_DEEPINFRA_URL = 'https://api.deepinfra.com/v1/inference/openai/whisper-large-v3-turbo'
+const DEFAULT_DEEPINFRA_MODEL = 'openai/whisper-large-v3-turbo'
 
 export type TranscriptionRequestBody = {
   audioBase64?: unknown
@@ -16,16 +18,25 @@ export type TranscriptSegment = {
   text: string
 }
 
+export type TranscriptionProviderId = 'deepinfra' | 'openai' | 'whisper'
+
 export type TranscriptionResult = {
   transcript: string
-  provider: 'whisper'
+  provider: TranscriptionProviderId
   model: string
   segments?: TranscriptSegment[]
+  language?: string
+  durationMs?: number
+  inputLengthMs?: number
+  requestId?: string
+  cost?: number
 }
 
 export type TranscribeAudioOptions = {
-  /** Request timed segments (uses whisper-1 / TRANSCRIPTION_SEGMENT_MODEL + verbose_json). */
+  /** Prefer timed segments when the provider supports them. */
   includeSegments?: boolean
+  /** Force a provider; default prefers DeepInfra when its key is present. */
+  provider?: 'auto' | 'deepinfra' | 'openai'
 }
 
 function readEnv(name: string): string | undefined {
@@ -41,17 +52,58 @@ function isOff(value: string | undefined): boolean {
   return normalized === '0' || normalized === 'false' || normalized === 'off' || normalized === 'no'
 }
 
+/** Explicit language only — empty / auto means provider auto-detect. */
+export function configuredTranscriptionLanguage(): string | undefined {
+  const raw = readEnv('TRANSCRIPTION_LANGUAGE')
+  if (!raw) return undefined
+  const normalized = raw.trim().toLowerCase()
+  if (!normalized || normalized === 'auto' || normalized === 'detect') return undefined
+  return normalized.slice(0, 16)
+}
+
 export function transcriptionConfig() {
-  const apiKey = readEnv('TRANSCRIPTION_API_KEY') || readEnv('OPENAI_API_KEY') || readEnv('LLM_API_KEY')
+  const deepinfraKey = readEnv('DEEPINFRA_API_KEY')
+  const openaiKey = readEnv('TRANSCRIPTION_API_KEY') || readEnv('OPENAI_API_KEY') || readEnv('LLM_API_KEY')
+  const providerPref = (readEnv('TRANSCRIPTION_PROVIDER') || 'auto').toLowerCase()
+  const deepinfraEnabled = Boolean(deepinfraKey) && !isOff(readEnv('DEEPINFRA_TRANSCRIPTION_ENABLED'))
+  const openaiEnabled = Boolean(openaiKey)
+  const anyProvider = deepinfraEnabled || openaiEnabled
   return {
-    enabled: !isOff(readEnv('TRANSCRIPTION_ENABLED')) && Boolean(apiKey),
-    apiKey,
-    apiUrl: readEnv('TRANSCRIPTION_API_URL') || DEFAULT_URL,
-    model: readEnv('TRANSCRIPTION_MODEL') || DEFAULT_MODEL,
+    enabled: !isOff(readEnv('TRANSCRIPTION_ENABLED')) && anyProvider,
+    deepinfraKey,
+    openaiKey,
+    deepinfraEnabled,
+    openaiEnabled,
+    providerPref: providerPref === 'deepinfra' || providerPref === 'openai' ? providerPref : 'auto' as const,
+    deepinfraUrl: readEnv('DEEPINFRA_TRANSCRIPTION_URL') || DEFAULT_DEEPINFRA_URL,
+    deepinfraModel: readEnv('DEEPINFRA_TRANSCRIPTION_MODEL') || DEFAULT_DEEPINFRA_MODEL,
+    apiUrl: readEnv('TRANSCRIPTION_API_URL') || DEFAULT_OPENAI_URL,
+    model: readEnv('TRANSCRIPTION_MODEL') || DEFAULT_OPENAI_MODEL,
     segmentModel: readEnv('TRANSCRIPTION_SEGMENT_MODEL') || 'whisper-1',
-    language: readEnv('TRANSCRIPTION_LANGUAGE') || 'de',
+    language: configuredTranscriptionLanguage(),
     timeoutMs: Math.min(300_000, Math.max(4_000, Number(readEnv('TRANSCRIPTION_TIMEOUT_MS')) || 120_000)),
   }
+}
+
+export function resolveTranscriptionProvider(
+  config: ReturnType<typeof transcriptionConfig>,
+  options: TranscribeAudioOptions = {},
+): 'deepinfra' | 'openai' {
+  const forced = options.provider && options.provider !== 'auto'
+    ? options.provider
+    : config.providerPref === 'auto' ? null : config.providerPref
+  if (forced === 'deepinfra') {
+    if (!config.deepinfraEnabled) throw new SyncHttpError(503, 'DeepInfra-Transkription ist nicht konfiguriert.')
+    return 'deepinfra'
+  }
+  if (forced === 'openai') {
+    if (!config.openaiEnabled) throw new SyncHttpError(503, 'OpenAI-Transkription ist nicht konfiguriert.')
+    return 'openai'
+  }
+  // Auto: prefer DeepInfra for reel/batch work (segments + scale), else OpenAI.
+  if (config.deepinfraEnabled) return 'deepinfra'
+  if (config.openaiEnabled) return 'openai'
+  throw new SyncHttpError(503, 'Transkription ist gerade nicht verfügbar.')
 }
 
 export function parseTranscriptSegments(payload: unknown): TranscriptSegment[] {
@@ -70,6 +122,49 @@ export function parseTranscriptSegments(payload: unknown): TranscriptSegment[] {
     if (parsed.length >= 400) break
   }
   return parsed
+}
+
+export function normalizeDeepInfraTranscription(payload: unknown, model: string): TranscriptionResult {
+  if (!payload || typeof payload !== 'object') {
+    throw new SyncHttpError(502, 'DeepInfra lieferte eine ungültige Antwort.')
+  }
+  const body = payload as {
+    text?: unknown
+    language?: unknown
+    input_length_ms?: unknown
+    duration?: unknown
+    request_id?: unknown
+    inference_status?: { cost?: unknown; runtime_ms?: unknown }
+    segments?: unknown
+  }
+  const transcript = typeof body.text === 'string' ? body.text.trim() : ''
+  if (!transcript) throw new SyncHttpError(422, 'Kein Text erkannt.')
+  const segments = parseTranscriptSegments(payload)
+  const language = typeof body.language === 'string' && body.language.trim()
+    ? body.language.trim().slice(0, 16)
+    : undefined
+  const inputLengthMs = Number(body.input_length_ms)
+  const durationSec = Number(body.duration)
+  const durationMs = Number.isFinite(inputLengthMs) && inputLengthMs > 0
+    ? Math.round(inputLengthMs)
+    : Number.isFinite(durationSec) && durationSec > 0
+      ? Math.round(durationSec * 1000)
+      : undefined
+  const requestId = typeof body.request_id === 'string' && body.request_id.trim()
+    ? body.request_id.trim().slice(0, 120)
+    : undefined
+  const costRaw = Number(body.inference_status?.cost)
+  const cost = Number.isFinite(costRaw) ? costRaw : undefined
+  return {
+    transcript,
+    provider: 'deepinfra',
+    model,
+    ...(segments.length > 0 ? { segments } : {}),
+    ...(language ? { language } : {}),
+    ...(durationMs != null ? { durationMs, inputLengthMs: durationMs } : {}),
+    ...(requestId ? { requestId } : {}),
+    ...(cost != null ? { cost } : {}),
+  }
 }
 
 export function parseTranscriptionBody(raw: unknown): { audioBase64: string; mimeType: string } {
@@ -117,21 +212,63 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-function providerErrorMessage(status: number, bodyText: string): string {
+function parseRetryAfterMs(response: Response): number | undefined {
+  const raw = response.headers.get('retry-after')
+  if (!raw) return undefined
+  const asSeconds = Number(raw)
+  if (Number.isFinite(asSeconds) && asSeconds >= 0) return Math.min(300_000, Math.round(asSeconds * 1000))
+  const asDate = Date.parse(raw)
+  if (Number.isFinite(asDate)) return Math.min(300_000, Math.max(0, asDate - Date.now()))
+  return undefined
+}
+
+function providerErrorMessage(status: number, bodyText: string, provider: string): string {
   const lower = bodyText.toLowerCase()
-  if (status === 401 || status === 403 || lower.includes('invalid_api_key') || lower.includes('incorrect api key')) {
-    return 'Spracherkennung ist falsch konfiguriert.'
+  if (status === 401 || status === 403 || lower.includes('invalid_api_key') || lower.includes('incorrect api key') || lower.includes('unauthorized')) {
+    return `${provider}-Transkription ist falsch konfiguriert.`
   }
-  if (lower.includes('insufficient_quota')) {
-    return 'OpenAI-Quota ist leer — Billing prüfen oder neuen Key setzen, sonst tippen.'
+  if (lower.includes('insufficient_quota') || lower.includes('payment')) {
+    return `${provider}-Quota ist leer — Billing prüfen oder neuen Key setzen.`
   }
-  if (status === 429 || lower.includes('rate_limit')) {
-    return 'Transkription ist gerade ausgelastet — in ein paar Sekunden nochmal versuchen oder tippen.'
+  if (status === 429 || lower.includes('rate_limit') || lower.includes('too many')) {
+    return 'Transkription ist gerade ausgelastet — in ein paar Sekunden nochmal versuchen.'
   }
   return 'Transkription fehlgeschlagen.'
 }
 
-async function postWhisper(
+function throwHttpFailure(response: Response, bodyText: string, provider: string): never {
+  const retryAfterMs = parseRetryAfterMs(response)
+  if (response.status === 429) {
+    throw new SyncHttpError(429, providerErrorMessage(429, bodyText, provider), { retryAfterMs })
+  }
+  if (response.status === 401 || response.status === 403) {
+    throw new SyncHttpError(503, providerErrorMessage(response.status, bodyText, provider))
+  }
+  if (response.status >= 500) {
+    throw new SyncHttpError(502, `${provider}-Transkription ist gerade nicht erreichbar.`, { retryAfterMs })
+  }
+  throw new SyncHttpError(502, providerErrorMessage(response.status, bodyText, provider), { retryAfterMs })
+}
+
+async function postDeepInfra(
+  fetchImpl: typeof fetch,
+  config: ReturnType<typeof transcriptionConfig>,
+  bytes: Buffer,
+  mimeType: string,
+): Promise<Response> {
+  const form = new FormData()
+  // DeepInfra native inference API expects the multipart field name `audio`.
+  form.append('audio', new Blob([new Uint8Array(bytes)], { type: mimeType }), filenameFor(mimeType))
+  form.append('chunk_level', 'segment')
+  if (config.language) form.append('language', config.language)
+  return fetchWithTimeout(fetchImpl, config.deepinfraUrl, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${config.deepinfraKey}` },
+    body: form,
+  }, config.timeoutMs)
+}
+
+async function postOpenAiWhisper(
   fetchImpl: typeof fetch,
   config: ReturnType<typeof transcriptionConfig>,
   bytes: Buffer,
@@ -142,17 +279,98 @@ async function postWhisper(
   form.append('file', new Blob([new Uint8Array(bytes)], { type: mimeType }), filenameFor(mimeType))
   const model = options.includeSegments ? config.segmentModel : config.model
   form.append('model', model)
-  form.append('language', config.language)
+  if (config.language) form.append('language', config.language)
   if (options.includeSegments) {
-    // whisper-1 supports timed segments; gpt-4o-*-transcribe typically returns plain text only.
     form.append('response_format', 'verbose_json')
     form.append('timestamp_granularities[]', 'segment')
   }
   return fetchWithTimeout(fetchImpl, config.apiUrl, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${config.apiKey}` },
+    headers: { Authorization: `Bearer ${config.openaiKey}` },
     body: form,
   }, config.timeoutMs)
+}
+
+async function withRetries(
+  run: () => Promise<Response>,
+  providerLabel: string,
+): Promise<Response> {
+  let response: Response | null = null
+  let lastNetworkError: unknown = null
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      response = await run()
+    } catch (error) {
+      lastNetworkError = error
+      if (attempt < 2) {
+        await sleep(400 * (attempt + 1) + Math.floor(Math.random() * 200))
+        continue
+      }
+      const timedOut = error instanceof Error && error.name === 'AbortError'
+      throw new SyncHttpError(504, timedOut ? 'Transkription hat zu lange gedauert.' : 'Transkription fehlgeschlagen.')
+    }
+    if (response.status !== 429 && response.status < 500) break
+    if (attempt < 2) {
+      const retryAfter = parseRetryAfterMs(response) ?? (700 * (attempt + 1) + Math.floor(Math.random() * 300))
+      await sleep(retryAfter)
+      continue
+    }
+  }
+  if (!response) {
+    const timedOut = lastNetworkError instanceof Error && lastNetworkError.name === 'AbortError'
+    throw new SyncHttpError(504, timedOut ? 'Transkription hat zu lange gedauert.' : `${providerLabel}-Transkription fehlgeschlagen.`)
+  }
+  return response
+}
+
+async function transcribeWithDeepInfra(
+  bytes: Buffer,
+  mimeType: string,
+  config: ReturnType<typeof transcriptionConfig>,
+  fetchImpl: typeof fetch,
+): Promise<TranscriptionResult> {
+  const response = await withRetries(
+    () => postDeepInfra(fetchImpl, config, bytes, mimeType),
+    'DeepInfra',
+  )
+  if (!response.ok) {
+    throwHttpFailure(response, await response.text().catch(() => ''), 'DeepInfra')
+  }
+  const payload = await response.json().catch(() => null)
+  return normalizeDeepInfraTranscription(payload, config.deepinfraModel)
+}
+
+async function transcribeWithOpenAi(
+  bytes: Buffer,
+  mimeType: string,
+  config: ReturnType<typeof transcriptionConfig>,
+  fetchImpl: typeof fetch,
+  options: TranscribeAudioOptions,
+): Promise<TranscriptionResult> {
+  const model = options.includeSegments ? config.segmentModel : config.model
+  const response = await withRetries(
+    () => postOpenAiWhisper(fetchImpl, config, bytes, mimeType, options),
+    'OpenAI',
+  )
+  if (!response.ok) {
+    throwHttpFailure(response, await response.text().catch(() => ''), 'OpenAI')
+  }
+  const payload = await response.json().catch(() => null)
+  const transcript = payload && typeof payload === 'object' && typeof (payload as { text?: unknown }).text === 'string'
+    ? (payload as { text: string }).text.trim()
+    : ''
+  if (!transcript) throw new SyncHttpError(422, 'Kein Text erkannt.')
+  const segments = options.includeSegments ? parseTranscriptSegments(payload) : undefined
+  const language = payload && typeof payload === 'object' && typeof (payload as { language?: unknown }).language === 'string'
+    ? String((payload as { language: string }).language).trim().slice(0, 16)
+    : undefined
+  return {
+    transcript,
+    provider: 'openai',
+    model,
+    ...(segments && segments.length > 0 ? { segments } : {}),
+    ...(language ? { language } : {}),
+  }
 }
 
 export async function transcribeAudioPayload(
@@ -161,7 +379,6 @@ export async function transcribeAudioPayload(
 ): Promise<TranscriptionResult> {
   const { audioBase64, mimeType } = parseTranscriptionBody(raw)
   const bytes = decodeAudio(audioBase64)
-
   return transcribeAudioBytes(bytes, mimeType, fetchImpl)
 }
 
@@ -173,7 +390,7 @@ export async function transcribeAudioBytes(
   options: TranscribeAudioOptions = {},
 ): Promise<TranscriptionResult> {
   const config = transcriptionConfig()
-  if (!config.enabled || !config.apiKey) {
+  if (!config.enabled) {
     throw new SyncHttpError(503, 'Transkription ist gerade nicht verfügbar.')
   }
   if (bytes.length < 32) throw new SyncHttpError(400, 'Aufnahme ist unvollständig.')
@@ -181,53 +398,11 @@ export async function transcribeAudioBytes(
     throw new SyncHttpError(413, 'Extrahierte Audiodatei ist größer als 25 MB.')
   }
 
-  const model = options.includeSegments ? config.segmentModel : config.model
-  let response: Response | null = null
-  let lastNetworkError: unknown = null
-  // Whisper occasionally 429s under burst load — retry a couple times before failing closed.
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      response = await postWhisper(fetchImpl, config, bytes, mimeType, options)
-    } catch (error) {
-      lastNetworkError = error
-      if (attempt < 2) {
-        await sleep(400 * (attempt + 1))
-        continue
-      }
-      const timedOut = error instanceof Error && error.name === 'AbortError'
-      throw new SyncHttpError(504, timedOut ? 'Transkription hat zu lange gedauert.' : 'Transkription fehlgeschlagen.')
-    }
-    if (response.status !== 429) break
-    if (attempt < 2) await sleep(700 * (attempt + 1))
+  const provider = resolveTranscriptionProvider(config, options)
+  if (provider === 'deepinfra') {
+    return transcribeWithDeepInfra(bytes, mimeType, config, fetchImpl)
   }
-  if (!response) {
-    const timedOut = lastNetworkError instanceof Error && lastNetworkError.name === 'AbortError'
-    throw new SyncHttpError(504, timedOut ? 'Transkription hat zu lange gedauert.' : 'Transkription fehlgeschlagen.')
-  }
-
-  if (response.status === 429) {
-    throw new SyncHttpError(429, providerErrorMessage(429, await response.text().catch(() => '')))
-  }
-  if (response.status === 401 || response.status === 403) {
-    throw new SyncHttpError(503, providerErrorMessage(response.status, await response.text().catch(() => '')))
-  }
-  if (response.status >= 500) throw new SyncHttpError(502, 'Transkription ist gerade nicht erreichbar.')
-  if (!response.ok) {
-    throw new SyncHttpError(502, providerErrorMessage(response.status, await response.text().catch(() => '')))
-  }
-
-  const payload = await response.json().catch(() => null)
-  const transcript = payload && typeof payload === 'object' && typeof (payload as { text?: unknown }).text === 'string'
-    ? (payload as { text: string }).text.trim()
-    : ''
-  if (!transcript) throw new SyncHttpError(422, 'Kein Text erkannt.')
-  const segments = options.includeSegments ? parseTranscriptSegments(payload) : undefined
-  return {
-    transcript,
-    provider: 'whisper',
-    model,
-    ...(segments && segments.length > 0 ? { segments } : {}),
-  }
+  return transcribeWithOpenAi(bytes, mimeType, config, fetchImpl, options)
 }
 
 export async function runTranscriptionRequest(request: Request, fetchImpl: typeof fetch = fetch): Promise<Response> {

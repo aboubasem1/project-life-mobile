@@ -36,6 +36,31 @@ const STATUS_LABELS: Record<string, string> = {
   DUPLICATE: 'Duplikat', SUPERSEDED: 'Ersetzt', PUBLISHED: 'Im Wissen',
 }
 
+const TRANSCRIPTION_STATUS_LABELS: Record<string, string> = {
+  done: 'Transkription fertig',
+  skipped_no_audio: 'Keine Tonspur',
+  failed: 'Transkription fehlgeschlagen',
+  unavailable: 'Transkription offen',
+}
+
+const OCR_STATUS_LABELS: Record<string, string> = {
+  done: 'OCR fertig',
+  skipped: 'OCR übersprungen',
+  failed: 'OCR fehlgeschlagen',
+  unavailable: 'OCR nicht verfügbar',
+}
+
+function pipelineStatusLabel(reel: ReelCandidate): string {
+  if (reel.jobStatus === 'queued') return 'Warteschlange'
+  if (reel.jobStatus === 'running') return 'Transkription läuft'
+  if (reel.jobStatus === 'retry') return 'Wartet auf erneuten Versuch'
+  if (reel.jobStatus === 'dead' || reel.status === 'FAILED') return 'Fehlgeschlagen'
+  if (reel.status === 'UPLOADED') return 'Hochgeladen'
+  if (reel.status === 'PROCESSING') return 'Verarbeitung'
+  if (reel.status === 'PUBLISHED') return 'Fertig · im Wissen'
+  return STATUS_LABELS[reel.status] || reel.status
+}
+
 const CLAIM_LABELS: Record<string, string> = {
   SUPPORTED: 'belegt', PARTIALLY_SUPPORTED: 'teilweise belegt', CONTRADICTED: 'widersprochen',
   UNVERIFIED: 'unbelegt', REVIEW_REQUIRED: 'prüfen',
@@ -379,7 +404,7 @@ export function ReelImportPanel({
                     <strong>{reel.title || reel.originalName || 'Unbenanntes Reel'}</strong>
                     <small>{reel.summary || reel.originalName || STATUS_LABELS[reel.status]}</small>
                   </button>
-                  <em className={`reel-status is-${reel.status.toLowerCase()}`}>{STATUS_LABELS[reel.status] || reel.status}</em>
+                  <em className={`reel-status is-${reel.status.toLowerCase()}`}>{pipelineStatusLabel(reel)}</em>
                 </div>
               ))}
             </div>
@@ -411,9 +436,18 @@ export function ReelImportPanel({
                 <div className="reel-review-detail__meta">
                   <span className={`reel-risk is-${detail.riskLevel}`}>Risiko: {detail.riskLevel}</span>
                   <span>Nützlichkeit: {detail.usefulnessScore ?? '–'}/100</span>
+                  <span>{pipelineStatusLabel(detail)}</span>
+                  {detail.detectedLanguage && <span>Sprache: {detail.detectedLanguage}</span>}
+                  {detail.transcriptionStatus && <span>{TRANSCRIPTION_STATUS_LABELS[detail.transcriptionStatus] || detail.transcriptionStatus}</span>}
+                  {detail.ocrStatus && <span>{OCR_STATUS_LABELS[detail.ocrStatus] || detail.ocrStatus}</span>}
+                  {detail.transcriptProvider && <span>ASR: {detail.transcriptProvider}{detail.transcriptModel ? ` · ${detail.transcriptModel}` : ''}</span>}
                 </div>
+                {detail.transcriptionError && <p className="reel-import__error">Transkription: {detail.transcriptionError}</p>}
+                {detail.ocrError && <p className="reel-review-detail__guard">OCR: {detail.ocrError}</p>}
                 {detail.errorMessage && <div className="reel-import__error">{detail.errorMessage} <button type="button" disabled={busy} onClick={() => void retry(detail)}>Erneut versuchen</button></div>}
-                {detail.jobStatus === 'dead' && <button type="button" disabled={busy} onClick={() => void retry(detail)}>Erneut verarbeiten</button>}
+                {(detail.jobStatus === 'dead' || detail.status === 'FAILED' || detail.transcriptionStatus === 'failed') && (
+                  <button type="button" disabled={busy} onClick={() => void retry(detail)}>Erneut verarbeiten</button>
+                )}
                 <label className="text-field"><span>Titel</span><input value={draft.title} onChange={event => setDraft(current => ({ ...current, title: event.target.value }))} /></label>
                 <label className="text-field"><span>Zusammenfassung</span><textarea rows={4} value={draft.summary} onChange={event => setDraft(current => ({ ...current, summary: event.target.value }))} /></label>
                 <div className="lifeos-inline">

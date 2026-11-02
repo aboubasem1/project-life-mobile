@@ -34,10 +34,14 @@ describe('reel job policy', () => {
   })
 
   it('backs off and treats lock loss differently from a permanent media error', () => {
-    expect(retryDelayMs(1)).toBe(20_000)
-    expect(retryDelayMs(3)).toBe(180_000)
+    expect(retryDelayMs(1)).toBeGreaterThanOrEqual(20_000)
+    expect(retryDelayMs(1)).toBeLessThan(20_000 + 5_000)
+    expect(retryDelayMs(3)).toBeGreaterThanOrEqual(180_000)
+    expect(retryDelayMs(2, 12_000)).toBe(12_000)
     expect(processingFailureDisposition(new SyncHttpError(422, 'Keine Sprache'))).toBe('permanent')
     expect(processingFailureDisposition(new SyncHttpError(503, 'temporär'))).toBe('retry')
+    expect(processingFailureDisposition(new SyncHttpError(503, 'DeepInfra-Transkription ist falsch konfiguriert.'))).toBe('permanent')
+    expect(processingFailureDisposition(new SyncHttpError(401, 'unauthorized'))).toBe('permanent')
     expect(processingFailureDisposition(new SyncHttpError(409, 'Verarbeitung wurde von einem anderen Worker übernommen.'))).toBe('lost_lock')
   })
 
