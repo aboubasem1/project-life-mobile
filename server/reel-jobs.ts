@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { databaseQuery, databaseTransaction, type SqlQuery } from './database.js'
+import { SyncHttpError } from './sync-core.js'
 import { REEL_DAILY_JOB_LIMIT, REEL_MAX_ATTEMPTS, REEL_STALE_LOCK_MS, isClaimable, normalizeLifeAreas, processingFailureDisposition, retryDelayMs, type JobView } from './reel-policy.js'
 
 type JobRow = {
@@ -161,7 +162,8 @@ async function settleJob(job: JobRow, error?: unknown): Promise<void> {
     log('dead', { reelId: job.reel_id, roomId: job.room_id, attempts: job.attempts })
     return
   }
-  const delaySeconds = Math.round(retryDelayMs(job.attempts) / 1000)
+  const retryAfterMs = error instanceof SyncHttpError ? error.retryAfterMs : undefined
+  const delaySeconds = Math.round(retryDelayMs(job.attempts, retryAfterMs) / 1000)
   await databaseQuery(`
     UPDATE lifeos_reel_jobs
     SET status = 'retry', last_error = $3, locked_at = NULL, locked_by = NULL,
@@ -200,12 +202,13 @@ async function tick(workerId: string): Promise<void> {
   ticking = true
   workerSnapshot.lastTickAt = new Date().toISOString()
   try {
-    const jobs = await claimJobs(workerId, envNumber('REEL_WORKER_CONCURRENCY', 1, 1, 2))
+    const concurrency = envNumber('REEL_WORKER_CONCURRENCY', 3, 1, 3)
+    const jobs = await claimJobs(workerId, concurrency)
     workerSnapshot.claimed += jobs.length
-    for (const job of jobs) {
-      if (stopped) break
+    await Promise.all(jobs.map(async job => {
+      if (stopped) return
       const ready = await markReelProcessing(job)
-      if (!ready) continue
+      if (!ready) return
       try {
         const { runReelPipeline } = await import('./reel-api.js')
         const areas = normalizeLifeAreas(job.life_areas)
@@ -216,7 +219,7 @@ async function tick(workerId: string): Promise<void> {
         workerSnapshot.lastError = error instanceof Error ? error.message.slice(0, 300) : 'Verarbeitung fehlgeschlagen.'
         await settleJob(job, error)
       }
-    }
+    }))
   } catch (error) {
     workerSnapshot.lastError = error instanceof Error ? error.message.slice(0, 300) : 'Worker-Tick fehlgeschlagen.'
     log('tick_failed', { message: workerSnapshot.lastError })
@@ -240,7 +243,7 @@ export function startReelWorker(): () => void {
   const pollMs = envNumber('REEL_WORKER_POLL_MS', 4000, 1000, 60_000)
   void tick(workerId)
   timer = setInterval(() => void tick(workerId), pollMs)
-  log('started', { workerId, pollMs, concurrency: envNumber('REEL_WORKER_CONCURRENCY', 1, 1, 2) })
+  log('started', { workerId, pollMs, concurrency: envNumber('REEL_WORKER_CONCURRENCY', 3, 1, 3) })
   return () => stopReelWorker()
 }
 

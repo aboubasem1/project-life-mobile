@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { databaseConfigured, databaseQuery, databaseTransaction, type SqlQuery } from './database.js'
 import { materializeStoredObject } from './object-storage.js'
-import { analyzeReelTranscript, readOnScreenText, verifyClaims } from './reel-analysis.js'
+import { analyzeReelTranscript, readOnScreenText, translateTranscriptToGerman, verifyClaims } from './reel-analysis.js'
 import { enqueueReelJob, enqueueReelJobWithQuery, reelWorkerEnabled, reelWorkerStatus, roomJobCounts, startReelWorker } from './reel-jobs.js'
 import { triageReelWithJev } from './reel-jev.js'
 import { extractReelAudio, extractReelFrames } from './reel-media.js'
@@ -52,6 +52,7 @@ type ReelRow = {
   original_name?: string
   content_type?: string
   size_bytes?: number | string
+  storage_key?: string
   claims?: unknown
   job_status?: string | null
   job_attempts?: number | null
@@ -122,11 +123,25 @@ function stringList(value: unknown, max = 30): string[] {
   return [...new Set(value.map(item => text(item, 80)).filter(Boolean))].slice(0, max)
 }
 
+function transcriptSegmentsOf(analysis: Record<string, unknown>): Array<{ start: number; end: number; text: string }> {
+  if (!Array.isArray(analysis.transcriptSegments)) return []
+  return analysis.transcriptSegments.flatMap(entry => {
+    if (!entry || typeof entry !== 'object') return []
+    const row = entry as { start?: unknown; end?: unknown; text?: unknown }
+    const start = Number(row.start)
+    const end = Number(row.end)
+    const text = typeof row.text === 'string' ? row.text.trim() : ''
+    if (!text || !Number.isFinite(start) || !Number.isFinite(end) || end < start) return []
+    return [{ start, end, text }]
+  }).slice(0, 400)
+}
+
 function reelJson(row: ReelRow): Record<string, unknown> {
   const analysis = row.analysis && typeof row.analysis === 'object' ? row.analysis as Record<string, unknown> : {}
   return {
     id: row.id,
     objectId: row.object_id,
+    storageKey: row.storage_key || '',
     checksumSha256: row.checksum_sha256,
     status: row.status,
     title: row.title,
@@ -134,7 +149,19 @@ function reelJson(row: ReelRow): Record<string, unknown> {
     transcript: row.transcript,
     transcriptProvider: row.transcript_provider,
     transcriptModel: row.transcript_model,
+    transcriptSegments: transcriptSegmentsOf(analysis),
     onScreenText: typeof analysis.onScreenText === 'string' ? analysis.onScreenText : '',
+    transcriptDe: typeof analysis.transcriptDe === 'string' ? analysis.transcriptDe : '',
+    transcriptDeWasAlreadyGerman: analysis.transcriptDeWasAlreadyGerman === true,
+    transcriptionStatus: typeof analysis.transcriptionStatus === 'string' ? analysis.transcriptionStatus : '',
+    transcriptionError: typeof analysis.transcriptionError === 'string' ? analysis.transcriptionError : '',
+    ocrStatus: typeof analysis.ocrStatus === 'string' ? analysis.ocrStatus : '',
+    ocrError: typeof analysis.ocrError === 'string' ? analysis.ocrError : '',
+    sourcesUsed: Array.isArray(analysis.sourcesUsed) ? analysis.sourcesUsed.filter(item => typeof item === 'string') : [],
+    detectedLanguage: analysis.transcriptionMeta && typeof analysis.transcriptionMeta === 'object'
+      && typeof (analysis.transcriptionMeta as { language?: unknown }).language === 'string'
+      ? String((analysis.transcriptionMeta as { language: string }).language)
+      : '',
     lifeArea: row.life_area || '',
     topics: Array.isArray(row.topics) ? row.topics : [],
     usefulnessScore: row.usefulness_score,
@@ -184,7 +211,7 @@ async function audit(input: {
 
 async function findReel(roomId: string, reelId: string): Promise<ReelRow> {
   const result = await databaseQuery<ReelRow>(`
-    SELECT r.*, o.original_name, o.content_type, o.size_bytes,
+    SELECT r.*, o.original_name, o.content_type, o.size_bytes, o.storage_key,
       job.job_status, job.job_attempts, job.job_last_error, job.job_run_after,
       COALESCE((
         SELECT jsonb_agg(jsonb_build_object(
@@ -268,7 +295,7 @@ async function listReels(url: URL, roomId: string): Promise<Response> {
     statusSql = `AND r.status = $${values.length}`
   }
   const result = await databaseQuery<ReelRow>(`
-    SELECT r.*, o.original_name, o.content_type, o.size_bytes,
+    SELECT r.*, o.original_name, o.content_type, o.size_bytes, o.storage_key,
       job.job_status, job.job_attempts, job.job_last_error, job.job_run_after,
       COALESCE((SELECT jsonb_agg(jsonb_build_object(
         'id', c.id, 'position', c.position, 'text', c.claim_text, 'type', c.claim_type,
@@ -347,45 +374,112 @@ export async function runReelPipeline(input: {
       const audioPath = join(temporary, 'audio.mp3')
       await materializeStoredObject(storageKey, videoPath)
       await assertJobOwner(input.jobId, input.workerId)
-      let transcript = ''
-      let transcriptProvider: string | null = null
-      let transcriptModel: string | null = null
-      let audio: Buffer | null = null
-      try {
-        audio = await extractReelAudio(videoPath, audioPath)
-      } catch {
-        // Text-only reels legitimately have no audio track. Frame OCR below is the fallback.
-      }
-      if (audio) {
-        try {
-          const transcription = await transcribeAudioBytes(audio, 'audio/mpeg')
-          transcript = transcription.transcript
-          transcriptProvider = transcription.provider
-          transcriptModel = transcription.model
-        } catch (error) {
-          // Provider outages / bad keys / empty audio must not skip OCR fallback.
-          // Only unexpected non-HTTP failures abort extract before frames are read.
-          if (!(error instanceof SyncHttpError)) throw error
-          console.info(JSON.stringify({
-            scope: 'reel-pipeline',
-            event: 'transcription_soft_fail',
-            reelId: input.reelId,
-            status: error.status,
-            message: error.message.slice(0, 200),
-          }))
+      // Idempotent: do not re-bill / re-call the provider when a transcript already exists.
+      if (current.transcript?.trim()) {
+        await databaseQuery(`
+          UPDATE lifeos_reels SET status = 'EXTRACTED', updated_at = now(), version = version + 1
+          WHERE id = $1 AND room_id = $2 AND status = 'PROCESSING'
+        `, [input.reelId, input.roomId])
+        current = await findReel(input.roomId, input.reelId)
+      } else {
+        let transcript = ''
+        let transcriptProvider: string | null = null
+        let transcriptModel: string | null = null
+        let transcriptSegments: Array<{ start: number; end: number; text: string }> = []
+        let transcriptionStatus: 'done' | 'skipped_no_audio' | 'failed' | 'unavailable' = 'unavailable'
+        let transcriptionError: string | null = null
+        let transcriptionMeta: Record<string, unknown> = {}
+        const audioResult = await extractReelAudio(videoPath, audioPath)
+        if (!audioResult.ok) {
+          if (audioResult.reason === 'ffmpeg_missing') throw new SyncHttpError(500, audioResult.message)
+          if (audioResult.reason === 'timeout') throw new SyncHttpError(504, audioResult.message)
+          transcriptionStatus = 'skipped_no_audio'
+          transcriptionError = audioResult.message
+        } else {
+          try {
+            const transcription = await transcribeAudioBytes(audioResult.bytes, 'audio/mpeg', fetch, {
+              includeSegments: true,
+              provider: 'auto',
+            })
+            transcript = transcription.transcript
+            transcriptProvider = transcription.provider
+            transcriptModel = transcription.model
+            transcriptSegments = transcription.segments ?? []
+            transcriptionStatus = 'done'
+            transcriptionMeta = {
+              language: transcription.language ?? null,
+              durationMs: transcription.durationMs ?? null,
+              requestId: transcription.requestId ?? null,
+              cost: transcription.cost ?? null,
+            }
+          } catch (error) {
+            // Provider outages / bad keys / empty audio must not skip OCR fallback.
+            // Permanent auth failures still bubble so the job dies instead of looping.
+            if (!(error instanceof SyncHttpError)) throw error
+            if ([401, 403].includes(error.status) || /falsch konfiguriert/i.test(error.message)) throw error
+            transcriptionStatus = 'failed'
+            transcriptionError = error.message.slice(0, 240)
+            console.info(JSON.stringify({
+              scope: 'reel-pipeline',
+              event: 'transcription_soft_fail',
+              reelId: input.reelId,
+              status: error.status,
+              provider: 'redacted',
+              message: error.message.slice(0, 200),
+            }))
+          }
         }
+
+        let onScreenText = ''
+        let ocrStatus: 'done' | 'skipped' | 'failed' | 'unavailable' = 'unavailable'
+        let ocrError: string | null = null
+        // OCR stays optional and separate from speech ASR (DeepInfra Whisper is audio-only).
+        const shouldRunOcr = transcript.length < 200
+        if (!shouldRunOcr) {
+          ocrStatus = 'skipped'
+        } else {
+          try {
+            const frames = await extractReelFrames(videoPath, temporary)
+            if (frames.length === 0) {
+              ocrStatus = 'unavailable'
+              ocrError = 'Keine Videoframes für OCR extrahiert.'
+            } else {
+              onScreenText = await readOnScreenText(frames)
+              ocrStatus = onScreenText.trim() ? 'done' : 'unavailable'
+              if (!onScreenText.trim()) ocrError = 'OCR lieferte keinen lesbaren Bildschirmtext.'
+            }
+          } catch (error) {
+            ocrStatus = 'failed'
+            ocrError = error instanceof Error ? error.message.slice(0, 240) : 'OCR fehlgeschlagen.'
+            // Never wipe a successful transcript because OCR failed.
+          }
+        }
+
+        if (!transcript && !onScreenText.trim()) {
+          throw new SyncHttpError(422, transcriptionError || ocrError || 'Weder Sprache noch lesbarer Bildschirmtext erkannt.')
+        }
+        await assertJobOwner(input.jobId, input.workerId)
+        const sourcesUsed = [
+          ...(transcript ? ['speech'] as const : []),
+          ...(onScreenText.trim() ? ['ocr'] as const : []),
+        ]
+        await databaseQuery(`
+          UPDATE lifeos_reels SET status = 'EXTRACTED', transcript = $3, transcript_provider = $4,
+            transcript_model = $5, analysis = COALESCE(analysis, '{}'::jsonb) || $6::jsonb,
+            updated_at = now(), version = version + 1
+          WHERE id = $1 AND room_id = $2
+        `, [input.reelId, input.roomId, transcript, transcriptProvider, transcriptModel, JSON.stringify({
+          onScreenText,
+          transcriptionStatus,
+          transcriptionError,
+          transcriptionMeta,
+          ocrStatus,
+          ocrError,
+          sourcesUsed,
+          ...(transcriptSegments.length > 0 ? { transcriptSegments } : {}),
+        })])
+        current = await findReel(input.roomId, input.reelId)
       }
-      const frames = transcript.length < 200 ? await extractReelFrames(videoPath, temporary) : []
-      const onScreenText = await readOnScreenText(frames)
-      if (!transcript && !onScreenText) throw new SyncHttpError(422, 'Weder Sprache noch lesbarer Bildschirmtext erkannt.')
-      await assertJobOwner(input.jobId, input.workerId)
-      await databaseQuery(`
-        UPDATE lifeos_reels SET status = 'EXTRACTED', transcript = $3, transcript_provider = $4,
-          transcript_model = $5, analysis = COALESCE(analysis, '{}'::jsonb) || $6::jsonb,
-          updated_at = now(), version = version + 1
-        WHERE id = $1 AND room_id = $2
-      `, [input.reelId, input.roomId, transcript, transcriptProvider, transcriptModel, JSON.stringify({ onScreenText })])
-      current = await findReel(input.roomId, input.reelId)
     }
 
     if (stageOf(current) === 'analyze') {
@@ -405,6 +499,21 @@ export async function runReelPipeline(input: {
         : analysis.riskLevel === 'medium' || jev.risk === 'medium' ? 'medium' : 'low'
       const target = jev.available ? jev.target : 'source_only'
       const title = analysis.title.trim() || current.original_name?.trim() || 'Reel'
+      const prior = analysisRecord(current)
+      const sourcesUsed = Array.isArray(prior.sourcesUsed)
+        ? prior.sourcesUsed.filter(item => typeof item === 'string')
+        : [
+            ...(transcript.trim() ? ['speech'] : []),
+            ...(onScreenText.trim() ? ['ocr'] : []),
+          ]
+      const sourcesLabel = sourcesUsed.includes('speech') && sourcesUsed.includes('ocr')
+        ? 'Ausgewertet: Sprache + Bildschirmtext'
+        : sourcesUsed.includes('ocr')
+          ? 'Ausgewertet: nur Bildschirmtext (OCR)'
+          : sourcesUsed.includes('speech')
+            ? 'Ausgewertet: nur Sprache (Transkription)'
+            : 'Ausgewertet: unbekannte Quelle'
+      const summary = `${analysis.summary}\n\n${sourcesLabel}`.trim()
       await assertJobOwner(input.jobId, input.workerId)
       await databaseQuery(`
         UPDATE lifeos_reels SET status = 'FACT_CHECK_PENDING', title = $3, summary = $4,
@@ -412,9 +521,16 @@ export async function runReelPipeline(input: {
           suggested_target = $9, jev_result = $10::jsonb, analysis = $11::jsonb,
           updated_at = now(), version = version + 1
         WHERE id = $1 AND room_id = $2
-      `, [input.reelId, input.roomId, title, analysis.summary, jev.lifeArea || analysis.lifeArea || null,
+      `, [input.reelId, input.roomId, title, summary, jev.lifeArea || analysis.lifeArea || null,
         JSON.stringify(analysis.topics), analysis.usefulnessScore, riskLevel, target,
-        JSON.stringify(jev), JSON.stringify({ ...analysis, onScreenText, title })])
+        JSON.stringify(jev), JSON.stringify({
+          ...prior,
+          ...analysis,
+          onScreenText,
+          title,
+          sourcesUsed,
+          sourcesLabel,
+        })])
       current = await findReel(input.roomId, input.reelId)
     }
 
@@ -685,12 +801,48 @@ export async function handleReelRequest(request: Request): Promise<Response> {
   if (pathname.endsWith('/api/reels/health') && request.method === 'GET') return reelHealth(roomId)
   if (pathname.endsWith('/api/reels/register') && request.method === 'POST') return registerReel(request, roomId)
   if (pathname.endsWith('/api/reels/batch') && request.method === 'POST') return batchReels(request, roomId)
-  const match = pathname.match(/\/api\/reels\/([0-9a-f-]+)(?:\/(process|review|publish))?$/i)
+  const match = pathname.match(/\/api\/reels\/([0-9a-f-]+)(?:\/(process|review|publish|translate))?$/i)
   if (!match) return syncJson({ error: 'Not found' }, 404)
   const reelId = uuid(match[1], 'Reel-ID')
   if (!match[2] && request.method === 'GET') return syncJson({ ok: true, reel: reelJson(await findReel(roomId, reelId)) })
   if (match[2] === 'process' && request.method === 'POST') return enqueueProcessing(request, roomId, reelId)
   if (match[2] === 'review' && request.method === 'POST') return reviewReel(request, roomId, reelId)
   if (match[2] === 'publish' && request.method === 'POST') return publishReel(request, roomId, reelId)
+  if (match[2] === 'translate' && request.method === 'POST') return translateReel(roomId, reelId)
   return syncJson({ error: 'Not found' }, 404)
+}
+
+async function translateReel(roomId: string, reelId: string): Promise<Response> {
+  const current = await findReel(roomId, reelId)
+  const analysis = current.analysis && typeof current.analysis === 'object'
+    ? current.analysis as Record<string, unknown>
+    : {}
+  if (typeof analysis.transcriptDe === 'string' && analysis.transcriptDe.trim()) {
+    return syncJson({ ok: true, reel: reelJson(current), cached: true })
+  }
+  if (!current.transcript?.trim()) {
+    throw new SyncHttpError(422, 'Kein Transkript zum Übersetzen.')
+  }
+  const translated = await translateTranscriptToGerman(current.transcript)
+  const nextAnalysis = {
+    ...analysis,
+    transcriptDe: translated.german,
+    transcriptDeWasAlreadyGerman: translated.wasAlreadyGerman,
+    transcriptDeAt: new Date().toISOString(),
+  }
+  await databaseQuery(`
+    UPDATE lifeos_reels
+    SET analysis = $3::jsonb, updated_at = now(), version = version + 1
+    WHERE id = $1 AND room_id = $2
+  `, [reelId, roomId, JSON.stringify(nextAnalysis)])
+  await audit({
+    reelId,
+    roomId,
+    action: 'transcript_translated',
+    from: current.status,
+    to: current.status,
+    details: { wasAlreadyGerman: translated.wasAlreadyGerman },
+  })
+  const refreshed = await findReel(roomId, reelId)
+  return syncJson({ ok: true, reel: reelJson(refreshed), cached: false })
 }

@@ -95,6 +95,8 @@ export type KnowledgeItem = {
   needKeys?: string[]
   ideas?: string[]
   takeaways?: string[]
+  /** User-authored notes for this card (separate from imported summary/content). */
+  notes?: string
   evidenceStatus?: 'verified' | 'mixed' | 'unverified' | 'source_only'
   confidence?: number
   sourceReelId?: string

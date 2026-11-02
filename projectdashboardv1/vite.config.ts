@@ -21,7 +21,15 @@ function lifeOsSyncDevPlugin(): Plugin {
       if (env.TRANSCRIPTION_ENABLED) process.env.TRANSCRIPTION_ENABLED = env.TRANSCRIPTION_ENABLED
       if (env.TRANSCRIPTION_TIMEOUT_MS) process.env.TRANSCRIPTION_TIMEOUT_MS = env.TRANSCRIPTION_TIMEOUT_MS
       if (env.TRANSCRIPTION_MODEL) process.env.TRANSCRIPTION_MODEL = env.TRANSCRIPTION_MODEL
+      if (env.DEEPINFRA_API_KEY) process.env.DEEPINFRA_API_KEY = env.DEEPINFRA_API_KEY
+      if (env.TRANSCRIPTION_PROVIDER) process.env.TRANSCRIPTION_PROVIDER = env.TRANSCRIPTION_PROVIDER
+      if (env.TRANSCRIPTION_LANGUAGE) process.env.TRANSCRIPTION_LANGUAGE = env.TRANSCRIPTION_LANGUAGE
       for (const key of [
+        'DEEPINFRA_TRANSCRIPTION_ENABLED',
+        'DEEPINFRA_TRANSCRIPTION_URL',
+        'DEEPINFRA_TRANSCRIPTION_MODEL',
+        'REEL_WORKER_CONCURRENCY',
+        'REEL_FFMPEG_TIMEOUT_MS',
         'DATABASE_URL',
         'PGHOST',
         'PGPORT',
@@ -56,7 +64,7 @@ function lifeOsSyncDevPlugin(): Plugin {
       server.middlewares.use((req, res, next) => {
         void (async () => {
           const url = req.url ?? ''
-          if (!url.startsWith('/api/sync') && !url.startsWith('/api/hooks') && !url.startsWith('/api/health') && !url.startsWith('/api/storage') && !url.startsWith('/api/reels') && !url.startsWith('/api/integrations') && !url.startsWith('/api/decision') && !url.startsWith('/api/transcribe')) {
+          if (!url.startsWith('/api/sync') && !url.startsWith('/api/hooks') && !url.startsWith('/api/health') && !url.startsWith('/api/storage') && !url.startsWith('/api/reels') && !url.startsWith('/api/integrations') && !url.startsWith('/api/decision') && !url.startsWith('/api/transcribe') && !url.startsWith('/api/knowledge')) {
             next()
             return
           }
