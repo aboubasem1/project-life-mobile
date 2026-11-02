@@ -1,5 +1,9 @@
 import { randomInt, randomUUID } from 'node:crypto'
 import { sanitizeJsonValue } from './json-text.js'
+
+function newErrorRef(): string {
+  return randomUUID().slice(0, 8)
+}
 import {
   getRoom,
   getRoomIdByPairCode,
@@ -30,28 +34,35 @@ export class SyncHttpError extends Error {
   }
 }
 
-export function syncJson(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Life-Os-Room, X-Life-Os-Token, X-Life-Os-Secret, X-Webhook-Secret, X-Idempotency-Key',
-    },
-  })
+export function syncJson(data: unknown, status = 200, errorRef?: string): Response {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Life-Os-Room, X-Life-Os-Token, X-Life-Os-Secret, X-Webhook-Secret, X-Idempotency-Key',
+  }
+  if (errorRef) headers['X-Life-Os-Error-Ref'] = errorRef
+  return new Response(JSON.stringify(data), { status, headers })
 }
 
-export function syncError(error: unknown): Response {
+export function syncError(error: unknown, stage = 'api'): Response {
   if (error instanceof SyncHttpError || error instanceof SyncPayloadError) {
-    return syncJson({ error: error.message, storage: syncStorageMode() }, error.status)
+    return syncJson({ error: error.message, storage: syncStorageMode(), stage }, error.status)
   }
+  const errorRef = newErrorRef()
+  console.error(JSON.stringify({
+    scope: 'sync',
+    event: 'unhandled_error',
+    stage,
+    errorRef,
+    message: error instanceof Error ? error.message : 'unknown',
+  }))
   console.error(error)
   const message = process.env.NODE_ENV === 'production'
     ? 'Interner Serverfehler.'
     : error instanceof Error ? error.message : 'Unbekannter Sync-Fehler'
-  return syncJson({ error: message, storage: syncStorageMode() }, 500)
+  return syncJson({ error: message, storage: syncStorageMode(), stage, errorRef }, 500, errorRef)
 }
 
 export async function readSyncJson<T>(request: Request): Promise<T> {
