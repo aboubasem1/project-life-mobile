@@ -24,6 +24,9 @@ export type ReelCandidate = {
   transcript: string
   transcriptProvider: string | null
   transcriptModel: string | null
+  /** Cached German translation of transcript (server analysis field). */
+  transcriptDe?: string
+  transcriptDeWasAlreadyGerman?: boolean
   onScreenText: string
   lifeArea: string
   topics: string[]

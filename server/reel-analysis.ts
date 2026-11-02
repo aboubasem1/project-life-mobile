@@ -86,6 +86,39 @@ function stringList(value: unknown, maxItems = 12): string[] {
   return [...new Set(value.map(item => text(item, 80)).filter(Boolean))].slice(0, maxItems)
 }
 
+export type TranscriptTranslation = {
+  german: string
+  wasAlreadyGerman: boolean
+}
+
+/** Translate a reel transcript to German. Keeps meaning; does not invent content. */
+export async function translateTranscriptToGerman(
+  transcript: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<TranscriptTranslation> {
+  const source = transcript.trim()
+  if (!source) throw new SyncHttpError(422, 'Kein Transkript zum Übersetzen.')
+  if (source.length > 60_000) throw new SyncHttpError(413, 'Transkript ist zu lang für die Übersetzung.')
+
+  const raw = record(await openAiJson({
+    system: [
+      'You translate social-video transcripts into clear German.',
+      'Return JSON only: {"german":"...","wasAlreadyGerman":true|false}.',
+      'If the source is already German, set wasAlreadyGerman true and return the original text unchanged.',
+      'Do not invent claims. Preserve numbers, names, and product terms. Keep paragraph breaks.',
+    ].join(' '),
+    user: { transcript: source },
+    timeoutMs: 90_000,
+  }, fetchImpl))
+
+  const german = text(raw.german, 60_000)
+  if (!german) throw new SyncHttpError(502, 'Übersetzung lieferte keinen Text.')
+  return {
+    german,
+    wasAlreadyGerman: raw.wasAlreadyGerman === true,
+  }
+}
+
 export async function analyzeReelTranscript(
   transcript: string,
   lifeAreas: string[],

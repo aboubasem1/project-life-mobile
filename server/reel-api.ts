@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { databaseConfigured, databaseQuery, databaseTransaction, type SqlQuery } from './database.js'
 import { materializeStoredObject } from './object-storage.js'
-import { analyzeReelTranscript, readOnScreenText, verifyClaims } from './reel-analysis.js'
+import { analyzeReelTranscript, readOnScreenText, translateTranscriptToGerman, verifyClaims } from './reel-analysis.js'
 import { enqueueReelJob, enqueueReelJobWithQuery, reelWorkerEnabled, reelWorkerStatus, roomJobCounts, startReelWorker } from './reel-jobs.js'
 import { triageReelWithJev } from './reel-jev.js'
 import { extractReelAudio, extractReelFrames } from './reel-media.js'
@@ -135,6 +135,8 @@ function reelJson(row: ReelRow): Record<string, unknown> {
     transcriptProvider: row.transcript_provider,
     transcriptModel: row.transcript_model,
     onScreenText: typeof analysis.onScreenText === 'string' ? analysis.onScreenText : '',
+    transcriptDe: typeof analysis.transcriptDe === 'string' ? analysis.transcriptDe : '',
+    transcriptDeWasAlreadyGerman: analysis.transcriptDeWasAlreadyGerman === true,
     lifeArea: row.life_area || '',
     topics: Array.isArray(row.topics) ? row.topics : [],
     usefulnessScore: row.usefulness_score,
@@ -685,12 +687,48 @@ export async function handleReelRequest(request: Request): Promise<Response> {
   if (pathname.endsWith('/api/reels/health') && request.method === 'GET') return reelHealth(roomId)
   if (pathname.endsWith('/api/reels/register') && request.method === 'POST') return registerReel(request, roomId)
   if (pathname.endsWith('/api/reels/batch') && request.method === 'POST') return batchReels(request, roomId)
-  const match = pathname.match(/\/api\/reels\/([0-9a-f-]+)(?:\/(process|review|publish))?$/i)
+  const match = pathname.match(/\/api\/reels\/([0-9a-f-]+)(?:\/(process|review|publish|translate))?$/i)
   if (!match) return syncJson({ error: 'Not found' }, 404)
   const reelId = uuid(match[1], 'Reel-ID')
   if (!match[2] && request.method === 'GET') return syncJson({ ok: true, reel: reelJson(await findReel(roomId, reelId)) })
   if (match[2] === 'process' && request.method === 'POST') return enqueueProcessing(request, roomId, reelId)
   if (match[2] === 'review' && request.method === 'POST') return reviewReel(request, roomId, reelId)
   if (match[2] === 'publish' && request.method === 'POST') return publishReel(request, roomId, reelId)
+  if (match[2] === 'translate' && request.method === 'POST') return translateReel(roomId, reelId)
   return syncJson({ error: 'Not found' }, 404)
+}
+
+async function translateReel(roomId: string, reelId: string): Promise<Response> {
+  const current = await findReel(roomId, reelId)
+  const analysis = current.analysis && typeof current.analysis === 'object'
+    ? current.analysis as Record<string, unknown>
+    : {}
+  if (typeof analysis.transcriptDe === 'string' && analysis.transcriptDe.trim()) {
+    return syncJson({ ok: true, reel: reelJson(current), cached: true })
+  }
+  if (!current.transcript?.trim()) {
+    throw new SyncHttpError(422, 'Kein Transkript zum Übersetzen.')
+  }
+  const translated = await translateTranscriptToGerman(current.transcript)
+  const nextAnalysis = {
+    ...analysis,
+    transcriptDe: translated.german,
+    transcriptDeWasAlreadyGerman: translated.wasAlreadyGerman,
+    transcriptDeAt: new Date().toISOString(),
+  }
+  await databaseQuery(`
+    UPDATE lifeos_reels
+    SET analysis = $3::jsonb, updated_at = now(), version = version + 1
+    WHERE id = $1 AND room_id = $2
+  `, [reelId, roomId, JSON.stringify(nextAnalysis)])
+  await audit({
+    reelId,
+    roomId,
+    action: 'transcript_translated',
+    from: current.status,
+    to: current.status,
+    details: { wasAlreadyGerman: translated.wasAlreadyGerman },
+  })
+  const refreshed = await findReel(roomId, reelId)
+  return syncJson({ ok: true, reel: reelJson(refreshed), cached: false })
 }

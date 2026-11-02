@@ -23,7 +23,7 @@ import {
   answerKnowledgeQuery,
   tryAnswerKnowledgeQuery,
 } from '../../lib/adaptive-core/jo/knowledge-query'
-import { listReels, type ReelCandidate } from '../../lib/reels'
+import { getReel, translateReelTranscript, type ReelCandidate } from '../../lib/reels'
 import type { KnowledgeTabId } from '../../lib/routing'
 import { ActiveRecallPanel } from './ActiveRecallPanel'
 import { KnowledgeGraphPanel } from './KnowledgeGraphPanel'
@@ -171,6 +171,9 @@ export function KnowledgeDetailView({
   const [reelLoading, setReelLoading] = useState(false)
   const [reelError, setReelError] = useState('')
   const [transcriptQuery, setTranscriptQuery] = useState('')
+  const [transcriptLang, setTranscriptLang] = useState<'original' | 'de'>('original')
+  const [translateBusy, setTranslateBusy] = useState(false)
+  const [translateError, setTranslateError] = useState('')
   const [joScope, setJoScope] = useState<'card' | 'library'>('card')
   const [joInput, setJoInput] = useState('')
   const [joMessages, setJoMessages] = useState<JoMessage[]>(() => loadJoHistory(item.id))
@@ -194,6 +197,9 @@ export function KnowledgeDetailView({
     setMenuOpen(false)
     setJoMessages(loadJoHistory(item.id))
     setSelectedPassage('')
+    setTranscriptLang('original')
+    setTranslateError('')
+    setReel(null)
     tabRefs.current = {}
   }, [item.id])
 
@@ -205,24 +211,25 @@ export function KnowledgeDetailView({
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [joMessages, tab])
 
-  // Lazy-load reel transcript only when needed.
+  // Lazy-load the linked reel via single-GET when transcript/Jo needs it.
   useEffect(() => {
     if (tab !== 'transcript' && tab !== 'jo') return
     if (!item.sourceReelId) return
-    if (tabRefs.current.transcript && reel) return
+    if (tabRefs.current.transcript && reel?.id === item.sourceReelId) return
     let cancelled = false
     setReelLoading(true)
     setReelError('')
-    void listReels()
-      .then(reels => {
+    void getReel(item.sourceReelId)
+      .then(match => {
         if (cancelled) return
-        const match = reels.find(entry => entry.id === item.sourceReelId) ?? null
         setReel(match)
         tabRefs.current.transcript = true
-        if (!match) setReelError('Original-Reel nicht gefunden.')
       })
       .catch(reason => {
-        if (!cancelled) setReelError(reason instanceof Error ? reason.message : 'Transkript konnte nicht geladen werden.')
+        if (!cancelled) {
+          setReel(null)
+          setReelError(reason instanceof Error ? reason.message : 'Transkript konnte nicht geladen werden.')
+        }
       })
       .finally(() => {
         if (!cancelled) setReelLoading(false)
@@ -230,7 +237,7 @@ export function KnowledgeDetailView({
     return () => {
       cancelled = true
     }
-  }, [tab, item.sourceReelId, reel])
+  }, [tab, item.sourceReelId, reel?.id])
 
   const suggestions = useMemo(
     () => suggestRelations({ focusId: item.id, items, relations, goals, projects, decisions }),
@@ -267,12 +274,38 @@ export function KnowledgeDetailView({
 
   const linkedTasks = related.filter(entry => entry.kind === 'project' || entry.kind === 'task')
 
+  const activeTranscript = useMemo(() => {
+    if (!reel) return ''
+    if (transcriptLang === 'de' && reel.transcriptDe?.trim()) return reel.transcriptDe
+    return reel.transcript || ''
+  }, [reel, transcriptLang])
+
   const paragraphs = useMemo(() => {
-    const raw = reel?.transcript || ''
+    const raw = activeTranscript
     const parts = splitTranscript(raw)
     if (parts.length === 0 && raw.trim()) return [raw.trim()]
     return parts
-  }, [reel])
+  }, [activeTranscript])
+
+  const requestGerman = async () => {
+    if (!reel || translateBusy) return
+    if (reel.transcriptDe?.trim()) {
+      setTranscriptLang('de')
+      return
+    }
+    setTranslateBusy(true)
+    setTranslateError('')
+    try {
+      const next = await translateReelTranscript(reel.id)
+      setReel(next)
+      setTranscriptLang('de')
+      flash(next.transcriptDeWasAlreadyGerman ? 'War bereits Deutsch' : 'Übersetzung bereit')
+    } catch (reason) {
+      setTranslateError(reason instanceof Error ? reason.message : 'Übersetzung fehlgeschlagen.')
+    } finally {
+      setTranslateBusy(false)
+    }
+  }
 
   const filteredParagraphs = useMemo(() => {
     const q = transcriptQuery.trim().toLowerCase()
@@ -603,8 +636,30 @@ export function KnowledgeDetailView({
                     aria-label="Im Transkript suchen"
                   />
                 </label>
+                <div className="knowledge-jo__scope" role="group" aria-label="Transkriptsprache">
+                  <button
+                    type="button"
+                    className={transcriptLang === 'original' ? 'small-button is-active' : 'small-button'}
+                    onClick={() => setTranscriptLang('original')}
+                  >
+                    Original
+                  </button>
+                  <button
+                    type="button"
+                    className={transcriptLang === 'de' ? 'small-button is-active' : 'small-button'}
+                    disabled={translateBusy}
+                    onClick={() => { void requestGerman() }}
+                  >
+                    {translateBusy ? 'Übersetze…' : reel.transcriptDe ? 'Deutsch' : 'Deutsch erzeugen'}
+                  </button>
+                </div>
+                {translateError && <p className="knowledge-panel__error" role="alert">{translateError}</p>}
                 <p className="reel-review-detail__guard">
-                  Originalsprache bleibt erhalten.
+                  {transcriptLang === 'de'
+                    ? (reel.transcriptDeWasAlreadyGerman
+                      ? 'Original war bereits Deutsch — unverändert übernommen.'
+                      : 'Deutsche Übersetzung. Original bleibt unter „Original“ verfügbar.')
+                    : 'Originalsprache. Optional deutsche Übersetzung erzeugen.'}
                   {reel.transcriptProvider ? ` Quelle: ${reel.transcriptProvider}.` : ''}
                   {' '}Keine erfundenen Zeitmarken — Sprung zur Videoposition ist nicht angebunden.
                 </p>
