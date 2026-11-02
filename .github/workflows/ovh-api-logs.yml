@@ -1,0 +1,50 @@
+name: OVH API Log Peek
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  logs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      OVH_HOST: ${{ vars.OVH_HOST }}
+      OVH_USER: ${{ vars.OVH_USER }}
+      OVH_SSH_PORT: ${{ vars.OVH_SSH_PORT || '22' }}
+      OVH_DEPLOY_PATH: ${{ vars.OVH_DEPLOY_PATH || '/opt/lifeos' }}
+      OVH_SSH_PRIVATE_KEY: ${{ secrets.OVH_SSH_PRIVATE_KEY }}
+      OVH_KNOWN_HOSTS: ${{ secrets.OVH_KNOWN_HOSTS }}
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/lifeos-ssh"
+          printf '%s\n' "$OVH_SSH_PRIVATE_KEY" > "$RUNNER_TEMP/lifeos-ssh/key"
+          printf '%s\n' "$OVH_KNOWN_HOSTS" > "$RUNNER_TEMP/lifeos-ssh/known_hosts"
+      - name: Peek API logs and revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh \
+            -i "$RUNNER_TEMP/lifeos-ssh/key" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/lifeos-ssh/known_hosts" \
+            -p "$OVH_SSH_PORT" \
+            "$OVH_USER@$OVH_HOST" \
+            "set -eu
+             echo '=== current revision ==='
+             readlink -f '$OVH_DEPLOY_PATH/current' || true
+             echo '=== api health ==='
+             docker compose --project-name lifeos --env-file '$OVH_DEPLOY_PATH/shared/.env' --file '$OVH_DEPLOY_PATH/current/docker-compose.yml' exec -T api node -e \"fetch('http://127.0.0.1:3000/api/health').then(async r=>{console.log(await r.text())}).catch(e=>{console.error(e);process.exit(1)})\"
+             echo '=== api logs (last 250) ==='
+             docker compose --project-name lifeos --env-file '$OVH_DEPLOY_PATH/shared/.env' --file '$OVH_DEPLOY_PATH/current/docker-compose.yml' logs --tail 250 api
+             echo '=== recent storage/reel errors ==='
+             docker compose --project-name lifeos --env-file '$OVH_DEPLOY_PATH/shared/.env' --file '$OVH_DEPLOY_PATH/current/docker-compose.yml' logs --tail 2000 api 2>&1 | grep -Ei 'error|exception|storage|presign|proxy|reel|r2|ECONN|timeout|unauthorized|forbidden|intern' | tail -120 || true
+            "
