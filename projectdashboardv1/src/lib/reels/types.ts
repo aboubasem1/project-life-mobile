@@ -14,9 +14,17 @@ export type ReelClaim = {
   note: string
 }
 
+export type ReelTranscriptSegment = {
+  start: number
+  end: number
+  text: string
+}
+
 export type ReelCandidate = {
   id: string
   objectId: string
+  /** Object storage key for playback / download. */
+  storageKey?: string
   checksumSha256: string | null
   status: ReelStatus
   title: string
@@ -24,6 +32,8 @@ export type ReelCandidate = {
   transcript: string
   transcriptProvider: string | null
   transcriptModel: string | null
+  /** Timed transcript segments when Whisper verbose_json was available. */
+  transcriptSegments?: ReelTranscriptSegment[]
   /** Cached German translation of transcript (server analysis field). */
   transcriptDe?: string
   transcriptDeWasAlreadyGerman?: boolean

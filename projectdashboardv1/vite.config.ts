@@ -56,7 +56,7 @@ function lifeOsSyncDevPlugin(): Plugin {
       server.middlewares.use((req, res, next) => {
         void (async () => {
           const url = req.url ?? ''
-          if (!url.startsWith('/api/sync') && !url.startsWith('/api/hooks') && !url.startsWith('/api/health') && !url.startsWith('/api/storage') && !url.startsWith('/api/reels') && !url.startsWith('/api/integrations') && !url.startsWith('/api/decision') && !url.startsWith('/api/transcribe')) {
+          if (!url.startsWith('/api/sync') && !url.startsWith('/api/hooks') && !url.startsWith('/api/health') && !url.startsWith('/api/storage') && !url.startsWith('/api/reels') && !url.startsWith('/api/integrations') && !url.startsWith('/api/decision') && !url.startsWith('/api/transcribe') && !url.startsWith('/api/knowledge')) {
             next()
             return
           }

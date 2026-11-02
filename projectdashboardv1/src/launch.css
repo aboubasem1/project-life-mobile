@@ -7599,6 +7599,82 @@ button.status-chip.status-chip--good {
   gap: 10px;
 }
 
+.knowledge-transcript__video {
+  width: 100%;
+  max-height: min(42vh, 360px);
+  border-radius: 16px;
+  background: #000;
+  border: 1px solid var(--border);
+}
+
+.knowledge-transcript__time {
+  align-self: start;
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: inherit;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.knowledge-quiz {
+  display: grid;
+  gap: 12px;
+}
+
+.knowledge-quiz__card {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+}
+
+.knowledge-quiz__card h3 {
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1.35;
+}
+
+.knowledge-quiz__choices {
+  display: grid;
+  gap: 8px;
+}
+
+.knowledge-quiz__choice {
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 88%, black 12%);
+  color: inherit;
+  text-align: left;
+}
+
+.knowledge-quiz__choice.is-selected {
+  border-color: var(--accent);
+}
+
+.knowledge-quiz__choice.is-correct {
+  border-color: #36b88c;
+  background: color-mix(in srgb, #36b88c 16%, transparent);
+}
+
+.knowledge-quiz__choice.is-wrong {
+  border-color: #d65c5c;
+  background: color-mix(in srgb, #d65c5c 14%, transparent);
+}
+
+.knowledge-quiz__explain {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
 .knowledge-transcript__p {
   display: grid;
   gap: 8px;

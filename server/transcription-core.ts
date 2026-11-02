@@ -10,10 +10,22 @@ export type TranscriptionRequestBody = {
   mimeType?: unknown
 }
 
+export type TranscriptSegment = {
+  start: number
+  end: number
+  text: string
+}
+
 export type TranscriptionResult = {
   transcript: string
   provider: 'whisper'
   model: string
+  segments?: TranscriptSegment[]
+}
+
+export type TranscribeAudioOptions = {
+  /** Request timed segments (uses whisper-1 / TRANSCRIPTION_SEGMENT_MODEL + verbose_json). */
+  includeSegments?: boolean
 }
 
 function readEnv(name: string): string | undefined {
@@ -36,9 +48,28 @@ export function transcriptionConfig() {
     apiKey,
     apiUrl: readEnv('TRANSCRIPTION_API_URL') || DEFAULT_URL,
     model: readEnv('TRANSCRIPTION_MODEL') || DEFAULT_MODEL,
+    segmentModel: readEnv('TRANSCRIPTION_SEGMENT_MODEL') || 'whisper-1',
     language: readEnv('TRANSCRIPTION_LANGUAGE') || 'de',
     timeoutMs: Math.min(300_000, Math.max(4_000, Number(readEnv('TRANSCRIPTION_TIMEOUT_MS')) || 120_000)),
   }
+}
+
+export function parseTranscriptSegments(payload: unknown): TranscriptSegment[] {
+  if (!payload || typeof payload !== 'object') return []
+  const segments = (payload as { segments?: unknown }).segments
+  if (!Array.isArray(segments)) return []
+  const parsed: TranscriptSegment[] = []
+  for (const entry of segments) {
+    if (!entry || typeof entry !== 'object') continue
+    const row = entry as { start?: unknown; end?: unknown; text?: unknown }
+    const start = Number(row.start)
+    const end = Number(row.end)
+    const text = typeof row.text === 'string' ? row.text.trim() : ''
+    if (!text || !Number.isFinite(start) || !Number.isFinite(end) || end < start) continue
+    parsed.push({ start, end, text })
+    if (parsed.length >= 400) break
+  }
+  return parsed
 }
 
 export function parseTranscriptionBody(raw: unknown): { audioBase64: string; mimeType: string } {
@@ -105,11 +136,18 @@ async function postWhisper(
   config: ReturnType<typeof transcriptionConfig>,
   bytes: Buffer,
   mimeType: string,
+  options: TranscribeAudioOptions = {},
 ): Promise<Response> {
   const form = new FormData()
   form.append('file', new Blob([new Uint8Array(bytes)], { type: mimeType }), filenameFor(mimeType))
-  form.append('model', config.model)
+  const model = options.includeSegments ? config.segmentModel : config.model
+  form.append('model', model)
   form.append('language', config.language)
+  if (options.includeSegments) {
+    // whisper-1 supports timed segments; gpt-4o-*-transcribe typically returns plain text only.
+    form.append('response_format', 'verbose_json')
+    form.append('timestamp_granularities[]', 'segment')
+  }
   return fetchWithTimeout(fetchImpl, config.apiUrl, {
     method: 'POST',
     headers: { Authorization: `Bearer ${config.apiKey}` },
@@ -132,6 +170,7 @@ export async function transcribeAudioBytes(
   bytes: Buffer,
   mimeType: string,
   fetchImpl: typeof fetch = fetch,
+  options: TranscribeAudioOptions = {},
 ): Promise<TranscriptionResult> {
   const config = transcriptionConfig()
   if (!config.enabled || !config.apiKey) {
@@ -142,12 +181,13 @@ export async function transcribeAudioBytes(
     throw new SyncHttpError(413, 'Extrahierte Audiodatei ist größer als 25 MB.')
   }
 
+  const model = options.includeSegments ? config.segmentModel : config.model
   let response: Response | null = null
   let lastNetworkError: unknown = null
   // Whisper occasionally 429s under burst load — retry a couple times before failing closed.
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      response = await postWhisper(fetchImpl, config, bytes, mimeType)
+      response = await postWhisper(fetchImpl, config, bytes, mimeType, options)
     } catch (error) {
       lastNetworkError = error
       if (attempt < 2) {
@@ -181,7 +221,13 @@ export async function transcribeAudioBytes(
     ? (payload as { text: string }).text.trim()
     : ''
   if (!transcript) throw new SyncHttpError(422, 'Kein Text erkannt.')
-  return { transcript, provider: 'whisper', model: config.model }
+  const segments = options.includeSegments ? parseTranscriptSegments(payload) : undefined
+  return {
+    transcript,
+    provider: 'whisper',
+    model,
+    ...(segments && segments.length > 0 ? { segments } : {}),
+  }
 }
 
 export async function runTranscriptionRequest(request: Request, fetchImpl: typeof fetch = fetch): Promise<Response> {

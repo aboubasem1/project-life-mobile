@@ -52,6 +52,7 @@ type ReelRow = {
   original_name?: string
   content_type?: string
   size_bytes?: number | string
+  storage_key?: string
   claims?: unknown
   job_status?: string | null
   job_attempts?: number | null
@@ -122,11 +123,25 @@ function stringList(value: unknown, max = 30): string[] {
   return [...new Set(value.map(item => text(item, 80)).filter(Boolean))].slice(0, max)
 }
 
+function transcriptSegmentsOf(analysis: Record<string, unknown>): Array<{ start: number; end: number; text: string }> {
+  if (!Array.isArray(analysis.transcriptSegments)) return []
+  return analysis.transcriptSegments.flatMap(entry => {
+    if (!entry || typeof entry !== 'object') return []
+    const row = entry as { start?: unknown; end?: unknown; text?: unknown }
+    const start = Number(row.start)
+    const end = Number(row.end)
+    const text = typeof row.text === 'string' ? row.text.trim() : ''
+    if (!text || !Number.isFinite(start) || !Number.isFinite(end) || end < start) return []
+    return [{ start, end, text }]
+  }).slice(0, 400)
+}
+
 function reelJson(row: ReelRow): Record<string, unknown> {
   const analysis = row.analysis && typeof row.analysis === 'object' ? row.analysis as Record<string, unknown> : {}
   return {
     id: row.id,
     objectId: row.object_id,
+    storageKey: row.storage_key || '',
     checksumSha256: row.checksum_sha256,
     status: row.status,
     title: row.title,
@@ -134,6 +149,7 @@ function reelJson(row: ReelRow): Record<string, unknown> {
     transcript: row.transcript,
     transcriptProvider: row.transcript_provider,
     transcriptModel: row.transcript_model,
+    transcriptSegments: transcriptSegmentsOf(analysis),
     onScreenText: typeof analysis.onScreenText === 'string' ? analysis.onScreenText : '',
     transcriptDe: typeof analysis.transcriptDe === 'string' ? analysis.transcriptDe : '',
     transcriptDeWasAlreadyGerman: analysis.transcriptDeWasAlreadyGerman === true,
@@ -186,7 +202,7 @@ async function audit(input: {
 
 async function findReel(roomId: string, reelId: string): Promise<ReelRow> {
   const result = await databaseQuery<ReelRow>(`
-    SELECT r.*, o.original_name, o.content_type, o.size_bytes,
+    SELECT r.*, o.original_name, o.content_type, o.size_bytes, o.storage_key,
       job.job_status, job.job_attempts, job.job_last_error, job.job_run_after,
       COALESCE((
         SELECT jsonb_agg(jsonb_build_object(
@@ -270,7 +286,7 @@ async function listReels(url: URL, roomId: string): Promise<Response> {
     statusSql = `AND r.status = $${values.length}`
   }
   const result = await databaseQuery<ReelRow>(`
-    SELECT r.*, o.original_name, o.content_type, o.size_bytes,
+    SELECT r.*, o.original_name, o.content_type, o.size_bytes, o.storage_key,
       job.job_status, job.job_attempts, job.job_last_error, job.job_run_after,
       COALESCE((SELECT jsonb_agg(jsonb_build_object(
         'id', c.id, 'position', c.position, 'text', c.claim_text, 'type', c.claim_type,
@@ -352,6 +368,7 @@ export async function runReelPipeline(input: {
       let transcript = ''
       let transcriptProvider: string | null = null
       let transcriptModel: string | null = null
+      let transcriptSegments: Array<{ start: number; end: number; text: string }> = []
       let audio: Buffer | null = null
       try {
         audio = await extractReelAudio(videoPath, audioPath)
@@ -360,10 +377,11 @@ export async function runReelPipeline(input: {
       }
       if (audio) {
         try {
-          const transcription = await transcribeAudioBytes(audio, 'audio/mpeg')
+          const transcription = await transcribeAudioBytes(audio, 'audio/mpeg', fetch, { includeSegments: true })
           transcript = transcription.transcript
           transcriptProvider = transcription.provider
           transcriptModel = transcription.model
+          transcriptSegments = transcription.segments ?? []
         } catch (error) {
           // Provider outages / bad keys / empty audio must not skip OCR fallback.
           // Only unexpected non-HTTP failures abort extract before frames are read.
@@ -386,7 +404,10 @@ export async function runReelPipeline(input: {
           transcript_model = $5, analysis = COALESCE(analysis, '{}'::jsonb) || $6::jsonb,
           updated_at = now(), version = version + 1
         WHERE id = $1 AND room_id = $2
-      `, [input.reelId, input.roomId, transcript, transcriptProvider, transcriptModel, JSON.stringify({ onScreenText })])
+      `, [input.reelId, input.roomId, transcript, transcriptProvider, transcriptModel, JSON.stringify({
+        onScreenText,
+        ...(transcriptSegments.length > 0 ? { transcriptSegments } : {}),
+      })])
       current = await findReel(input.roomId, input.reelId)
     }
 

@@ -23,11 +23,27 @@ import {
   answerKnowledgeQuery,
   tryAnswerKnowledgeQuery,
 } from '../../lib/adaptive-core/jo/knowledge-query'
+import { getLifeOsFileUrl } from '../../lib/objectStorage'
+import {
+  generateKnowledgeQuiz,
+  gradeKnowledgeQuiz,
+  loadStoredQuiz,
+  saveStoredQuiz,
+  type KnowledgeQuiz,
+  type KnowledgeQuizGrade,
+} from '../../lib/knowledgeQuiz'
 import { getReel, translateReelTranscript, type ReelCandidate } from '../../lib/reels'
 import type { KnowledgeTabId } from '../../lib/routing'
 import { ActiveRecallPanel } from './ActiveRecallPanel'
 import { KnowledgeGraphPanel } from './KnowledgeGraphPanel'
 import { Field, LifeAreaSelect, LifeOsEmpty } from './lifeosUi'
+
+function formatTimecode(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds))
+  const mins = Math.floor(total / 60)
+  const secs = total % 60
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
 
 const TAB_LABELS: Record<KnowledgeTabId, string> = {
   notes: 'Notizen',
@@ -174,6 +190,13 @@ export function KnowledgeDetailView({
   const [transcriptLang, setTranscriptLang] = useState<'original' | 'de'>('original')
   const [translateBusy, setTranslateBusy] = useState(false)
   const [translateError, setTranslateError] = useState('')
+  const [videoUrl, setVideoUrl] = useState('')
+  const [videoError, setVideoError] = useState('')
+  const [quiz, setQuiz] = useState<KnowledgeQuiz | null>(() => loadStoredQuiz(item.id)?.quiz ?? null)
+  const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>(() => loadStoredQuiz(item.id)?.answers ?? {})
+  const [quizGrade, setQuizGrade] = useState<KnowledgeQuizGrade | null>(() => loadStoredQuiz(item.id)?.grade ?? null)
+  const [quizBusy, setQuizBusy] = useState(false)
+  const [quizError, setQuizError] = useState('')
   const [joScope, setJoScope] = useState<'card' | 'library'>('card')
   const [joInput, setJoInput] = useState('')
   const [joMessages, setJoMessages] = useState<JoMessage[]>(() => loadJoHistory(item.id))
@@ -183,6 +206,7 @@ export function KnowledgeDetailView({
   const [selectedPassage, setSelectedPassage] = useState('')
   const tabRefs = useRef<Partial<Record<KnowledgeTabId, boolean>>>({})
   const chatEndRef = useRef<HTMLDivElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
 
   useEffect(() => {
     setDraft({
@@ -200,8 +224,20 @@ export function KnowledgeDetailView({
     setTranscriptLang('original')
     setTranslateError('')
     setReel(null)
+    setVideoUrl('')
+    setVideoError('')
+    const storedQuiz = loadStoredQuiz(item.id)
+    setQuiz(storedQuiz?.quiz ?? null)
+    setQuizAnswers(storedQuiz?.answers ?? {})
+    setQuizGrade(storedQuiz?.grade ?? null)
+    setQuizError('')
     tabRefs.current = {}
   }, [item.id])
+
+  useEffect(() => {
+    if (!quiz) return
+    saveStoredQuiz(item.id, { quiz, answers: quizAnswers, grade: quizGrade })
+  }, [item.id, quiz, quizAnswers, quizGrade])
 
   useEffect(() => {
     saveJoHistory(item.id, joMessages)
@@ -238,6 +274,29 @@ export function KnowledgeDetailView({
       cancelled = true
     }
   }, [tab, item.sourceReelId, reel?.id])
+
+  // Presign video playback when the transcript tab opens and a storage key exists.
+  useEffect(() => {
+    if (tab !== 'transcript' || !reel?.storageKey || !reel.objectId) return
+    if (videoUrl) return
+    let cancelled = false
+    setVideoError('')
+    void getLifeOsFileUrl({
+      objectId: reel.objectId,
+      storageKey: reel.storageKey,
+      fileName: reel.originalName,
+      contentType: reel.contentType,
+    })
+      .then(url => {
+        if (!cancelled) setVideoUrl(url)
+      })
+      .catch(reason => {
+        if (!cancelled) setVideoError(reason instanceof Error ? reason.message : 'Video konnte nicht geladen werden.')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [tab, reel?.storageKey, reel?.objectId, reel?.originalName, reel?.contentType, videoUrl])
 
   const suggestions = useMemo(
     () => suggestRelations({ focusId: item.id, items, relations, goals, projects, decisions }),
@@ -280,12 +339,31 @@ export function KnowledgeDetailView({
     return reel.transcript || ''
   }, [reel, transcriptLang])
 
+  const timedSegments = useMemo(() => {
+    if (!reel?.transcriptSegments?.length || transcriptLang === 'de') return []
+    return reel.transcriptSegments
+  }, [reel, transcriptLang])
+
   const paragraphs = useMemo(() => {
+    if (timedSegments.length > 0) {
+      return timedSegments.map(segment => ({
+        text: segment.text,
+        start: segment.start,
+        end: segment.end,
+      }))
+    }
     const raw = activeTranscript
     const parts = splitTranscript(raw)
-    if (parts.length === 0 && raw.trim()) return [raw.trim()]
-    return parts
-  }, [activeTranscript])
+    const texts = parts.length === 0 && raw.trim() ? [raw.trim()] : parts
+    return texts.map(text => ({ text, start: undefined as number | undefined, end: undefined as number | undefined }))
+  }, [activeTranscript, timedSegments])
+
+  const seekTo = (seconds: number) => {
+    const player = videoRef.current
+    if (!player || !Number.isFinite(seconds)) return
+    player.currentTime = Math.max(0, seconds)
+    void player.play().catch(() => {})
+  }
 
   const requestGerman = async () => {
     if (!reel || translateBusy) return
@@ -309,11 +387,48 @@ export function KnowledgeDetailView({
 
   const filteredParagraphs = useMemo(() => {
     const q = transcriptQuery.trim().toLowerCase()
-    if (!q) return paragraphs.map((text, index) => ({ text, index, hit: false }))
     return paragraphs
-      .map((text, index) => ({ text, index, hit: text.toLowerCase().includes(q) }))
+      .map((entry, index) => ({ ...entry, index, hit: !q || entry.text.toLowerCase().includes(q) }))
       .filter(entry => entry.hit)
   }, [paragraphs, transcriptQuery])
+
+  const runQuizGenerate = async () => {
+    if (quizBusy) return
+    setQuizBusy(true)
+    setQuizError('')
+    try {
+      const next = await generateKnowledgeQuiz({
+        knowledgeId: item.id,
+        title: item.title,
+        summary: item.summary,
+        content: [item.content, item.notes, ...(item.ideas ?? []), ...(item.takeaways ?? [])].filter(Boolean).join('\n'),
+        takeaways: item.takeaways,
+      })
+      setQuiz(next)
+      setQuizAnswers({})
+      setQuizGrade(null)
+      flash('Quiz erzeugt')
+    } catch (reason) {
+      setQuizError(reason instanceof Error ? reason.message : 'Quiz-Generierung fehlgeschlagen.')
+    } finally {
+      setQuizBusy(false)
+    }
+  }
+
+  const runQuizGrade = async () => {
+    if (!quiz || quizBusy) return
+    setQuizBusy(true)
+    setQuizError('')
+    try {
+      const grade = await gradeKnowledgeQuiz({ questions: quiz.questions, answers: quizAnswers })
+      setQuizGrade(grade)
+      flash(`${grade.score}/${grade.total} richtig`)
+    } catch (reason) {
+      setQuizError(reason instanceof Error ? reason.message : 'Auswertung fehlgeschlagen.')
+    } finally {
+      setQuizBusy(false)
+    }
+  }
 
   const suggestedQuestions = useMemo(() => {
     const topic = item.topics[0]
@@ -654,6 +769,17 @@ export function KnowledgeDetailView({
                   </button>
                 </div>
                 {translateError && <p className="knowledge-panel__error" role="alert">{translateError}</p>}
+                {videoError && <p className="knowledge-panel__error" role="alert">{videoError}</p>}
+                {videoUrl && (
+                  <video
+                    ref={videoRef}
+                    className="knowledge-transcript__video"
+                    src={videoUrl}
+                    controls
+                    playsInline
+                    preload="metadata"
+                  />
+                )}
                 <p className="reel-review-detail__guard">
                   {transcriptLang === 'de'
                     ? (reel.transcriptDeWasAlreadyGerman
@@ -661,7 +787,9 @@ export function KnowledgeDetailView({
                       : 'Deutsche Übersetzung. Original bleibt unter „Original“ verfügbar.')
                     : 'Originalsprache. Optional deutsche Übersetzung erzeugen.'}
                   {reel.transcriptProvider ? ` Quelle: ${reel.transcriptProvider}.` : ''}
-                  {' '}Keine erfundenen Zeitmarken — Sprung zur Videoposition ist nicht angebunden.
+                  {timedSegments.length > 0
+                    ? ' Zeitmarken aus der Transkription — Tippen springt im Video.'
+                    : ' Keine gespeicherten Zeitmarken für dieses Reel (nur bei neuer Transkription mit Segmenten).'}
                 </p>
                 <div className="knowledge-transcript">
                   {filteredParagraphs.length === 0 ? (
@@ -671,8 +799,23 @@ export function KnowledgeDetailView({
                       key={entry.index}
                       className={selectedPassage === entry.text ? 'knowledge-transcript__p is-selected' : 'knowledge-transcript__p'}
                     >
+                      {typeof entry.start === 'number' && (
+                        <button
+                          type="button"
+                          className="knowledge-transcript__time"
+                          onClick={() => seekTo(entry.start!)}
+                          disabled={!videoUrl}
+                        >
+                          {formatTimecode(entry.start)}
+                        </button>
+                      )}
                       <p>{entry.text}</p>
                       <div className="knowledge-transcript__actions">
+                        {typeof entry.start === 'number' && videoUrl && (
+                          <button type="button" className="small-button" onClick={() => seekTo(entry.start!)}>
+                            Zum Video
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="small-button"
@@ -817,11 +960,78 @@ export function KnowledgeDetailView({
 
         {tab === 'quiz' && (
           <section className="knowledge-panel">
-            <p className="reel-review-detail__guard">
-              Karteikarten aus gespeichertem Wissen. Multiple-Choice-Generierung und serverseitige Quiz-Auswertung fehlen noch —
-              Fortschritt läuft lokal über Active Recall / Spaced Repetition.
-            </p>
-            <ActiveRecallPanel item={item} reviews={reviews} onChangeReviews={onReviewsChange} />
+            <div className="knowledge-panel__actions">
+              <button type="button" className="primary-button" disabled={quizBusy} onClick={() => { void runQuizGenerate() }}>
+                {quizBusy && !quiz ? 'Erzeuge…' : quiz ? 'Neues Quiz' : 'Multiple Choice erzeugen'}
+              </button>
+              {quiz && (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={quizBusy || Object.keys(quizAnswers).length === 0}
+                  onClick={() => { void runQuizGrade() }}
+                >
+                  Auswerten
+                </button>
+              )}
+            </div>
+            {quizError && <p className="knowledge-panel__error" role="alert">{quizError}</p>}
+            {quizGrade && (
+              <p className="knowledge-detail__notice" role="status">
+                Ergebnis: {quizGrade.score}/{quizGrade.total} richtig
+              </p>
+            )}
+            {!quiz ? (
+              <LifeOsEmpty title="Noch kein Quiz" text="Erzeuge Multiple-Choice-Fragen aus diesem Wissenseintrag." />
+            ) : (
+              <div className="knowledge-quiz">
+                {quiz.questions.map((question, index) => {
+                  const selected = quizAnswers[question.id]
+                  const graded = quizGrade?.results.find(result => result.id === question.id)
+                  const revealed = graded != null || selected != null
+                  return (
+                    <article key={question.id} className="knowledge-quiz__card">
+                      <h3>{index + 1}. {question.prompt}</h3>
+                      <div className="knowledge-quiz__choices" role="group" aria-label={`Antworten Frage ${index + 1}`}>
+                        {question.choices.map((choice, choiceIndex) => {
+                          const isSelected = selected === choiceIndex
+                          const isCorrect = graded?.correctIndex === choiceIndex
+                          const isWrong = graded && isSelected && !graded.correct
+                          return (
+                            <button
+                              key={`${question.id}-${choiceIndex}`}
+                              type="button"
+                              className={[
+                                'knowledge-quiz__choice',
+                                isSelected ? 'is-selected' : '',
+                                isCorrect ? 'is-correct' : '',
+                                isWrong ? 'is-wrong' : '',
+                              ].filter(Boolean).join(' ')}
+                              disabled={Boolean(quizGrade)}
+                              onClick={() => {
+                                setQuizAnswers(current => ({ ...current, [question.id]: choiceIndex }))
+                                setQuizGrade(null)
+                              }}
+                            >
+                              {choice}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {revealed && graded && (
+                        <p className="knowledge-quiz__explain">
+                          {graded.correct ? 'Richtig.' : 'Nicht ganz.'}
+                          {graded.explanation ? ` ${graded.explanation}` : ''}
+                        </p>
+                      )}
+                    </article>
+                  )
+                })}
+              </div>
+            )}
+            <Disclosure title="Karteikarten (Active Recall)">
+              <ActiveRecallPanel item={item} reviews={reviews} onChangeReviews={onReviewsChange} />
+            </Disclosure>
           </section>
         )}
 

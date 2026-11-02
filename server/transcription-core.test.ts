@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
+  parseTranscriptSegments,
   parseTranscriptionBody,
+  transcribeAudioBytes,
   transcribeAudioPayload,
   transcriptionConfig,
 } from './transcription-core.ts'
@@ -97,5 +99,37 @@ describe('server transcription', () => {
       status: 429,
       message: expect.stringMatching(/Quota/i),
     })
+  })
+
+  it('parses whisper verbose_json segments without inventing times', () => {
+    expect(parseTranscriptSegments({
+      text: 'Hallo Welt',
+      segments: [
+        { start: 0.0, end: 1.2, text: ' Hallo' },
+        { start: 1.2, end: 2.0, text: ' Welt' },
+        { start: 5, end: 1, text: 'broken' },
+      ],
+    })).toEqual([
+      { start: 0, end: 1.2, text: 'Hallo' },
+      { start: 1.2, end: 2, text: 'Welt' },
+    ])
+  })
+
+  it('requests segment transcription with whisper-1 verbose_json when asked', async () => {
+    process.env.OPENAI_API_KEY = 'test-key'
+    let sawSegmentRequest = false
+    const result = await transcribeAudioBytes(Buffer.alloc(64), 'audio/mpeg', async (_url, init) => {
+      const body = init?.body as FormData
+      sawSegmentRequest = body.get('response_format') === 'verbose_json'
+        && body.get('model') === 'whisper-1'
+        && body.get('timestamp_granularities[]') === 'segment'
+      return new Response(JSON.stringify({
+        text: 'Hallo Welt',
+        segments: [{ start: 0, end: 1.5, text: 'Hallo Welt' }],
+      }), { status: 200 })
+    }, { includeSegments: true })
+    expect(sawSegmentRequest).toBe(true)
+    expect(result.segments).toEqual([{ start: 0, end: 1.5, text: 'Hallo Welt' }])
+    expect(result.model).toBe('whisper-1')
   })
 })
