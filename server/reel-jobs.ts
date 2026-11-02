@@ -7,7 +7,7 @@ type JobRow = {
   id: string
   reel_id: string
   room_id: string
-  status: 'queued' | 'running' | 'retry' | 'succeeded' | 'dead'
+  status: 'queued' | 'running' | 'retry' | 'succeeded' | 'dead' | 'budget_paused'
   attempts: number
   max_attempts: number
   life_areas: unknown
@@ -67,7 +67,7 @@ export async function enqueueReelJobWithQuery(query: SqlQuery, input: {
   const dailyLimit = envNumber('REEL_DAILY_JOB_LIMIT', REEL_DAILY_JOB_LIMIT, 1, 5000)
   const open = await query<JobRow>(`
     SELECT * FROM lifeos_reel_jobs
-    WHERE reel_id = $1 AND room_id = $2 AND status IN ('queued', 'running', 'retry')
+    WHERE reel_id = $1 AND room_id = $2 AND status IN ('queued', 'running', 'retry', 'budget_paused')
     ORDER BY created_at DESC
     LIMIT 1
   `, [input.reelId, input.roomId])
@@ -147,6 +147,22 @@ async function settleJob(job: JobRow, error?: unknown): Promise<void> {
     return
   }
   const message = error instanceof Error ? error.message.slice(0, 1000) : 'Verarbeitung fehlgeschlagen.'
+  if (disposition === 'budget_paused') {
+    // Keep the job; do not mark the reel as a technical failure.
+    await databaseQuery(`
+      UPDATE lifeos_reel_jobs
+      SET status = 'budget_paused', last_error = $3, locked_at = NULL, locked_by = NULL, updated_at = now(),
+        attempts = GREATEST(0, attempts - 1)
+      WHERE id = $1 AND locked_by = $2 AND status = 'running'
+    `, [job.id, workerSnapshot.workerId, message])
+    await databaseQuery(`
+      UPDATE lifeos_reels
+      SET error_message = $3, updated_at = now()
+      WHERE id = $1 AND room_id = $2 AND status = 'PROCESSING'
+    `, [job.reel_id, job.room_id, message])
+    log('budget_paused', { reelId: job.reel_id, roomId: job.room_id, jobId: job.id })
+    return
+  }
   const permanent = disposition === 'permanent' || job.attempts >= job.max_attempts
   if (permanent) {
     await databaseQuery(`
@@ -254,14 +270,14 @@ export function stopReelWorker(): void {
   workerSnapshot.enabled = false
 }
 
-export async function roomJobCounts(roomId: string): Promise<{ queued: number; running: number; retry: number; dead: number }> {
+export async function roomJobCounts(roomId: string): Promise<{ queued: number; running: number; retry: number; dead: number; budget_paused: number }> {
   const result = await databaseQuery<{ status: string; count: string }>(`
     SELECT status, count(*)::text AS count
     FROM lifeos_reel_jobs
     WHERE room_id = $1 AND created_at > now() - interval '14 days'
     GROUP BY status
   `, [roomId])
-  const counts = { queued: 0, running: 0, retry: 0, dead: 0 }
+  const counts = { queued: 0, running: 0, retry: 0, dead: 0, budget_paused: 0 }
   for (const row of result.rows) {
     if (row.status in counts) counts[row.status as keyof typeof counts] = Number(row.count)
   }

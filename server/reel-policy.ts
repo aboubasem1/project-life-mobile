@@ -33,7 +33,7 @@ export type PipelineSnapshot = {
 
 export type PipelineStage = 'done' | 'extract' | 'analyze' | 'verify' | 'finish'
 
-export type FailureDisposition = 'permanent' | 'retry' | 'lost_lock'
+export type FailureDisposition = 'permanent' | 'retry' | 'lost_lock' | 'budget_paused'
 
 export type ReelGateInput = {
   status: string
@@ -86,6 +86,7 @@ export function retryDelayMs(attempts: number, retryAfterMs?: number): number {
 
 export function processingFailureDisposition(error: unknown): FailureDisposition {
   if (error instanceof SyncHttpError && error.status === 409 && /anderen Worker/i.test(error.message)) return 'lost_lock'
+  if (error instanceof SyncHttpError && error.status === 402) return 'budget_paused'
   // Invalid keys / bad input must not loop forever.
   if (error instanceof SyncHttpError && [400, 401, 403, 404, 413, 422].includes(error.status)) return 'permanent'
   if (error instanceof SyncHttpError && error.status === 503 && /falsch konfiguriert/i.test(error.message)) return 'permanent'

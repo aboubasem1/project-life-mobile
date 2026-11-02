@@ -3,6 +3,7 @@ import { Check, FileVideo, RefreshCw, ShieldCheck, Upload, X } from 'lucide-reac
 import { LIFE_AREAS } from '../../lib/lifeos'
 import {
   batchReels,
+  fetchAiBudget,
   listReels,
   planVideoBatch,
   previewBulkAction,
@@ -11,6 +12,7 @@ import {
   reviewReel,
   uploadAndRegisterReel,
   recoverUploadedReels,
+  type AiBudgetView,
   type KnowledgePublishDraft,
   type ReelCandidate,
   type ReelReviewAction,
@@ -44,19 +46,26 @@ const TRANSCRIPTION_STATUS_LABELS: Record<string, string> = {
 }
 
 const OCR_STATUS_LABELS: Record<string, string> = {
-  done: 'OCR fertig',
-  skipped: 'OCR übersprungen',
-  failed: 'OCR fehlgeschlagen',
-  unavailable: 'OCR nicht verfügbar',
+  done: 'Bildauswertung fertig',
+  skipped: 'Bildauswertung übersprungen',
+  failed: 'Bildauswertung fehlgeschlagen',
+  unavailable: 'Bildauswertung nicht verfügbar',
+  budget_paused: 'Bildauswertung · Budget pausiert',
 }
 
 function pipelineStatusLabel(reel: ReelCandidate): string {
+  if (reel.jobStatus === 'budget_paused') return 'Budget pausiert'
   if (reel.jobStatus === 'queued') return 'Warteschlange'
-  if (reel.jobStatus === 'running') return 'Transkription läuft'
+  if (reel.jobStatus === 'running') {
+    if (reel.transcriptionStatus === 'done' && !reel.title) return 'Wissensaufbereitung'
+    if (reel.transcriptionStatus === 'done') return 'Bildauswertung / Nacharbeit'
+    return 'Transkription'
+  }
   if (reel.jobStatus === 'retry') return 'Wartet auf erneuten Versuch'
   if (reel.jobStatus === 'dead' || reel.status === 'FAILED') return 'Fehlgeschlagen'
   if (reel.status === 'UPLOADED') return 'Hochgeladen'
   if (reel.status === 'PROCESSING') return 'Verarbeitung'
+  if (reel.status === 'REVIEW_READY' && reel.analysisComplete === false) return 'Teilweise fertig'
   if (reel.status === 'PUBLISHED') return 'Fertig · im Wissen'
   return STATUS_LABELS[reel.status] || reel.status
 }
@@ -79,7 +88,7 @@ function tap(pattern: number | number[] = 12) {
 function statusGroup(reel: ReelCandidate): 'processing' | 'ready' | 'published' | 'failed' | 'other' {
   if (reel.knowledgeItemId || reel.status === 'PUBLISHED') return 'published'
   if (reel.status === 'FAILED') return 'failed'
-  if (ACTIVE.has(reel.status) || reel.jobStatus === 'queued' || reel.jobStatus === 'running' || reel.jobStatus === 'retry') return 'processing'
+  if (ACTIVE.has(reel.status) || reel.jobStatus === 'queued' || reel.jobStatus === 'running' || reel.jobStatus === 'retry' || reel.jobStatus === 'budget_paused') return 'processing'
   if (READY.has(reel.status) || reel.status === 'SOURCE_ONLY') return 'ready'
   return 'other'
 }
@@ -98,6 +107,7 @@ export function ReelImportPanel({
   const abortControllers = useRef(new Map<string, AbortController>())
   const cancelledIds = useRef(new Set<string>())
   const [uploads, setUploads] = useState<LocalUpload[]>([])
+  const [budget, setBudget] = useState<AiBudgetView | null>(null)
   const [reels, setReels] = useState<ReelCandidate[]>([])
   const [selected, setSelected] = useState<string[]>([])
   const [detailId, setDetailId] = useState('')
@@ -117,8 +127,9 @@ export function ReelImportPanel({
   const reload = async (quiet = false) => {
     if (!quiet) setLoading(true)
     try {
-      const next = await listReels()
+      const [next, nextBudget] = await Promise.all([listReels(), fetchAiBudget()])
       setReels(next)
+      setBudget(nextBudget)
       if (!quiet) setError('')
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Reels konnten nicht geladen werden.')
@@ -323,6 +334,26 @@ export function ReelImportPanel({
         <span className={stage === 'review' ? 'is-current' : ''}><b>3</b> Wissen übernehmen</span>
       </div>
 
+      {budget && (
+        <div className="reel-import__notice" aria-label="KI-Budget">
+          <strong>KI-Budget {budget.periodYm}: {budget.spentEur.toFixed(2)} € verbraucht · {budget.reservedEur.toFixed(2)} € reserviert · {budget.remainingEur.toFixed(2)} € übrig / {budget.limitEur.toFixed(0)} €</strong>
+          {budget.warn && !budget.backgroundPaused && <p>Hinweis: Mehr als die Hälfte des Monatslimits ist gebunden.</p>}
+          {budget.enrichmentPaused && <p>Optionale Anreicherungen (Vision/Embeddings) sind pausiert.</p>}
+          {budget.backgroundPaused && !budget.allPaused && <p>Hintergrund-KI-Jobs sind pausiert — Restbudget bleibt für interaktive Nutzung.</p>}
+          {budget.allPaused && <p>Monatslimit erreicht. Neue kostenpflichtige Aufrufe sind blockiert.</p>}
+          <details>
+            <summary>Budget-Details</summary>
+            <p>{budget.assumptions.note} Kurs {budget.assumptions.fxUsdEur} USD/EUR ({budget.assumptions.fxDated}), Steuer ×{budget.assumptions.taxFactor}, Sicherheit ×{budget.assumptions.safetyFactor}. Preisversion {budget.assumptions.priceVersion}.</p>
+            <p>{budget.deepinfraExternalLimitNote}</p>
+            <ul>
+              {Object.entries(budget.byStep).map(([step, values]) => (
+                <li key={step}>{step}: {values.spentEur.toFixed(4)} € bestätigt / geschätzt · {values.reservedEur.toFixed(4)} € reserviert</li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      )}
+
       <div className="reel-import__actions">
           <input ref={inputRef} hidden type="file" multiple accept="video/mp4,video/quicktime,video/webm,video/*,.mp4,.mov,.m4v,.webm" onChange={event => {
             const files = [...(event.target.files ?? [])]
@@ -440,12 +471,17 @@ export function ReelImportPanel({
                   {detail.detectedLanguage && <span>Sprache: {detail.detectedLanguage}</span>}
                   {detail.transcriptionStatus && <span>{TRANSCRIPTION_STATUS_LABELS[detail.transcriptionStatus] || detail.transcriptionStatus}</span>}
                   {detail.ocrStatus && <span>{OCR_STATUS_LABELS[detail.ocrStatus] || detail.ocrStatus}</span>}
+                  {detail.sourcesLabel && <span>{detail.sourcesLabel}</span>}
+                  {detail.coverageLimited && <span>Begrenzte Bildabdeckung</span>}
                   {detail.transcriptProvider && <span>ASR: {detail.transcriptProvider}{detail.transcriptModel ? ` · ${detail.transcriptModel}` : ''}</span>}
                 </div>
                 {detail.transcriptionError && <p className="reel-import__error">Transkription: {detail.transcriptionError}</p>}
-                {detail.ocrError && <p className="reel-review-detail__guard">OCR: {detail.ocrError}</p>}
+                {detail.ocrError && <p className="reel-review-detail__guard">Bildauswertung: {detail.ocrError}</p>}
+                {detail.visualInterpretation && (
+                  <details><summary>Visuelle Interpretation</summary><div className="reel-transcript">{detail.visualInterpretation}</div></details>
+                )}
                 {detail.errorMessage && <div className="reel-import__error">{detail.errorMessage} <button type="button" disabled={busy} onClick={() => void retry(detail)}>Erneut versuchen</button></div>}
-                {(detail.jobStatus === 'dead' || detail.status === 'FAILED' || detail.transcriptionStatus === 'failed') && (
+                {(detail.jobStatus === 'dead' || detail.jobStatus === 'budget_paused' || detail.status === 'FAILED' || detail.transcriptionStatus === 'failed' || detail.ocrStatus === 'failed') && (
                   <button type="button" disabled={busy} onClick={() => void retry(detail)}>Erneut verarbeiten</button>
                 )}
                 <label className="text-field"><span>Titel</span><input value={draft.title} onChange={event => setDraft(current => ({ ...current, title: event.target.value }))} /></label>

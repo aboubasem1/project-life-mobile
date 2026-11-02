@@ -1,6 +1,7 @@
 import { databaseConfigured, databaseQuery, databaseTransaction } from './database.js'
 import { documentsFromLifeOs, indexPlanFromDeviceSnapshot, rankKnowledge, type KnowledgeDoc } from '../projectdashboardv1/src/lib/lifeos/knowledgeRank.js'
 import { sanitizeJsonValue } from './json-text.js'
+import { upsertKnowledgeEmbeddings } from './knowledge-embeddings.js'
 
 export type KnowledgeSearchHit = { id: string; title: string; score: number }
 
@@ -65,6 +66,8 @@ export async function rememberPublishedKnowledge(roomId: string, draft: {
       source_updated_at = EXCLUDED.source_updated_at,
       search_vector = EXCLUDED.search_vector
   `, [roomId, id, title.slice(0, 160), body, JSON.stringify(topics), updatedAt, body])
+  // Optional DeepInfra embeddings (off by default). Failures never block publish/FTS.
+  void upsertKnowledgeEmbeddings({ roomId, knowledgeId: id, title, body }).catch(() => undefined)
 }
 
 export async function searchRoomKnowledge(roomId: string, rawQuery: string): Promise<{

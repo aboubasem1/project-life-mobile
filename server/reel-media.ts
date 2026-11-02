@@ -1,10 +1,12 @@
 import { spawn } from 'node:child_process'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { SyncHttpError } from './sync-core.js'
+import { SyncHttpError } from './http-error.js'
 
 const FFMPEG_TIMEOUT_MS = Math.min(300_000, Math.max(10_000, Number(process.env.REEL_FFMPEG_TIMEOUT_MS) || 120_000))
 const MIN_AUDIO_BYTES = 256
+const FRAME_INTERVAL_SEC = Math.min(10, Math.max(1, Number(process.env.REEL_OCR_FRAME_INTERVAL_SEC) || 2))
+const MAX_VISION_FRAMES = Math.min(24, Math.max(1, Number(process.env.REEL_VISION_MAX_FRAMES) || 12))
 
 function runCommand(command: string, args: string[], timeoutMs = FFMPEG_TIMEOUT_MS): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
@@ -41,9 +43,25 @@ export async function videoHasAudioStream(inputPath: string): Promise<boolean> {
     if (result.code !== 0) return false
     return /audio/i.test(result.stdout.trim())
   } catch (error) {
-    // If ffprobe is missing, fall through to ffmpeg extract and interpret failures.
     if (error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT') return true
     return true
+  }
+}
+
+export async function probeVideoDurationMs(inputPath: string): Promise<number | null> {
+  try {
+    const result = await runCommand('ffprobe', [
+      '-v', 'error',
+      '-show_entries', 'format=duration',
+      '-of', 'csv=p=0',
+      inputPath,
+    ], Math.min(30_000, FFMPEG_TIMEOUT_MS))
+    if (result.code !== 0) return null
+    const seconds = Number(result.stdout.trim())
+    if (!Number.isFinite(seconds) || seconds <= 0) return null
+    return Math.round(seconds * 1000)
+  } catch {
+    return null
   }
 }
 
@@ -99,19 +117,84 @@ export async function extractReelAudio(inputPath: string, outputPath: string): P
   }
 }
 
-/** Samples a few frames for OCR; failures do not block audio-first processing. */
-export async function extractReelFrames(inputPath: string, outputDirectory: string): Promise<Buffer[]> {
-  const outputPattern = join(outputDirectory, 'frame-%02d.jpg')
+function sampleFingerprint(buffer: Buffer): string {
+  // Coarse byte histogram fingerprint to drop near-identical frames without a heavy image lib.
+  const buckets = new Array<number>(16).fill(0)
+  const step = Math.max(1, Math.floor(buffer.length / 2048))
+  for (let i = 0; i < buffer.length; i += step) buckets[(buffer[i] >> 4) & 15] += 1
+  return buckets.join(',')
+}
+
+function fingerprintsSimilar(a: string, b: string): boolean {
+  const left = a.split(',').map(Number)
+  const right = b.split(',').map(Number)
+  if (left.length !== right.length) return false
+  let distance = 0
+  let total = 0
+  for (let i = 0; i < left.length; i += 1) {
+    distance += Math.abs(left[i] - right[i])
+    total += left[i] + right[i]
+  }
+  if (total <= 0) return true
+  return distance / total < 0.04
+}
+
+export type SampledFrame = {
+  buffer: Buffer
+  approxMs: number
+}
+
+/**
+ * Samples frames at t=0, every N seconds (default 2s), and via scene-change filter.
+ * Near-duplicates are dropped. This is an approximation — very short overlays can be missed.
+ */
+export async function extractReelFrames(
+  inputPath: string,
+  outputDirectory: string,
+  options: { maxFrames?: number; intervalSec?: number } = {},
+): Promise<SampledFrame[]> {
+  const maxFrames = options.maxFrames ?? MAX_VISION_FRAMES
+  const intervalSec = options.intervalSec ?? FRAME_INTERVAL_SEC
+  const durationMs = await probeVideoDurationMs(inputPath)
+  const outputPattern = join(outputDirectory, 'frame-%03d.jpg')
   try {
+    // Interval sampling + light scene detection. Scene threshold is intentionally moderate.
+    const vf = `fps=1/${intervalSec},select='eq(n\\,0)+gt(scene\\,0.28)',scale=720:-2`
     const result = await runCommand('ffmpeg', [
       '-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
       '-i', inputPath,
-      '-vf', 'fps=1/8,scale=720:-2', '-frames:v', '6', '-q:v', '5',
+      '-vf', vf,
+      '-frames:v', String(Math.max(maxFrames * 2, maxFrames)),
+      '-q:v', '5',
       outputPattern,
     ])
-    if (result.code !== 0) return []
+    if (result.code !== 0) {
+      // Fallback: simple fixed-interval sampling without scene filter.
+      const fallback = await runCommand('ffmpeg', [
+        '-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
+        '-i', inputPath,
+        '-vf', `fps=1/${intervalSec},scale=720:-2`,
+        '-frames:v', String(maxFrames),
+        '-q:v', '5',
+        outputPattern,
+      ])
+      if (fallback.code !== 0) return []
+    }
     const names = (await readdir(outputDirectory)).filter(name => /^frame-\d+\.jpg$/.test(name)).sort()
-    return Promise.all(names.map(name => readFile(join(outputDirectory, name))))
+    const sampled: SampledFrame[] = []
+    const fingerprints: string[] = []
+    for (let index = 0; index < names.length; index += 1) {
+      const buffer = await readFile(join(outputDirectory, names[index]))
+      const fingerprint = sampleFingerprint(buffer)
+      if (fingerprints.some(existing => fingerprintsSimilar(existing, fingerprint))) continue
+      fingerprints.push(fingerprint)
+      const approxMs = durationMs != null
+        ? Math.min(durationMs, Math.round(index * intervalSec * 1000))
+        : Math.round(index * intervalSec * 1000)
+      sampled.push({ buffer, approxMs })
+      if (sampled.length >= maxFrames) break
+    }
+    return sampled
   } catch {
     return []
   }
@@ -124,3 +207,5 @@ export function extractAudioOrThrow(result: ExtractAudioResult): Buffer {
   if (result.reason === 'no_audio') throw new SyncHttpError(422, result.message)
   throw new SyncHttpError(500, result.message)
 }
+
+export { FRAME_INTERVAL_SEC, MAX_VISION_FRAMES }

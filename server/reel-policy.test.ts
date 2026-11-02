@@ -43,6 +43,7 @@ describe('reel job policy', () => {
     expect(processingFailureDisposition(new SyncHttpError(503, 'DeepInfra-Transkription ist falsch konfiguriert.'))).toBe('permanent')
     expect(processingFailureDisposition(new SyncHttpError(401, 'unauthorized'))).toBe('permanent')
     expect(processingFailureDisposition(new SyncHttpError(409, 'Verarbeitung wurde von einem anderen Worker übernommen.'))).toBe('lost_lock')
+    expect(processingFailureDisposition(new SyncHttpError(402, 'KI-Budget pausiert Hintergrundjobs.'))).toBe('budget_paused')
   })
 
   it('resumes after a saved transcript instead of repeating extraction', () => {

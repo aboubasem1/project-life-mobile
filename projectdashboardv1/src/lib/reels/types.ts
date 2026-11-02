@@ -38,11 +38,16 @@ export type ReelCandidate = {
   transcriptDe?: string
   transcriptDeWasAlreadyGerman?: boolean
   onScreenText: string
+  visualInterpretation?: string
   transcriptionStatus?: string
   transcriptionError?: string
   ocrStatus?: string
   ocrError?: string
+  visionStatus?: string
   sourcesUsed?: string[]
+  sourcesLabel?: string
+  coverageLimited?: boolean
+  analysisComplete?: boolean
   detectedLanguage?: string
   lifeArea: string
   topics: string[]
@@ -62,7 +67,7 @@ export type ReelCandidate = {
   updatedAt: string
   knowledgeItemId?: string | null
   publishedAt?: string | null
-  jobStatus?: 'queued' | 'running' | 'retry' | 'succeeded' | 'dead' | null
+  jobStatus?: 'queued' | 'running' | 'retry' | 'succeeded' | 'dead' | 'budget_paused' | null
   jobAttempts?: number
   jobLastError?: string | null
   jobRunAfter?: string | null

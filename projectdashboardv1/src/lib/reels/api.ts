@@ -312,6 +312,39 @@ export async function listReels(): Promise<ReelCandidate[]> {
   return result.reels
 }
 
+export type AiBudgetView = {
+  periodYm: string
+  limitEur: number
+  spentEur: number
+  reservedEur: number
+  remainingEur: number
+  byStep: Record<string, { spentEur: number; reservedEur: number }>
+  enrichmentPaused: boolean
+  backgroundPaused: boolean
+  allPaused: boolean
+  warn: boolean
+  queueResume: 'manual' | 'auto_next_month'
+  assumptions: {
+    fxUsdEur: number
+    fxDated: string
+    taxFactor: number
+    safetyFactor: number
+    priceVersion: string
+    note: string
+  }
+  deepinfraExternalLimitNote: string
+}
+
+export async function fetchAiBudget(): Promise<AiBudgetView | null> {
+  if (!loadSyncCredentials()) return null
+  try {
+    const result = await apiJson<{ ok: boolean; budget?: AiBudgetView }>('/api/reels/budget', {}, 15_000, false, 'list')
+    return result.budget || null
+  } catch {
+    return null
+  }
+}
+
 export async function getReel(reelId: string): Promise<ReelCandidate> {
   await ensureReelRoom()
   const result = await apiJson<{ reel: ReelCandidate }>(`/api/reels/${encodeURIComponent(reelId)}`, {}, 20_000, false, 'get')

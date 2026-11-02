@@ -1,5 +1,6 @@
 import { randomInt, randomUUID } from 'node:crypto'
 import { sanitizeJsonValue } from './json-text.js'
+import { SyncHttpError } from './http-error.js'
 
 function newErrorRef(): string {
   return randomUUID().slice(0, 8)
@@ -24,19 +25,7 @@ import { syncUserContentKey } from '../projectdashboardv1/src/lib/syncContent.js
 const PAIR_TTL_MS = 30 * 60 * 1000
 const MAX_DEVICES = 8
 
-export class SyncHttpError extends Error {
-  status: number
-  retryAfterMs?: number
-
-  constructor(status: number, message: string, options?: { retryAfterMs?: number }) {
-    super(message)
-    this.name = 'SyncHttpError'
-    this.status = status
-    if (options?.retryAfterMs != null && Number.isFinite(options.retryAfterMs) && options.retryAfterMs > 0) {
-      this.retryAfterMs = Math.min(300_000, Math.round(options.retryAfterMs))
-    }
-  }
-}
+export { SyncHttpError }
 
 export function syncJson(data: unknown, status = 200, errorRef?: string): Response {
   const headers: Record<string, string> = {

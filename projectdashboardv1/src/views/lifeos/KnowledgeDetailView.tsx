@@ -855,6 +855,14 @@ export function KnowledgeDetailView({
                     <pre className="knowledge-transcript__ocr">{reel.onScreenText}</pre>
                   </Disclosure>
                 )}
+                {reel.visualInterpretation?.trim() && (
+                  <Disclosure title="Bildanalyse">
+                    <pre className="knowledge-transcript__ocr">{reel.visualInterpretation}</pre>
+                  </Disclosure>
+                )}
+                {reel.sourcesLabel && (
+                  <p className="reel-review-detail__guard">{reel.sourcesLabel}{reel.analysisComplete === false ? ' · nicht vollständig analysiert' : ''}</p>
+                )}
               </>
             )}
           </section>
