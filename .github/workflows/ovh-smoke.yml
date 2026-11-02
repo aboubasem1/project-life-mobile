@@ -42,3 +42,23 @@ jobs:
             -p "$OVH_SSH_PORT" \
             "$OVH_USER@$OVH_HOST" \
             "set -eu; docker --version; docker compose version; docker info >/dev/null; test -w '$OVH_DEPLOY_PATH'; test -f '$OVH_DEPLOY_PATH/shared/.env'; test \"\$(stat -c %a '$OVH_DEPLOY_PATH/shared/.env')\" = 600; printf '%s\\n' OVH_SMOKE_OK"
+      - name: Peek production API logs for Reel upload failures
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh \
+            -i "$RUNNER_TEMP/lifeos-ssh/key" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/lifeos-ssh/known_hosts" \
+            -p "$OVH_SSH_PORT" \
+            "$OVH_USER@$OVH_HOST" \
+            "set -eu
+             echo '=== current revision ==='
+             readlink -f '$OVH_DEPLOY_PATH/current' || true
+             echo '=== api logs (last 300) ==='
+             docker compose --project-name lifeos --env-file '$OVH_DEPLOY_PATH/shared/.env' --file '$OVH_DEPLOY_PATH/current/docker-compose.yml' logs --tail 300 api
+             echo '=== filtered errors ==='
+             docker compose --project-name lifeos --env-file '$OVH_DEPLOY_PATH/shared/.env' --file '$OVH_DEPLOY_PATH/current/docker-compose.yml' logs --tail 3000 api 2>&1 | grep -Ei 'error|exception|storage|presign|proxy|reel|r2|ECONN|timeout|forbidden|unauthorized|json|relation|does not exist' | tail -150 || true
+            "
