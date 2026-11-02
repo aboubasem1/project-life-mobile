@@ -416,15 +416,20 @@ async function migrateEmbeddedCaptureFiles(room: SyncRoom): Promise<boolean> {
 
 async function finalizePostgresRoom(room: SyncRoom | null, mirrorToUpstash: boolean): Promise<SyncRoom | null> {
   if (!room) return null
-  if (await migrateEmbeddedCaptureFiles(room)) {
-    await saveRoomToPostgres(room)
-    if (mirrorToUpstash) {
-      try {
-        await saveRoomToUpstash(room)
-      } catch (error) {
-        console.warn('Migrated capture could not be mirrored to Upstash yet.', error)
+  try {
+    if (await migrateEmbeddedCaptureFiles(room)) {
+      await saveRoom(room)
+      if (mirrorToUpstash) {
+        try {
+          await saveRoomToUpstash(room)
+        } catch (error) {
+          console.warn('Migrated capture could not be mirrored to Upstash yet.', error)
+        }
       }
     }
+  } catch (error) {
+    // Never block authorized Reel/storage calls because capture migration failed.
+    console.warn('Embedded capture migration finalize failed; continuing with existing room.', error)
   }
   return room
 }
@@ -437,7 +442,13 @@ export async function getRoom(roomId: string): Promise<SyncRoom | null> {
     try {
       const legacyRoom = await getRoomFromUpstash(roomId)
       const selected = newerRoom(postgresRoom, legacyRoom)
-      if (selected && selected === legacyRoom) await saveRoomToPostgres(selected)
+      if (selected && selected === legacyRoom) {
+        try {
+          await saveRoom(selected)
+        } catch (error) {
+          console.warn('Upstash room could not be mirrored to PostgreSQL yet.', error)
+        }
+      }
       return await finalizePostgresRoom(selected, true)
     } catch (error) {
       console.warn('Upstash bridge read failed; PostgreSQL remains authoritative.', error)
@@ -470,7 +481,13 @@ export async function getRoomIdByPairCode(pairCode: string): Promise<string | nu
       const legacyRoomId = typeof raw === 'string' && raw ? raw : null
       if (!legacyRoomId) return null
       const legacyRoom = await getRoomFromUpstash(legacyRoomId)
-      if (legacyRoom) await saveRoomToPostgres(legacyRoom)
+      if (legacyRoom) {
+        try {
+          await saveRoom(legacyRoom)
+        } catch (error) {
+          console.warn('Upstash pair room could not be mirrored to PostgreSQL yet.', error)
+        }
+      }
       return legacyRoom?.roomId ?? null
     } catch (error) {
       console.warn('Upstash bridge pair lookup failed.', error)

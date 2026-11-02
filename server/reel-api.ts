@@ -363,7 +363,16 @@ export async function runReelPipeline(input: {
           transcriptProvider = transcription.provider
           transcriptModel = transcription.model
         } catch (error) {
-          if (!(error instanceof SyncHttpError) || error.status !== 422) throw error
+          // Provider outages / bad keys / empty audio must not skip OCR fallback.
+          // Only unexpected non-HTTP failures abort extract before frames are read.
+          if (!(error instanceof SyncHttpError)) throw error
+          console.info(JSON.stringify({
+            scope: 'reel-pipeline',
+            event: 'transcription_soft_fail',
+            reelId: input.reelId,
+            status: error.status,
+            message: error.message.slice(0, 200),
+          }))
         }
       }
       const frames = transcript.length < 200 ? await extractReelFrames(videoPath, temporary) : []

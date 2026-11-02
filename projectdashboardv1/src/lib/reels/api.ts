@@ -2,13 +2,31 @@ import { createDevicePairing, loadSyncCredentials } from '../deviceSync'
 import { loadImportReceipts, markImportUploaded, removeImportReceipt, saveImportReceipt, type ReelImportReceipt } from './import-session'
 import type { KnowledgePublishDraft, ReelCandidate, ReelReviewAction } from './types'
 
+export type ReelUploadStage =
+  | 'ensure-room'
+  | 'checksum'
+  | 'presign'
+  | 'proxy-upload'
+  | 'complete'
+  | 'register'
+  | 'list'
+  | 'process'
+  | 'review'
+  | 'publish'
+  | 'batch'
+  | 'recover'
+
 let reelRoomPromise: Promise<void> | null = null
 
 function ensureReelRoom(): Promise<void> {
   if (loadSyncCredentials()) return Promise.resolve()
   if (!reelRoomPromise) {
     reelRoomPromise = createDevicePairing()
-      .then(() => undefined)
+      .then(() => {
+        if (!loadSyncCredentials()) {
+          throw new Error('Reel-Import konnte die Geräte-Anmeldung nicht speichern.')
+        }
+      })
       .finally(() => {
         reelRoomPromise = null
       })
@@ -30,7 +48,24 @@ async function authHeaders(): Promise<Record<string, string>> {
   return credentialHeaders()
 }
 
-async function apiJson<T>(path: string, init: RequestInit = {}, timeoutMs = 20_000, ensureRoom = false): Promise<T> {
+export function formatReelApiFailure(input: {
+  stage: ReelUploadStage
+  status: number
+  error?: string
+  errorRef?: string
+}): Error {
+  const detail = input.error?.trim() || `Reel-API nicht erreichbar (${input.status}).`
+  const ref = input.errorRef ? `, Ref ${input.errorRef}` : ''
+  return new Error(`${detail} [Stufe: ${input.stage}, HTTP ${input.status}${ref}]`)
+}
+
+async function apiJson<T>(
+  path: string,
+  init: RequestInit = {},
+  timeoutMs = 20_000,
+  ensureRoom = false,
+  stage: ReelUploadStage = 'list',
+): Promise<T> {
   const controller = new AbortController()
   const timer = window.setTimeout(() => controller.abort(), timeoutMs)
   const roomHeaders = ensureRoom ? await authHeaders() : credentialHeaders()
@@ -44,11 +79,20 @@ async function apiJson<T>(path: string, init: RequestInit = {}, timeoutMs = 20_0
       },
       signal: controller.signal,
     })
-    const result = await response.json().catch(() => ({})) as T & { error?: string }
-    if (!response.ok) throw new Error(result.error || `Reel-API nicht erreichbar (${response.status}).`)
+    const result = await response.json().catch(() => ({})) as T & { error?: string; errorRef?: string; stage?: string }
+    if (!response.ok) {
+      throw formatReelApiFailure({
+        stage: (result.stage as ReelUploadStage | undefined) || stage,
+        status: response.status,
+        error: result.error,
+        errorRef: result.errorRef || response.headers.get('x-life-os-error-ref') || undefined,
+      })
+    }
     return result
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') throw new Error('Der Server braucht zu lange. Der Eintrag kann später erneut geladen werden.')
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error(`Der Server braucht zu lange. [Stufe: ${stage}] Der Eintrag kann später erneut geladen werden.`)
+    }
     throw error
   } finally {
     window.clearTimeout(timer)
@@ -70,6 +114,26 @@ async function sameOriginUploadHeaders(url: string, headers: Record<string, stri
     // Fall through to the provided headers (e.g. signed R2 / local URLs).
   }
   return headers
+}
+
+function readXhrError(request: XMLHttpRequest, status: number): Error {
+  let error = ''
+  let errorRef = request.getResponseHeader('x-life-os-error-ref') || ''
+  let stage: ReelUploadStage = 'proxy-upload'
+  try {
+    const payload = JSON.parse(request.responseText || '{}') as { error?: unknown; errorRef?: unknown; stage?: unknown }
+    if (typeof payload.error === 'string') error = payload.error
+    if (typeof payload.errorRef === 'string' && payload.errorRef) errorRef = payload.errorRef
+    if (typeof payload.stage === 'string' && payload.stage) stage = payload.stage as ReelUploadStage
+  } catch {
+    // Non-JSON bodies stay status-only.
+  }
+  return formatReelApiFailure({
+    stage,
+    status,
+    error: error || `Upload fehlgeschlagen (${status}).`,
+    errorRef: errorRef || undefined,
+  })
 }
 
 async function putFile(
@@ -96,22 +160,27 @@ async function putFile(
       request.setRequestHeader(name, value)
     }
     request.timeout = 10 * 60_000
+    request.upload.onloadstart = () => onProgress(1)
     request.upload.onprogress = event => {
-      if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100))
+      if (!event.lengthComputable) {
+        onProgress(Math.max(1, Math.min(95, Math.round((event.loaded / Math.max(file.size, 1)) * 100))))
+        return
+      }
+      onProgress(Math.round((event.loaded / event.total) * 100))
     }
     request.onload = () => {
       signal?.removeEventListener('abort', onAbort)
       request.status >= 200 && request.status < 300
         ? resolve()
-        : reject(new Error(`Upload fehlgeschlagen (${request.status}).`))
+        : reject(readXhrError(request, request.status))
     }
     request.onerror = () => {
       signal?.removeEventListener('abort', onAbort)
-      reject(new Error('Upload-Verbindung wurde unterbrochen.'))
+      reject(new Error('Upload-Verbindung wurde unterbrochen. [Stufe: proxy-upload]'))
     }
     request.ontimeout = () => {
       signal?.removeEventListener('abort', onAbort)
-      reject(new Error('Upload hat zu lange gedauert.'))
+      reject(new Error('Upload hat zu lange gedauert. [Stufe: proxy-upload]'))
     }
     request.send(file)
   })
@@ -123,8 +192,20 @@ export async function uploadAndRegisterReel(
   lifeAreas: string[] = [],
   signal?: AbortSignal,
 ): Promise<{ reel: ReelCandidate; queued: boolean; duplicate: boolean }> {
-  await ensureReelRoom()
-  const checksumSha256 = await sha256(file)
+  try {
+    await ensureReelRoom()
+  } catch (error) {
+    if (error instanceof Error && !error.message.includes('[Stufe:')) {
+      throw new Error(`${error.message} [Stufe: ensure-room]`)
+    }
+    throw error
+  }
+  let checksumSha256: string | null = null
+  try {
+    checksumSha256 = await sha256(file)
+  } catch (error) {
+    throw new Error(`${error instanceof Error ? error.message : 'Prüfsumme fehlgeschlagen.'} [Stufe: checksum]`)
+  }
   const presigned = await apiJson<{
     objectId: string
     storageKey: string
@@ -139,9 +220,9 @@ export async function uploadAndRegisterReel(
       sizeBytes: file.size,
       checksumSha256,
     }),
-  })
+  }, 20_000, false, 'presign')
   const credentials = loadSyncCredentials()
-  if (!credentials) throw new Error('Reel-Import benötigt einen gekoppelten Geräte-Sync.')
+  if (!credentials) throw new Error('Reel-Import benötigt einen gekoppelten Geräte-Sync. [Stufe: ensure-room]')
   const receipt: ReelImportReceipt = {
     objectId: presigned.objectId,
     storageKey: presigned.storageKey,
@@ -166,11 +247,11 @@ export async function uploadAndRegisterReel(
       contentType: file.type || 'video/mp4',
       sizeBytes: file.size,
     }),
-  })
+  }, 60_000, false, 'complete')
   const registered = await apiJson<{ reel: ReelCandidate; queued?: boolean; duplicate?: boolean }>('/api/reels/register', {
     method: 'POST',
     body: JSON.stringify({ objectId: presigned.objectId, checksumSha256, lifeAreas }),
-  })
+  }, 60_000, false, 'register')
   removeImportReceipt(credentials.roomId, presigned.objectId)
   return { reel: registered.reel, queued: Boolean(registered.queued), duplicate: Boolean(registered.duplicate) }
 }
@@ -191,11 +272,11 @@ export async function recoverUploadedReels(): Promise<{ recovered: ReelCandidate
           contentType: receipt.contentType,
           sizeBytes: receipt.sizeBytes,
         }),
-      })
+      }, 60_000, false, 'recover')
       const registered = await apiJson<{ reel: ReelCandidate }>('/api/reels/register', {
         method: 'POST',
         body: JSON.stringify({ objectId: receipt.objectId, checksumSha256: receipt.checksumSha256, lifeAreas: receipt.lifeAreas }),
-      })
+      }, 60_000, false, 'recover')
       recovered.push(registered.reel)
       removeImportReceipt(credentials.roomId, receipt.objectId)
     } catch {
@@ -213,19 +294,19 @@ export async function processReel(reelId: string, lifeAreas: string[]): Promise<
   const result = await apiJson<{ reel: ReelCandidate }>(`/api/reels/${reelId}/process`, {
     method: 'POST',
     body: JSON.stringify({ lifeAreas }),
-  })
+  }, 20_000, false, 'process')
   return result.reel
 }
 
 export async function listPublishedKnowledge(): Promise<KnowledgePublishDraft[]> {
   if (!loadSyncCredentials()) return []
-  const result = await apiJson<{ drafts?: KnowledgePublishDraft[] }>('/api/reels/knowledge')
+  const result = await apiJson<{ drafts?: KnowledgePublishDraft[] }>('/api/reels/knowledge', {}, 20_000, false, 'list')
   return Array.isArray(result.drafts) ? result.drafts : []
 }
 
 export async function listReels(): Promise<ReelCandidate[]> {
   if (!loadSyncCredentials()) return []
-  const result = await apiJson<{ reels: ReelCandidate[] }>('/api/reels?limit=300')
+  const result = await apiJson<{ reels: ReelCandidate[] }>('/api/reels?limit=300', {}, 20_000, false, 'list')
   return result.reels
 }
 
@@ -252,7 +333,7 @@ export async function reviewReel(input: {
       suggestedTarget: input.suggestedTarget,
       reviewerNote: input.reviewerNote,
     }),
-  })
+  }, 20_000, false, 'review')
   return result.reel
 }
 
@@ -261,7 +342,7 @@ export async function publishReel(reel: ReelCandidate, sourceOnly = false): Prom
   return apiJson(`/api/reels/${reel.id}/publish`, {
     method: 'POST',
     body: JSON.stringify({ version: reel.version, sourceOnly }),
-  })
+  }, 20_000, false, 'publish')
 }
 
 export async function batchReels(input: {
@@ -278,5 +359,5 @@ export async function batchReels(input: {
       versions: Object.fromEntries(input.reels.map(reel => [reel.id, reel.version])),
       includeMediumRisk: Boolean(input.includeMediumRisk),
     }),
-  })
+  }, 60_000, false, 'batch')
 }

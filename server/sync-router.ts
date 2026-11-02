@@ -176,6 +176,20 @@ export async function handleSyncRequest(request: Request): Promise<Response> {
 
     return syncJson({ error: 'Not found' }, 404)
   } catch (error) {
-    return syncError(error)
+    const pathname = (() => {
+      try {
+        return new URL(request.url).pathname
+      } catch {
+        return ''
+      }
+    })()
+    const stage = pathname.includes('/api/storage/')
+      ? 'storage'
+      : pathname.includes('/api/reels')
+        ? 'reels'
+        : pathname.includes('/api/sync/')
+          ? 'sync'
+          : 'api'
+    return syncError(error, stage)
   }
 }
