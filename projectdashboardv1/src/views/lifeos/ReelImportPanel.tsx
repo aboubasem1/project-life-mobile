@@ -62,9 +62,12 @@ function statusGroup(reel: ReelCandidate): 'processing' | 'ready' | 'published' 
 export function ReelImportPanel({
   onClose,
   onPublished,
+  variant = 'panel',
 }: {
   onClose: () => void
   onPublished: (drafts: KnowledgePublishDraft[]) => number
+  /** `page` = full processing surface; `panel` = embedded card. */
+  variant?: 'panel' | 'page'
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const abortControllers = useRef(new Map<string, AbortController>())
@@ -275,14 +278,18 @@ export function ReelImportPanel({
   }
 
   return (
-    <section className="card reel-import">
+    <section className={variant === 'page' ? 'reel-import reel-import--page' : 'card reel-import'}>
       <div className="reel-import__header">
         <div>
           <span className="eyebrow">Wissen</span>
-          <h2>Reels importieren</h2>
-          <p>Wähle Videos aus Fotos oder Dateien. Nach dem Upload läuft die Verarbeitung auf dem Server weiter.</p>
+          <h2>{variant === 'page' ? 'Verarbeitung' : 'Reels importieren'}</h2>
+          <p>
+            {variant === 'page'
+              ? 'Warteschlange für Uploads, Transkription, Prüfung und Übernahme ins Wissen.'
+              : 'Wähle Videos aus Fotos oder Dateien. Nach dem Upload läuft die Verarbeitung auf dem Server weiter.'}
+          </p>
         </div>
-        <button type="button" className="icon-button" aria-label="Reel-Import schließen" onClick={onClose}><X size={18} /></button>
+        <button type="button" className="icon-button" aria-label="Verarbeitung schließen" onClick={onClose}><X size={18} /></button>
       </div>
 
       <div className="reel-import__steps" aria-label="Ablauf">
