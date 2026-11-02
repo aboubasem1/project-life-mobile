@@ -1,11 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
+  parseTranscriptSegments,
   parseTranscriptionBody,
+  transcribeAudioBytes,
   transcribeAudioPayload,
   transcriptionConfig,
 } from './transcription-core.ts'
 
-const KEYS = ['TRANSCRIPTION_ENABLED', 'TRANSCRIPTION_API_KEY', 'OPENAI_API_KEY', 'LLM_API_KEY'] as const
+const KEYS = [
+  'TRANSCRIPTION_ENABLED',
+  'TRANSCRIPTION_API_KEY',
+  'OPENAI_API_KEY',
+  'LLM_API_KEY',
+  'DEEPINFRA_API_KEY',
+  'DEEPINFRA_TRANSCRIPTION_ENABLED',
+  'TRANSCRIPTION_PROVIDER',
+  'TRANSCRIPTION_LANGUAGE',
+] as const
 const previous = new Map<string, string | undefined>()
 
 function isolateEnv() {
@@ -39,7 +50,7 @@ describe('server transcription', () => {
       mimeType: 'audio/webm',
     }, async () => new Response(JSON.stringify({ text: '  Mass Gainer getrunken  ' }), { status: 200 }))
     expect(result.transcript).toBe('Mass Gainer getrunken')
-    expect(result.provider).toBe('whisper')
+    expect(result.provider).toBe('openai')
   })
 
   it('fails closed when the provider returns no text', async () => {
@@ -85,7 +96,7 @@ describe('server transcription', () => {
 
   it('strips wrapping quotes from pasted API keys', () => {
     process.env.OPENAI_API_KEY = '"sk-test-quoted"'
-    expect(transcriptionConfig().apiKey).toBe('sk-test-quoted')
+    expect(transcriptionConfig().openaiKey).toBe('sk-test-quoted')
     expect(transcriptionConfig().enabled).toBe(true)
   })
 
@@ -97,5 +108,37 @@ describe('server transcription', () => {
       status: 429,
       message: expect.stringMatching(/Quota/i),
     })
+  })
+
+  it('parses whisper verbose_json segments without inventing times', () => {
+    expect(parseTranscriptSegments({
+      text: 'Hallo Welt',
+      segments: [
+        { start: 0.0, end: 1.2, text: ' Hallo' },
+        { start: 1.2, end: 2.0, text: ' Welt' },
+        { start: 5, end: 1, text: 'broken' },
+      ],
+    })).toEqual([
+      { start: 0, end: 1.2, text: 'Hallo' },
+      { start: 1.2, end: 2, text: 'Welt' },
+    ])
+  })
+
+  it('requests segment transcription with whisper-1 verbose_json when asked', async () => {
+    process.env.OPENAI_API_KEY = 'test-key'
+    let sawSegmentRequest = false
+    const result = await transcribeAudioBytes(Buffer.alloc(64), 'audio/mpeg', async (_url, init) => {
+      const body = init?.body as FormData
+      sawSegmentRequest = body.get('response_format') === 'verbose_json'
+        && body.get('model') === 'whisper-1'
+        && body.get('timestamp_granularities[]') === 'segment'
+      return new Response(JSON.stringify({
+        text: 'Hallo Welt',
+        segments: [{ start: 0, end: 1.5, text: 'Hallo Welt' }],
+      }), { status: 200 })
+    }, { includeSegments: true })
+    expect(sawSegmentRequest).toBe(true)
+    expect(result.segments).toEqual([{ start: 0, end: 1.5, text: 'Hallo Welt' }])
+    expect(result.model).toBe('whisper-1')
   })
 })

@@ -124,16 +124,61 @@ export const VIEW_LABELS: Record<AppView, string> = {
   run: 'Generational Run',
 }
 
+export type KnowledgeTabId = 'notes' | 'transcript' | 'jo' | 'quiz' | 'links'
+
+export type KnowledgeSurface = 'library' | 'detail' | 'processing'
+
+const KNOWLEDGE_TABS: readonly KnowledgeTabId[] = ['notes', 'transcript', 'jo', 'quiz', 'links']
+
+export function isKnowledgeTabId(value: string | null | undefined): value is KnowledgeTabId {
+  return Boolean(value && (KNOWLEDGE_TABS as readonly string[]).includes(value))
+}
+
 export function entityIdFromHash(hash = window.location.hash): string | undefined {
   const { query } = splitHash(hash)
   const id = new URLSearchParams(query).get('id')?.trim()
   return id || undefined
 }
 
+export function knowledgeTabFromHash(hash = window.location.hash): KnowledgeTabId | undefined {
+  const { query } = splitHash(hash)
+  const tab = new URLSearchParams(query).get('tab')?.trim().toLowerCase()
+  return isKnowledgeTabId(tab) ? tab : undefined
+}
+
+export function knowledgeSurfaceFromHash(hash = window.location.hash): KnowledgeSurface {
+  const { path, query } = splitHash(hash)
+  const normalized = path.replace(/\/$/, '') || '/'
+  if (normalized === '/knowledge/processing' || normalized === '/wissen/verarbeitung') return 'processing'
+  const surface = new URLSearchParams(query).get('surface')?.trim().toLowerCase()
+  if (surface === 'processing') return 'processing'
+  if (entityIdFromHash(hash)) return 'detail'
+  return 'library'
+}
+
 export function navigateHashWithId(view: AppView, id?: string, replace = false): void {
   const base = hashFromView(view)
   const next = id ? `${base}?id=${encodeURIComponent(id)}` : base
   if (replace) window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${next}`)
+  else window.location.hash = next
+}
+
+export function navigateKnowledgeHash(options: {
+  id?: string
+  tab?: KnowledgeTabId
+  surface?: KnowledgeSurface
+  replace?: boolean
+}): void {
+  const params = new URLSearchParams()
+  if (options.surface === 'processing') {
+    params.set('surface', 'processing')
+  } else {
+    if (options.id) params.set('id', options.id)
+    if (options.tab) params.set('tab', options.tab)
+  }
+  const query = params.toString()
+  const next = query ? `#/knowledge?${query}` : '#/knowledge'
+  if (options.replace) window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${next}`)
   else window.location.hash = next
 }
 
