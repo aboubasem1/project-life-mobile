@@ -16,12 +16,50 @@ export type ReelUploadStage =
   | 'batch'
   | 'recover'
 
+export const OVH_PRODUCTION_ORIGIN = 'https://vps-01d88277.vps.ovh.net'
+
 let reelRoomPromise: Promise<void> | null = null
+
+type ReelHostHealth = {
+  ok?: boolean
+  storage?: string
+  objectStorage?: { status?: string }
+  database?: { status?: string }
+}
+
+/** Reel import needs OVH (Postgres + object storage). Vercel fallback cannot create rooms. */
+export async function assertReelHostReady(): Promise<void> {
+  let health: ReelHostHealth
+  try {
+    const response = await fetch('/api/health', { cache: 'no-store' })
+    health = await response.json().catch(() => ({})) as ReelHostHealth
+    if (!response.ok && !health.storage) {
+      throw new Error(`Health-Check fehlgeschlagen (${response.status}).`)
+    }
+  } catch (error) {
+    throw new Error(
+      `${error instanceof Error ? error.message : 'Server nicht erreichbar.'} Öffne LifeOS unter ${OVH_PRODUCTION_ORIGIN}.`,
+    )
+  }
+  const storageOk = health.storage === 'postgres' && health.database?.status === 'ok'
+  const objectsOk = health.objectStorage?.status === 'ok'
+  if (storageOk && objectsOk) return
+  const host = typeof window !== 'undefined' ? window.location.host : ''
+  if (host.includes('vercel.app')) {
+    throw new Error(
+      `Reel-Import läuft nicht auf Vercel. Öffne ${OVH_PRODUCTION_ORIGIN}, lade neu und füge die App erneut zum Home-Bildschirm hinzu.`,
+    )
+  }
+  throw new Error(
+    `Reel-Import braucht Postgres und Dateispeicher (jetzt: storage=${health.storage ?? '?'}, objects=${health.objectStorage?.status ?? '?'}). Öffne ${OVH_PRODUCTION_ORIGIN}.`,
+  )
+}
 
 function ensureReelRoom(): Promise<void> {
   if (loadSyncCredentials()) return Promise.resolve()
   if (!reelRoomPromise) {
-    reelRoomPromise = createDevicePairing()
+    reelRoomPromise = assertReelHostReady()
+      .then(() => createDevicePairing())
       .then(() => {
         if (!loadSyncCredentials()) {
           throw new Error('Reel-Import konnte die Geräte-Anmeldung nicht speichern.')

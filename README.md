@@ -3,9 +3,10 @@
 LifeOS is a mobile-first, local-first React PWA with optional device sync, health imports,
 webhooks, voice transcription and a structured capture layer.
 
-The current public fallback remains available at
-[project-life-mobile.vercel.app](https://project-life-mobile.vercel.app/). The OVH migration
-is deliberately additive: Vercel is not removed or switched off by this repository state.
+**Production (Reel-Import, Postgres, R2):** [vps-01d88277.vps.ovh.net](https://vps-01d88277.vps.ovh.net/).
+
+The old Vercel fallback at [project-life-mobile.vercel.app](https://project-life-mobile.vercel.app/)
+remains online but cannot create sync rooms or upload Reels. Use the OVH URL for the installed PWA.
 
 ## Stack
 
