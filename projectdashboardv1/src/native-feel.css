@@ -75,3 +75,40 @@
   input[type='checkbox'], input[type='radio'] { transition: none !important; }
   input[type='checkbox']:active, input[type='radio']:active { transform: none !important; }
 }
+
+/* Sprint C: existing dialogs become compact mobile sheets without markup changes. */
+@media (max-width: 700px) {
+  .modal-backdrop {
+    place-items: end center;
+    padding: 0;
+    padding-top: env(safe-area-inset-top);
+    overscroll-behavior: contain;
+  }
+  .modal-backdrop > .modal {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    max-height: min(90dvh, 850px);
+    margin: 0;
+    padding-bottom: max(24px, env(safe-area-inset-bottom));
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .mobile-nav__item {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+}
+@media (max-width: 700px) and (prefers-reduced-motion: no-preference) {
+  .modal-backdrop > .modal {
+    animation: life-native-sheet-enter 260ms var(--life-motion-ease) both;
+  }
+}
+@keyframes life-native-sheet-enter {
+  from { opacity: .94; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop > .modal { animation: none !important; }
+}
