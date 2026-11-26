@@ -161,9 +161,11 @@ async function syncFetch<T>(path: string, init?: RequestInit): Promise<T> {
         ...(init?.headers ?? {}),
       },
     })
-    const data = await response.json().catch(() => ({})) as T & { error?: string }
+    const data = await response.json().catch(() => ({})) as T & { error?: string; errorRef?: string }
     if (!response.ok) {
-      throw new Error(data.error || `Sync fehlgeschlagen (${response.status})`)
+      const ref = data.errorRef || response.headers.get('x-life-os-error-ref')
+      const detail = data.error || `Sync fehlgeschlagen (${response.status})`
+      throw new Error(ref ? `${detail} (Ref ${ref})` : detail)
     }
     return data
   } catch (error) {

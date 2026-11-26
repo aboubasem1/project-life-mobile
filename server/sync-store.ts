@@ -550,7 +550,17 @@ async function saveRoomUnchecked(room: SyncRoom, previousPairCode?: string | nul
       await saveRoomToUpstash(room, previousPairCode)
       return
     } catch (error) {
-      if (process.env.VERCEL) throw error
+      if (process.env.VERCEL) {
+        console.error(JSON.stringify({
+          scope: 'sync-store',
+          event: 'vercel_upstash_save_failed',
+          message: error instanceof Error ? error.message : 'unknown',
+        }))
+        throw new SyncPayloadError(
+          503,
+          'Geräte-Sync auf der Vercel-Adresse ist nicht verfügbar. Öffne LifeOS unter https://vps-01d88277.vps.ovh.net und lade die PWA von dort neu.',
+        )
+      }
       markLocalUpstashBroken()
     }
   }
