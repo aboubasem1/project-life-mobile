@@ -221,6 +221,78 @@ export async function ensureDatabaseSchema(): Promise<void> {
 
     CREATE INDEX IF NOT EXISTS lifeos_knowledge_documents_search_idx
       ON lifeos_knowledge_documents USING gin (search_vector);
+
+    ALTER TABLE lifeos_reel_jobs DROP CONSTRAINT IF EXISTS lifeos_reel_jobs_status_check;
+    ALTER TABLE lifeos_reel_jobs ADD CONSTRAINT lifeos_reel_jobs_status_check
+      CHECK (status IN ('queued', 'running', 'retry', 'succeeded', 'dead', 'budget_paused'));
+
+    CREATE TABLE IF NOT EXISTS lifeos_ai_budget_periods (
+      period_ym text PRIMARY KEY,
+      limit_eur numeric(12,6) NOT NULL,
+      spent_eur numeric(12,6) NOT NULL DEFAULT 0,
+      reserved_eur numeric(12,6) NOT NULL DEFAULT 0,
+      assumptions jsonb NOT NULL DEFAULT '{}'::jsonb,
+      queue_resume text NOT NULL DEFAULT 'manual'
+        CHECK (queue_resume IN ('manual', 'auto_next_month')),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS lifeos_ai_spend (
+      id uuid PRIMARY KEY,
+      period_ym text NOT NULL REFERENCES lifeos_ai_budget_periods(period_ym) ON DELETE CASCADE,
+      room_id text NOT NULL,
+      user_ref text,
+      job_id uuid,
+      reel_id uuid,
+      step text NOT NULL,
+      kind text NOT NULL CHECK (kind IN ('background', 'interactive', 'enrichment')),
+      provider text NOT NULL,
+      model text NOT NULL,
+      request_id text,
+      status text NOT NULL CHECK (status IN ('reserved', 'settled', 'released', 'uncertain')),
+      reserved_eur numeric(12,6) NOT NULL DEFAULT 0,
+      settled_eur numeric(12,6) NOT NULL DEFAULT 0,
+      cost_usd numeric(12,8),
+      cost_source text NOT NULL DEFAULT 'estimate',
+      price_version text NOT NULL,
+      fx_usd_eur numeric(12,6) NOT NULL,
+      fx_dated text NOT NULL,
+      tax_factor numeric(8,4) NOT NULL,
+      safety_factor numeric(8,4) NOT NULL,
+      input_tokens integer,
+      output_tokens integer,
+      audio_ms integer,
+      meta jsonb NOT NULL DEFAULT '{}'::jsonb,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS lifeos_ai_spend_period_status_idx
+      ON lifeos_ai_spend (period_ym, status);
+
+    CREATE INDEX IF NOT EXISTS lifeos_ai_spend_room_created_idx
+      ON lifeos_ai_spend (room_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS lifeos_knowledge_chunks (
+      id uuid PRIMARY KEY,
+      room_id text NOT NULL REFERENCES lifeos_sync_rooms(room_id) ON DELETE CASCADE,
+      knowledge_id text NOT NULL,
+      chunk_index integer NOT NULL,
+      text text NOT NULL,
+      source_kind text NOT NULL DEFAULT 'body',
+      start_ms integer,
+      end_ms integer,
+      embedding_model text,
+      embedding_version text,
+      embedding jsonb,
+      content_hash text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      UNIQUE (room_id, knowledge_id, chunk_index)
+    );
+
+    CREATE INDEX IF NOT EXISTS lifeos_knowledge_chunks_room_knowledge_idx
+      ON lifeos_knowledge_chunks (room_id, knowledge_id);
   `).then(() => undefined).catch(error => {
     schemaPromise = null
     throw error

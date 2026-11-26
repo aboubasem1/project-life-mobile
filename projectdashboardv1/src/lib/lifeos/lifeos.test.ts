@@ -34,6 +34,28 @@ import {
   interpretInsights,
 } from './index'
 
+describe('knowledge notes field', () => {
+  it('preserves user notes through normalizeLifeOsState', () => {
+    const state = normalizeLifeOsState({
+      version: LIFE_OS_STORE_VERSION,
+      knowledge: [{
+        id: 'k1',
+        title: 'Testkarte',
+        content: 'Inhalt',
+        summary: 'Kurz',
+        source: 'Reel',
+        type: 'video',
+        topics: ['training'],
+        tags: [],
+        notes: 'Meine Notiz',
+        createdAt: '2026-11-02T10:00:00.000Z',
+        updatedAt: '2026-11-02T10:00:00.000Z',
+      }],
+    })
+    expect(state.knowledge[0]?.notes).toBe('Meine Notiz')
+  })
+})
+
 describe('universal capture', () => {
   it('parses title, body and url without classifying', () => {
     const parsed = parseCaptureInput('Buch lesen\nhttps://example.com/x')

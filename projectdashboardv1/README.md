@@ -3,7 +3,8 @@
 Local-first Tages- und Gewohnheits-OS für geringe kognitive Last — offline nutzbar,
 mit optionalem Geräte-Sync und externen Imports.
 
-**Live:** https://project-life-mobile.vercel.app/
+**Live (Production / Reel-Import):** https://vps-01d88277.vps.ovh.net/  
+**Vercel-Fallback (ohne Reel-Upload):** https://project-life-mobile.vercel.app/
 
 ## Stack
 

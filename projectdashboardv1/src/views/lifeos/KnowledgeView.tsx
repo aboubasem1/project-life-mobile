@@ -1,33 +1,51 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Plus, Upload } from 'lucide-react'
+import { ListFilter, Plus, Search, Upload } from 'lucide-react'
 import {
   KNOWLEDGE_TYPE_LABELS,
+  LIFE_AREAS,
+  areaLabel,
   rankKnowledge,
-  suggestRelations,
   type KnowledgeItem,
   type KnowledgeReview,
   type KnowledgeType,
   type Relation,
 } from '../../lib/lifeos'
-import { Field, LifeAreaSelect, LifeOsEmpty, LifeOsPage } from './lifeosUi'
+import { listPublishedKnowledge, listReels, type KnowledgePublishDraft } from '../../lib/reels'
+import {
+  knowledgeSurfaceFromHash,
+  knowledgeTabFromHash,
+  navigateKnowledgeHash,
+  type KnowledgeSurface,
+  type KnowledgeTabId,
+} from '../../lib/routing'
+import { LifeOsEmpty, LifeOsPage } from './lifeosUi'
+import { KnowledgeDetailView } from './KnowledgeDetailView'
 import { ReelImportPanel } from './ReelImportPanel'
-import { KnowledgeGraphPanel } from './KnowledgeGraphPanel'
-import { ActiveRecallPanel } from './ActiveRecallPanel'
-import { listPublishedKnowledge, type KnowledgePublishDraft } from '../../lib/reels'
 
-const ROLE_LABELS: Record<string, string> = {
-  related_to: 'Verwandt',
-  supports: 'Stützt',
-  contradicts: 'Widerspricht',
-  applicable_to: 'Passend zu',
-  derived_from: 'Abgeleitet von',
+type SortMode = 'newest' | 'oldest' | 'title' | 'relevance'
+type SourceFilter = 'all' | 'reel' | 'other'
+
+const PAGE_SIZE = 40
+
+function formatDate(value: string): string {
+  const stamp = Date.parse(value)
+  if (!Number.isFinite(stamp)) return ''
+  return new Date(stamp).toLocaleDateString('de-DE', { day: '2-digit', month: 'short' })
 }
 
-const EVIDENCE_LABELS: Record<string, string> = {
-  verified: 'belegt',
-  mixed: 'teilweise belegt',
-  unverified: 'unbelegt',
-  source_only: 'nur Quelle',
+function matchesSource(item: KnowledgeItem, filter: SourceFilter): boolean {
+  if (filter === 'all') return true
+  const isReel = Boolean(item.sourceReelId) || item.tags.some(tag => tag.startsWith('reel:') || tag === 'import:reel') || item.type === 'video'
+  return filter === 'reel' ? isReel : !isReel
+}
+
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delayMs)
+    return () => window.clearTimeout(timer)
+  }, [value, delayMs])
+  return debounced
 }
 
 export function KnowledgeView({
@@ -47,6 +65,8 @@ export function KnowledgeView({
   onPublished,
   onReviewsChange,
   onOpenEntity,
+  onCreateTask,
+  onSaveInsight,
 }: {
   items: KnowledgeItem[]
   relations: Relation[]
@@ -56,7 +76,7 @@ export function KnowledgeView({
   decisions: Array<{ id: string; title: string }>
   selectedId?: string
   related: Array<{ id: string; title: string; kind: string }>
-  onSelect: (id: string) => void
+  onSelect: (id: string | undefined) => void
   onCreate: () => string
   onChange: (id: string, patch: Partial<KnowledgeItem>) => void
   onDelete: (id: string) => void
@@ -64,12 +84,25 @@ export function KnowledgeView({
   onPublished: (drafts: KnowledgePublishDraft[]) => number
   onReviewsChange: (next: KnowledgeReview[]) => void
   onOpenEntity: (kind: 'knowledge' | 'goal' | 'project' | 'decision', id: string) => void
+  onCreateTask: (title: string, sourceKnowledgeId: string) => void
+  onSaveInsight: (text: string, sourceKnowledgeId: string) => void
 }) {
   const [query, setQuery] = useState('')
-  const [linkKind, setLinkKind] = useState<'project' | 'goal' | 'decision' | 'knowledge'>('project')
-  const [linkId, setLinkId] = useState('')
+  const debouncedQuery = useDebouncedValue(query, 200)
+  const [topic, setTopic] = useState('')
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
+  const [typeFilter, setTypeFilter] = useState<KnowledgeType | 'all'>('all')
+  const [areaFilter, setAreaFilter] = useState('')
+  const [sort, setSort] = useState<SortMode>('newest')
+  const [showFilters, setShowFilters] = useState(false)
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  const [queueOpen, setQueueOpen] = useState(0)
+  const [surface, setSurface] = useState<KnowledgeSurface>(() => knowledgeSurfaceFromHash())
+  const [tab, setTab] = useState<KnowledgeTabId>(() => knowledgeTabFromHash() ?? 'notes')
+  const tabById = useRef<Record<string, KnowledgeTabId>>({})
   const publishRef = useRef(onPublished)
   publishRef.current = onPublished
+
   useEffect(() => {
     let cancelled = false
     void listPublishedKnowledge()
@@ -82,161 +115,343 @@ export function KnowledgeView({
     }
   }, [])
 
-  const [showReelImport, setShowReelImport] = useState(() => {
-    try {
-      const requested = sessionStorage.getItem('lifeos.open-reel-import') === '1'
-      sessionStorage.removeItem('lifeos.open-reel-import')
-      return requested
-    } catch {
-      return false
+  useEffect(() => {
+    let cancelled = false
+    const refreshQueue = () => {
+      void listReels()
+        .then(reels => {
+          if (cancelled) return
+          const open = reels.filter(reel => {
+            if (reel.knowledgeItemId || reel.status === 'PUBLISHED') return false
+            return reel.status === 'FAILED'
+              || reel.jobStatus === 'queued'
+              || reel.jobStatus === 'running'
+              || reel.jobStatus === 'retry'
+              || reel.jobStatus === 'dead'
+              || ['UPLOADED', 'PROCESSING', 'EXTRACTED', 'CLASSIFIED', 'FACT_CHECK_PENDING', 'REVIEW_READY', 'USER_REVIEWED', 'MORE_EVIDENCE', 'APPROVED_CANDIDATE', 'SOURCE_ONLY'].includes(reel.status)
+          }).length
+          setQueueOpen(open)
+        })
+        .catch(() => {})
     }
-  })
-  const ranked = useMemo(() => new Map(rankKnowledge(items, query).map(hit => [hit.id, hit.score])), [items, query])
-  const visible = query.trim()
-    ? items.filter(item => ranked.has(item.id)).sort((a, b) => (ranked.get(b.id) ?? 0) - (ranked.get(a.id) ?? 0))
-    : items
-  const selected = visible.find(item => item.id === selectedId) ?? visible[0] ?? null
-  const suggestions = selected
-    ? suggestRelations({ focusId: selected.id, items, relations, goals, projects, decisions })
-    : []
+    refreshQueue()
+    const timer = window.setInterval(refreshQueue, 15_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [surface])
+
+  useEffect(() => {
+    const sync = () => {
+      const nextSurface = knowledgeSurfaceFromHash()
+      setSurface(nextSurface)
+      const hashTab = knowledgeTabFromHash()
+      if (hashTab) setTab(hashTab)
+      try {
+        if (sessionStorage.getItem('lifeos.open-reel-import') === '1') {
+          sessionStorage.removeItem('lifeos.open-reel-import')
+          setSurface('processing')
+          navigateKnowledgeHash({ surface: 'processing', replace: true })
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    sync()
+    window.addEventListener('hashchange', sync)
+    return () => window.removeEventListener('hashchange', sync)
+  }, [])
+
+  useEffect(() => {
+    if (selectedId) {
+      setSurface(current => (current === 'processing' ? current : 'detail'))
+      const remembered = tabById.current[selectedId]
+      const hashTab = knowledgeTabFromHash()
+      setTab(hashTab ?? remembered ?? 'notes')
+    } else if (surface === 'detail') {
+      setSurface('library')
+    }
+  }, [selectedId])
+
+  const topics = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const item of items) {
+      for (const entry of item.topics) {
+        const key = entry.trim()
+        if (!key) continue
+        counts.set(key, (counts.get(key) ?? 0) + 1)
+      }
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name)
+  }, [items])
+
+  const ranked = useMemo(
+    () => new Map(rankKnowledge(items, debouncedQuery).map(hit => [hit.id, hit.score])),
+    [items, debouncedQuery],
+  )
+
+  const filtered = useMemo(() => {
+    let list = items.filter(item => {
+      if (topic && !item.topics.some(entry => entry.toLowerCase() === topic.toLowerCase())) return false
+      if (areaFilter && item.lifeArea !== areaFilter) return false
+      if (typeFilter !== 'all' && item.type !== typeFilter) return false
+      if (!matchesSource(item, sourceFilter)) return false
+      if (debouncedQuery.trim() && !ranked.has(item.id)) return false
+      return true
+    })
+    if (sort === 'relevance' || debouncedQuery.trim()) {
+      list = [...list].sort((a, b) => (ranked.get(b.id) ?? 0) - (ranked.get(a.id) ?? 0))
+    } else if (sort === 'title') {
+      list = [...list].sort((a, b) => a.title.localeCompare(b.title, 'de'))
+    } else if (sort === 'oldest') {
+      list = [...list].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    } else {
+      list = [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    }
+    return list
+  }, [items, topic, areaFilter, typeFilter, sourceFilter, debouncedQuery, ranked, sort])
+
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE)
+  }, [debouncedQuery, topic, areaFilter, typeFilter, sourceFilter, sort])
+
+  const visible = filtered.slice(0, visibleCount)
+  const selected = selectedId ? items.find(item => item.id === selectedId) ?? null : null
+
+  const openDetail = (id: string, nextTab: KnowledgeTabId = 'notes') => {
+    tabById.current[id] = nextTab
+    setTab(nextTab)
+    setSurface('detail')
+    onSelect(id)
+    navigateKnowledgeHash({ id, tab: nextTab })
+  }
+
+  const openLibrary = () => {
+    setSurface('library')
+    onSelect(undefined)
+    navigateKnowledgeHash({})
+  }
+
+  const openProcessing = () => {
+    setSurface('processing')
+    onSelect(undefined)
+    navigateKnowledgeHash({ surface: 'processing' })
+  }
+
+  const changeTab = (next: KnowledgeTabId) => {
+    setTab(next)
+    if (selectedId) {
+      tabById.current[selectedId] = next
+      navigateKnowledgeHash({ id: selectedId, tab: next, replace: true })
+    }
+  }
+
+  if (surface === 'processing') {
+    return (
+      <LifeOsPage
+        eyebrow="Wissen"
+        title="Verarbeitung"
+        action={
+          <button type="button" className="small-button" onClick={openLibrary}>
+            Zur Bibliothek
+          </button>
+        }
+      >
+        <ReelImportPanel
+          variant="page"
+          onClose={openLibrary}
+          onPublished={drafts => {
+            const created = onPublished(drafts)
+            return created
+          }}
+        />
+      </LifeOsPage>
+    )
+  }
+
+  if (surface === 'detail' && selected) {
+    return (
+      <div className="view-stack lifeos-page knowledge-detail-page">
+        <KnowledgeDetailView
+          item={selected}
+          items={items}
+          relations={relations}
+          reviews={reviews}
+          goals={goals}
+          projects={projects}
+          decisions={decisions}
+          related={related}
+          tab={tab}
+          onTabChange={changeTab}
+          onBack={openLibrary}
+          onChange={onChange}
+          onDelete={id => {
+            onDelete(id)
+            openLibrary()
+          }}
+          onLink={onLink}
+          onReviewsChange={onReviewsChange}
+          onOpenEntity={(kind, id) => {
+            if (kind === 'knowledge') openDetail(id, tabById.current[id] ?? 'notes')
+            else onOpenEntity(kind, id)
+          }}
+          onCreateTask={onCreateTask}
+          onSaveInsight={onSaveInsight}
+        />
+      </div>
+    )
+  }
 
   return (
     <LifeOsPage
       eyebrow="Learn"
-      title="Knowledge"
-      action={<div className="lifeos-inline">
-        <button type="button" className="small-button" onClick={() => setShowReelImport(current => !current)}><Upload size={14} /> Reels importieren</button>
-        <button type="button" className="small-button" onClick={() => onCreate()}><Plus size={14} /> Eintrag</button>
-      </div>}
-    >
-      {showReelImport && <ReelImportPanel onClose={() => setShowReelImport(false)} onPublished={onPublished} />}
-      <label className="text-field">
-        <span className="sr-only">Wissen durchsuchen</span>
-        <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Wissen durchsuchen" aria-label="Wissen durchsuchen" />
-      </label>
-      {items.length === 0 ? (
-        <section className="card">
-          <LifeOsEmpty title="Noch kein Wissen" text="Gedanken, Artikel, Videos, Bücher — oder Reels importieren." />
-        </section>
-      ) : visible.length === 0 ? (
-        <section className="card">
-          <LifeOsEmpty title="Nichts gefunden" text="Kein Eintrag passt zu dieser Suche." />
-        </section>
-      ) : (
-        <div className="lifeos-split">
-          <section className="card lifeos-list-card">
-            {visible.map(item => (
-              <button
-                key={item.id}
-                type="button"
-                className={item.id === selected?.id ? 'lifeos-list-item is-active' : 'lifeos-list-item'}
-                onClick={() => onSelect(item.id)}
-              >
-                <strong>{item.title}</strong>
-                <span>{item.topics[0] || KNOWLEDGE_TYPE_LABELS[item.type]}</span>
-              </button>
-            ))}
-          </section>
-          {selected && (
-            <section className="card">
-              <Field label="Titel">
-                <input value={selected.title} onChange={event => onChange(selected.id, { title: event.target.value })} />
-              </Field>
-              <p className="reel-review-detail__guard">{selected.summary || 'Noch keine Zusammenfassung.'}</p>
-              <div className="reel-import__stats">
-                <span>{selected.topics[0] || 'Ohne Thema'}</span>
-                <span>{selected.source || 'Ohne Quelle'}</span>
-                {selected.evidenceStatus && <span>{EVIDENCE_LABELS[selected.evidenceStatus]}</span>}
-              </div>
-              {related.length > 0 && (
-                <ul className="lifeos-plain-list">
-                  {related.map(item => <li key={`${item.kind}-${item.id}`}>{item.kind}: {item.title}</li>)}
-                </ul>
-              )}
-              <details>
-                <summary>Graph</summary>
-                <KnowledgeGraphPanel
-                  focusId={selected.id}
-                  relations={relations}
-                  knowledge={items.map(item => ({ id: item.id, title: item.title }))}
-                  goals={goals}
-                  projects={projects}
-                  decisions={decisions}
-                  onOpen={onOpenEntity}
-                />
-              </details>
-              <details>
-                <summary>Lernen</summary>
-                <ActiveRecallPanel item={selected} reviews={reviews} onChangeReviews={onReviewsChange} />
-              </details>
-              <details>
-                <summary>Details</summary>
-                <div className="reel-review-detail">
-                  {selected.ideas && selected.ideas.length > 0 && <p>{selected.ideas.join(' ')}</p>}
-                  {selected.takeaways && selected.takeaways.length > 0 && (
-                    <ul className="lifeos-plain-list">{selected.takeaways.map(item => <li key={item}>{item}</li>)}</ul>
-                  )}
-                  {selected.sourceReelId && <p className="reel-review-detail__guard">Originaltranskript bleibt am Reel {selected.sourceReelId}.</p>}
-                  <Field label="Inhalt">
-                    <textarea value={selected.content} onChange={event => onChange(selected.id, { content: event.target.value })} rows={6} />
-                  </Field>
-                  <Field label="Summary">
-                    <textarea value={selected.summary} onChange={event => onChange(selected.id, { summary: event.target.value })} rows={2} />
-                  </Field>
-                  <div className="lifeos-inline">
-                    <label className="text-field">
-                      <span>Typ</span>
-                      <select value={selected.type} onChange={event => onChange(selected.id, { type: event.target.value as KnowledgeType })}>
-                        {Object.entries(KNOWLEDGE_TYPE_LABELS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-                      </select>
-                    </label>
-                    <Field label="Quelle">
-                      <input value={selected.source} onChange={event => onChange(selected.id, { source: event.target.value })} />
-                    </Field>
-                  </div>
-                  <Field label="Topics (Komma)">
-                    <input
-                      value={selected.topics.join(', ')}
-                      onChange={event => onChange(selected.id, { topics: event.target.value.split(',').map(item => item.trim()).filter(Boolean) })}
-                    />
-                  </Field>
-                  <LifeAreaSelect value={selected.lifeArea} onChange={lifeArea => onChange(selected.id, { lifeArea, areaLocked: true })} />
-                  <button type="button" className="secondary-button" onClick={() => onDelete(selected.id)}>Löschen</button>
-                </div>
-              </details>
-              <details>
-                <summary>Beziehungen</summary>
-                {suggestions.length === 0 ? <p className="reel-review-detail__guard">Keine neuen Vorschläge.</p> : suggestions.map(suggestion => (
-                  <div key={`${suggestion.role}-${suggestion.toKind}-${suggestion.toId}`} className="lifeos-inline">
-                    <span>{ROLE_LABELS[suggestion.role]}: {suggestion.reason}</span>
-                    <button type="button" className="secondary-button" onClick={() => onLink(selected.id, { kind: suggestion.toKind, targetId: suggestion.toId, role: suggestion.role })}>Übernehmen</button>
-                  </div>
-                ))}
-                <div className="lifeos-inline">
-                  <select value={linkKind} onChange={event => setLinkKind(event.target.value as typeof linkKind)}>
-                    <option value="project">Projekt</option>
-                    <option value="goal">Ziel</option>
-                    <option value="decision">Entscheidung</option>
-                    <option value="knowledge">Wissen</option>
-                  </select>
-                  <input value={linkId} onChange={event => setLinkId(event.target.value)} placeholder="ID" aria-label="Ziel-ID" />
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => {
-                      if (!linkId.trim()) return
-                      onLink(selected.id, { kind: linkKind, targetId: linkId.trim(), role: 'related_to' })
-                      setLinkId('')
-                    }}
-                  >
-                    Verknüpfen
-                  </button>
-                </div>
-              </details>
-            </section>
-          )}
+      title="Wissensbibliothek"
+      action={
+        <div className="lifeos-inline knowledge-library__actions">
+          <button type="button" className="small-button" onClick={openProcessing}>
+            <Upload size={14} /> Verarbeitung{queueOpen > 0 ? ` (${queueOpen})` : ''}
+          </button>
+          <button
+            type="button"
+            className="small-button"
+            onClick={() => {
+              const id = onCreate()
+              openDetail(id)
+            }}
+          >
+            <Plus size={14} /> Hinzufügen
+          </button>
         </div>
-      )}
+      }
+    >
+      <div className="knowledge-library">
+        <label className="text-field knowledge-library__search">
+          <span className="sr-only">Wissen durchsuchen</span>
+          <Search size={16} aria-hidden />
+          <input
+            value={query}
+            onChange={event => setQuery(event.target.value)}
+            placeholder="Suchen in Titel, Themen, Inhalt…"
+            aria-label="Wissen durchsuchen"
+          />
+        </label>
+
+        <div className="knowledge-library__toolbar">
+          <button
+            type="button"
+            className={showFilters ? 'small-button is-active' : 'small-button'}
+            onClick={() => setShowFilters(open => !open)}
+          >
+            <ListFilter size={14} /> Filter
+          </button>
+          <label className="knowledge-library__sort">
+            <span className="sr-only">Sortierung</span>
+            <select
+              aria-label="Sortierung"
+              value={debouncedQuery.trim() ? 'relevance' : sort}
+              onChange={event => setSort(event.target.value as SortMode)}
+            >
+              {debouncedQuery.trim() && <option value="relevance">Relevanz</option>}
+              <option value="newest">Neueste</option>
+              <option value="oldest">Älteste</option>
+              <option value="title">Titel</option>
+            </select>
+          </label>
+          <span className="knowledge-library__count">{filtered.length} Einträge</span>
+        </div>
+
+        {showFilters && (
+          <div className="knowledge-library__filters">
+            <label className="text-field">
+              <span>Thema</span>
+              <select aria-label="Thema" value={topic} onChange={event => setTopic(event.target.value)}>
+                <option value="">Alle Themen</option>
+                {topics.map(entry => <option key={entry} value={entry}>{entry}</option>)}
+              </select>
+            </label>
+            <label className="text-field">
+              <span>Quelle</span>
+              <select aria-label="Quelle" value={sourceFilter} onChange={event => setSourceFilter(event.target.value as SourceFilter)}>
+                <option value="all">Alle Quellen</option>
+                <option value="reel">Reels / Videos</option>
+                <option value="other">Sonstige</option>
+              </select>
+            </label>
+            <label className="text-field">
+              <span>Typ</span>
+              <select aria-label="Typ" value={typeFilter} onChange={event => setTypeFilter(event.target.value as KnowledgeType | 'all')}>
+                <option value="all">Alle Typen</option>
+                {Object.entries(KNOWLEDGE_TYPE_LABELS).map(([id, label]) => (
+                  <option key={id} value={id}>{label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="text-field">
+              <span>Bereich</span>
+              <select aria-label="Bereich" value={areaFilter} onChange={event => setAreaFilter(event.target.value)}>
+                <option value="">Alle Bereiche</option>
+                {LIFE_AREAS.map(area => <option key={area.key} value={area.key}>{area.name}</option>)}
+              </select>
+            </label>
+          </div>
+        )}
+
+        {items.length === 0 ? (
+          <section className="card knowledge-library__empty">
+            <LifeOsEmpty
+              title="Noch kein Wissen"
+              text="Importiere Reels oder lege einen Eintrag an."
+              action={
+                <div className="lifeos-inline">
+                  <button type="button" className="primary-button" onClick={openProcessing}>Verarbeitung öffnen</button>
+                  <button type="button" className="secondary-button" onClick={() => openDetail(onCreate())}>Eintrag anlegen</button>
+                </div>
+              }
+            />
+          </section>
+        ) : filtered.length === 0 ? (
+          <section className="card knowledge-library__empty">
+            <LifeOsEmpty title="Nichts gefunden" text="Kein Eintrag passt zu Suche oder Filter." />
+          </section>
+        ) : (
+          <>
+            <div className="knowledge-card-grid" role="list">
+              {visible.map(item => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="listitem"
+                  className="knowledge-card"
+                  onClick={() => openDetail(item.id)}
+                >
+                  <div className="knowledge-card__top">
+                    <strong className="knowledge-card__title">{item.title}</strong>
+                    {item.evidenceStatus === 'source_only' && (
+                      <span className="knowledge-card__status">Nur Quelle</span>
+                    )}
+                  </div>
+                  <p className="knowledge-card__summary">{item.summary || 'Keine Zusammenfassung.'}</p>
+                  <div className="knowledge-card__meta">
+                    <span>{item.source || KNOWLEDGE_TYPE_LABELS[item.type]}</span>
+                    <span>{item.topics[0] || (item.lifeArea ? areaLabel(item.lifeArea) : 'Ohne Thema')}</span>
+                    <span>{formatDate(item.createdAt)}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+            {visibleCount < filtered.length && (
+              <button
+                type="button"
+                className="secondary-button knowledge-library__more"
+                onClick={() => setVisibleCount(count => count + PAGE_SIZE)}
+              >
+                Mehr laden ({filtered.length - visibleCount} übrig)
+              </button>
+            )}
+          </>
+        )}
+      </div>
     </LifeOsPage>
   )
 }

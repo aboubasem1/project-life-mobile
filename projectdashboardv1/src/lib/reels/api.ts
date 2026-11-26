@@ -15,13 +15,53 @@ export type ReelUploadStage =
   | 'publish'
   | 'batch'
   | 'recover'
+  | 'get'
+  | 'translate'
+
+export const OVH_PRODUCTION_ORIGIN = 'https://vps-01d88277.vps.ovh.net'
 
 let reelRoomPromise: Promise<void> | null = null
+
+type ReelHostHealth = {
+  ok?: boolean
+  storage?: string
+  objectStorage?: { status?: string }
+  database?: { status?: string }
+}
+
+/** Reel import needs OVH (Postgres + object storage). Vercel fallback cannot create rooms. */
+export async function assertReelHostReady(): Promise<void> {
+  let health: ReelHostHealth
+  try {
+    const response = await fetch('/api/health', { cache: 'no-store' })
+    health = await response.json().catch(() => ({})) as ReelHostHealth
+    if (!response.ok && !health.storage) {
+      throw new Error(`Health-Check fehlgeschlagen (${response.status}).`)
+    }
+  } catch (error) {
+    throw new Error(
+      `${error instanceof Error ? error.message : 'Server nicht erreichbar.'} Öffne LifeOS unter ${OVH_PRODUCTION_ORIGIN}.`,
+    )
+  }
+  const storageOk = health.storage === 'postgres' && health.database?.status === 'ok'
+  const objectsOk = health.objectStorage?.status === 'ok'
+  if (storageOk && objectsOk) return
+  const host = typeof window !== 'undefined' ? window.location.host : ''
+  if (host.includes('vercel.app')) {
+    throw new Error(
+      `Reel-Import läuft nicht auf Vercel. Öffne ${OVH_PRODUCTION_ORIGIN}, lade neu und füge die App erneut zum Home-Bildschirm hinzu.`,
+    )
+  }
+  throw new Error(
+    `Reel-Import braucht Postgres und Dateispeicher (jetzt: storage=${health.storage ?? '?'}, objects=${health.objectStorage?.status ?? '?'}). Öffne ${OVH_PRODUCTION_ORIGIN}.`,
+  )
+}
 
 function ensureReelRoom(): Promise<void> {
   if (loadSyncCredentials()) return Promise.resolve()
   if (!reelRoomPromise) {
-    reelRoomPromise = createDevicePairing()
+    reelRoomPromise = assertReelHostReady()
+      .then(() => createDevicePairing())
       .then(() => {
         if (!loadSyncCredentials()) {
           throw new Error('Reel-Import konnte die Geräte-Anmeldung nicht speichern.')
@@ -308,6 +348,56 @@ export async function listReels(): Promise<ReelCandidate[]> {
   if (!loadSyncCredentials()) return []
   const result = await apiJson<{ reels: ReelCandidate[] }>('/api/reels?limit=300', {}, 20_000, false, 'list')
   return result.reels
+}
+
+export type AiBudgetView = {
+  periodYm: string
+  limitEur: number
+  spentEur: number
+  reservedEur: number
+  remainingEur: number
+  byStep: Record<string, { spentEur: number; reservedEur: number }>
+  enrichmentPaused: boolean
+  backgroundPaused: boolean
+  allPaused: boolean
+  warn: boolean
+  queueResume: 'manual' | 'auto_next_month'
+  assumptions: {
+    fxUsdEur: number
+    fxDated: string
+    taxFactor: number
+    safetyFactor: number
+    priceVersion: string
+    note: string
+  }
+  deepinfraExternalLimitNote: string
+}
+
+export async function fetchAiBudget(): Promise<AiBudgetView | null> {
+  if (!loadSyncCredentials()) return null
+  try {
+    const result = await apiJson<{ ok: boolean; budget?: AiBudgetView }>('/api/reels/budget', {}, 15_000, false, 'list')
+    return result.budget || null
+  } catch {
+    return null
+  }
+}
+
+export async function getReel(reelId: string): Promise<ReelCandidate> {
+  await ensureReelRoom()
+  const result = await apiJson<{ reel: ReelCandidate }>(`/api/reels/${encodeURIComponent(reelId)}`, {}, 20_000, false, 'get')
+  if (!result.reel?.id) throw new Error('Reel nicht gefunden.')
+  return result.reel
+}
+
+export async function translateReelTranscript(reelId: string): Promise<ReelCandidate> {
+  await ensureReelRoom()
+  const result = await apiJson<{ reel: ReelCandidate }>(`/api/reels/${encodeURIComponent(reelId)}/translate`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  }, 90_000, false, 'translate')
+  if (!result.reel?.id) throw new Error('Übersetzung fehlgeschlagen.')
+  return result.reel
 }
 
 export async function reviewReel(input: {

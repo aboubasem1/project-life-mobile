@@ -264,6 +264,7 @@ export function normalizeKnowledge(raw: unknown): KnowledgeItem | null {
     needKeys: parseNeedKeys(item.needKeys),
     ideas: limitedStrings(item.ideas, 8),
     takeaways: limitedStrings(item.takeaways, 8),
+    notes: asOptionalString(item.notes),
     evidenceStatus: knowledgeEvidence(item.evidenceStatus),
     confidence: boundedUnit(item.confidence),
     sourceReelId: asOptionalString(item.sourceReelId),

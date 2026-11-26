@@ -3506,7 +3506,10 @@ function App() {
                 kind: 'project',
                 title: dashboardPlus.boards.find(board => board.id === id)?.label ?? id,
               }))}
-              onSelect={id => setLifeOsEntityId(id)}
+              onSelect={id => {
+                setLifeOsEntityId(id)
+                if (!id && view === 'knowledge') navigateHash('knowledge')
+              }}
               onCreate={() => {
                 const id = createId()
                 const now = nowIso()
@@ -3552,6 +3555,44 @@ function App() {
                 else if (kind === 'goal') navigateTo('goal', id)
                 else if (kind === 'project') navigateTo('dashboardPlus', id)
                 else navigateTo('decisions', id)
+              }}
+              onCreateTask={(title, sourceKnowledgeId) => {
+                const taskId = createId()
+                const cleaned = title.trim().slice(0, 160) || 'Aufgabe aus Wissen'
+                setDashboardPlus(current => ({
+                  ...current,
+                  focusTodos: [
+                    {
+                      id: taskId,
+                      title: cleaned,
+                      tag: 'Wissen',
+                      time: '',
+                      done: false,
+                      priority: 'p3' as const,
+                    },
+                    ...current.focusTodos,
+                  ],
+                }))
+                lifeOs.commit(current => upsertRelation(current, {
+                  fromKind: 'knowledge',
+                  fromId: sourceKnowledgeId,
+                  toKind: 'task',
+                  toId: taskId,
+                  role: 'applicable_to',
+                }))
+              }}
+              onSaveInsight={(text, sourceKnowledgeId) => {
+                const cleaned = text.trim()
+                if (!cleaned) return
+                lifeOs.commit(current => ({
+                  ...current,
+                  knowledge: current.knowledge.map(item => {
+                    if (item.id !== sourceKnowledgeId) return item
+                    const ideas = [...(item.ideas ?? [])]
+                    if (!ideas.includes(cleaned)) ideas.unshift(cleaned)
+                    return { ...item, ideas: ideas.slice(0, 8), updatedAt: nowIso() }
+                  }),
+                }))
               }}
             />
           )}

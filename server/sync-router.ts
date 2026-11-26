@@ -18,6 +18,7 @@ import { runTranscriptionRequest } from './transcription-core.js'
 import { handleStorageRequest } from './storage-api.js'
 import { handleReelRequest } from './reel-api.js'
 import { searchRoomKnowledge } from './knowledge-index.js'
+import { handleKnowledgeQuizRequest } from './knowledge-quiz.js'
 
 function bearerToken(request: Request): string {
   const header = request.headers.get('authorization') ?? ''
@@ -62,6 +63,13 @@ export async function handleSyncRequest(request: Request): Promise<Response> {
       if (!room) return syncJson({ error: 'Sync-Raum nicht gefunden.' }, 404)
       if (!room.deviceTokens.includes(token)) return syncJson({ error: 'Gerät nicht mit diesem Sync verbunden.' }, 403)
       return syncJson({ ok: true, ...(await searchRoomKnowledge(roomId, url.searchParams.get('q') ?? '')) })
+    }
+
+    if (
+      (pathname.endsWith('/api/knowledge/quiz') || pathname.endsWith('/api/knowledge/quiz/grade'))
+      && (request.method === 'POST' || request.method === 'OPTIONS')
+    ) {
+      return await handleKnowledgeQuizRequest(request)
     }
 
     const webhookMatch = pathname.match(/\/api\/integrations\/webhooks\/([^/]+)$/)
