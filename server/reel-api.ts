@@ -670,7 +670,7 @@ async function enqueueProcessing(request: Request, roomId: string, reelId: strin
   const current = await findReel(roomId, reelId)
   if (current.status === 'DUPLICATE') throw new SyncHttpError(409, 'Duplikate werden nicht erneut verarbeitet.')
   if (FINISHED_STATUSES.includes(current.status)) return syncJson({ ok: true, queued: false, reel: reelJson(current) })
-  const force = current.status === 'FAILED' || current.status === 'MORE_EVIDENCE' || current.job_status === 'dead'
+  const force = current.status === 'FAILED' || current.status === 'MORE_EVIDENCE' || current.job_status === 'dead' || current.job_status === 'budget_paused'
   const job = await enqueueReelJob({ reelId, roomId, lifeAreas: body.lifeAreas, force })
   return syncJson({ ok: true, queued: job.queued, deferred: job.deferred, reel: reelJson(await findReel(roomId, reelId)) })
 }
